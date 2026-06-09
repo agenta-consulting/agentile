@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# lal-dev-link — make the installed plugin a live symlink to this repo, so your
+# edits to skills/agents/hooks apply on the next session reload with no
+# reinstall. This is the fast inner loop for developing the plugin itself.
+#
+# Run bin/lal-sync at least once FIRST so the marketplace + plugin are
+# registered with Claude Code; this script then swaps the frozen snapshot for a
+# symlink. Idempotent — safe to run repeatedly. If a `claude plugin update`
+# ever replaces the symlink with a fresh snapshot, just run this again.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MARKET="lean-agentic-loop-local"
+PLUGIN="lean-agentic-loop"
+
+VERSION="$(ruby -rjson -e 'print JSON.parse(File.read(ARGV[0]))["version"]' \
+  "$REPO/.claude-plugin/plugin.json")"
+
+CACHE="$HOME/.claude/plugins/cache/$MARKET/$PLUGIN"
+TARGET="$CACHE/$VERSION"
+
+mkdir -p "$CACHE"
+
+if [ -L "$TARGET" ]; then
+  rm "$TARGET"
+elif [ -e "$TARGET" ]; then
+  BAK="$TARGET.snapshot.bak.$(date +%s)"
+  echo "Backing up existing snapshot -> $BAK"
+  mv "$TARGET" "$BAK"
+fi
+
+ln -s "$REPO" "$TARGET"
+echo "Linked (live): $TARGET -> $REPO"
+echo "Edits to skills/agents/hooks apply on the next session reload."

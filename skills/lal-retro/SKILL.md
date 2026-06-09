@@ -1,0 +1,45 @@
+---
+name: lal-retro
+description: Close the Lean Agentic Loop with a data-driven mini-retro — compile a flow digest from git history, specs, and ADRs (and PRs when available), surface where work waited and what needed rework, then propose concrete updates to CLAUDE.md and ADRs. Non-coding. Trigger phrases include "/lal-retro", "run a retro", "flow digest", "what did we learn", "weekly retro".
+allowed-tools: Bash, Read, Edit, Agent
+---
+
+# lal-retro
+
+The LEARN step. A non-coding pass that turns recent delivery into encoded lessons, so the next cycle is cheaper. Replaces the status-meeting standup with a digest of what the data actually shows.
+
+This skill **does not change code**. It reads history and proposes edits to the standing context.
+
+## Step 1 — Gather the window
+
+Default to the last 7 days (or a window the user names). Collect, read-only:
+
+- `git log --since` with stats — commits, churn, which areas changed most.
+- Merge/PR history via `gh pr list --state merged` and `gh pr view` when the `gh` CLI is available; otherwise rely on git.
+- `specs/` — which specs shipped, which stalled, which became spikes.
+- `docs/adr/` — decisions made in the window.
+
+Run heavy log/grep commands so only your summary lands in context, not raw output.
+
+## Step 2 — Find the signal
+
+Answer, with evidence:
+
+- **Where did work wait?** The longest gaps between spec-ready and merge — the flow bottleneck.
+- **What needed the most rework?** Files or areas with repeated churn or repeated review bounces.
+- **What surprised us?** Incidents, reverts, or specs that ballooned past their scope boundary.
+- **Lead time** — is it dropping? If not, the constraint is upstream of coding; say so plainly.
+
+Measure **flow, not output** — do not report lines of code or "agent velocity".
+
+## Step 3 — Encode the lessons
+
+For each lesson worth keeping, propose a concrete change (and make it on approval):
+
+- A **`CLAUDE.md`** edit — a new convention, a do/don't, a clarified standard.
+- A new or updated **ADR** when the lesson is a decision.
+- A **`.lal/shaping.md`** addition when an item shipped wrong because shaping missed a question.
+
+## Step 4 — Report
+
+Deliver a short digest: the window, the bottleneck, the rework hotspot, the lead-time read, and the encoded changes (with paths). Keep it scannable.

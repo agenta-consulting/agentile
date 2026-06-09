@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# lal-sync — register/refresh the lean-agentic-loop plugin from this repo as a
+# snapshot install. This is the distribution path: what it produces is exactly
+# what someone else gets when they install. Run it after a batch of edits to
+# re-snapshot, or once to register the marketplace + install the first time.
+#
+# For a live edit loop on your own machine, run bin/lal-dev-link instead.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MARKET="lean-agentic-loop-local"
+PLUGIN="lean-agentic-loop"
+
+echo "Repo:        $REPO"
+echo "Marketplace: $MARKET"
+echo "Plugin:      $PLUGIN"
+echo
+
+# Validate before touching anything installed.
+claude plugin validate "$REPO"
+
+# Register the marketplace if missing, else update it from source.
+if claude plugin marketplace list 2>/dev/null | grep -q "$MARKET"; then
+  echo "Updating marketplace…"
+  claude plugin marketplace update "$MARKET"
+else
+  echo "Adding marketplace from $REPO…"
+  claude plugin marketplace add "$REPO"
+fi
+
+# Install if missing, else update.
+if claude plugin list 2>/dev/null | grep -q "$PLUGIN"; then
+  echo "Updating plugin…"
+  claude plugin update "$PLUGIN"
+else
+  echo "Installing plugin…"
+  claude plugin install "$PLUGIN@$MARKET"
+fi
+
+echo
+echo "Done. Restart your Claude Code session to apply."
