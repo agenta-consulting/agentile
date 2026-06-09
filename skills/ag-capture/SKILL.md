@@ -8,6 +8,20 @@ allowed-tools: Bash, Read, Edit
 
 Drop an idea into the Inbox as a **stub** in one move. A stub is a placeholder that is *not yet ready to build*. The whole point is that capture costs less than holding the idea in your head, so this skill never interrupts you.
 
+## Apply this project's playbook
+
+Before doing anything else, check for `.agentile/capture.md` (resolve `.agentile/`
+from the project root). If it exists, honour it:
+
+- If its frontmatter sets `delegate_to: <skill>`, run this stage by invoking that
+  skill with the current spec/context **instead of** the baseline below.
+- Invoke any skills listed in `also_run` alongside the baseline.
+- If `human_checkpoint: true`, stop after producing your output and require an
+  explicit human "approved" before handing off to the next stage.
+- Treat the prose body as project policy, layered on the baseline below.
+
+If the file is absent, use the baseline below unchanged.
+
 ## Rules
 
 - **Do not ask follow-up questions.** Whatever the user gave you is the stub.

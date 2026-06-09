@@ -8,6 +8,20 @@ allowed-tools: Bash, Read, Write, Edit, Agent
 
 The cheapest place to steer is *before* code exists. This skill reads a Ready spec plus the standing context and produces a plan you approve or correct — it writes no implementation code.
 
+## Apply this project's playbook
+
+Before doing anything else, check for `.agentile/plan.md` (resolve `.agentile/`
+from the project root). If it exists, honour it:
+
+- If its frontmatter sets `delegate_to: <skill>`, run this stage by invoking that
+  skill with the current spec/context **instead of** the baseline below.
+- Invoke any skills listed in `also_run` alongside the baseline.
+- If `human_checkpoint: true`, stop after producing your output and require an
+  explicit human "approved" before handing off to the next stage.
+- Treat the prose body as project policy, layered on the baseline below.
+
+If the file is absent, use the baseline below unchanged.
+
 ## Steps
 
 1. Identify the spec: `$ARGUMENTS` names a file in `specs/` (or ask which spec). Read it.

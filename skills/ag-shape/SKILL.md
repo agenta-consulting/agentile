@@ -10,6 +10,20 @@ Shaping is the bridge between a one-line stub and a buildable spec. It is **a co
 
 **You do not write any code in this skill.** You only produce a spec (or split/merge/drop the stub, or emit a spike).
 
+## Apply this project's playbook
+
+Before doing anything else, check for `.agentile/shape.md` (resolve `.agentile/`
+from the project root). If it exists, honour it:
+
+- If its frontmatter sets `delegate_to: <skill>`, run this stage by invoking that
+  skill with the current spec/context **instead of** the baseline below.
+- Invoke any skills listed in `also_run` alongside the baseline.
+- If `human_checkpoint: true`, stop after producing your output and require an
+  explicit human "approved" before handing off to the next stage.
+- Treat the prose body as project policy, layered on the baseline below.
+
+If the file is absent, use the baseline below unchanged.
+
 ## Step 1 — Load the project's definitions
 
 - Read `.agentile/shape.md` — this is **this project's Definition of Ready**: the exact questions a stub must answer, plus any house additions. Drive the interview against *this* list, not a generic one.

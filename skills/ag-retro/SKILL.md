@@ -10,6 +10,20 @@ The LEARN step. A non-coding pass that turns recent delivery into encoded lesson
 
 This skill **does not change code**. It reads history and proposes edits to the standing context.
 
+## Apply this project's playbook
+
+Before doing anything else, check for `.agentile/learn.md` (resolve `.agentile/`
+from the project root). If it exists, honour it:
+
+- If its frontmatter sets `delegate_to: <skill>`, run this stage by invoking that
+  skill with the current spec/context **instead of** the baseline below.
+- Invoke any skills listed in `also_run` alongside the baseline.
+- If `human_checkpoint: true`, stop after producing your output and require an
+  explicit human "approved" before handing off to the next stage.
+- Treat the prose body as project policy, layered on the baseline below.
+
+If the file is absent, use the baseline below unchanged.
+
 ## Step 1 — Gather the window
 
 Default to the last 7 days (or a window the user names). Collect, read-only:
