@@ -1,6 +1,6 @@
 # Shaping — Definition of Ready
 
-This file defines **what "shaped" means in this project**: the questions a stub must answer before it graduates from the Inbox into a Ready spec. The `/lal-shape` skill reads this file and runs the interview against it.
+This file defines **what "shaped" means in this project**: the questions a stub must answer before it graduates from the Inbox into a Ready spec. The `/ag-shape` skill reads this file and runs the interview against it.
 
 This is the single most useful file to tailor. Add a question and every future shaping conversation asks it. Remove one and it stops. The *structure* — interview one or two questions at a time, then write the spec — never changes; only the checklist below does.
 
@@ -15,7 +15,7 @@ This is the single most useful file to tailor. Add a question and every future s
 
 ## Triage (always run during shaping)
 
-- Estimate **Business Value × Technical Certainty** (see `.lal/config.md`).
+- Estimate **Business Value × Technical Certainty** (see `.agentile/config.md`).
 - Recommend a **route**: foreground pair, background agent, spike, or drop.
 
 ## Interview style

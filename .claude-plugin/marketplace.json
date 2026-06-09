@@ -1,18 +1,18 @@
 {
-  "name": "lean-agentic-loop-local",
+  "name": "agentile-local",
   "owner": {
     "name": "Keith Rowell",
     "email": "keith@keithrowell.com"
   },
   "metadata": {
-    "description": "Local marketplace for the lean-agentic-loop plugin during development.",
+    "description": "Local marketplace for the agentile plugin during development.",
     "version": "0.1.0"
   },
   "plugins": [
     {
-      "name": "lean-agentic-loop",
+      "name": "agentile",
       "source": "./",
-      "description": "The Lean Agentic Loop — capture, shape, spec, plan, build, verify, ship, learn — for small teams directing AI agents.",
+      "description": "Agentile — capture, shape, spec, plan, build, verify, ship, learn — for small teams directing AI agents.",
       "version": "0.1.0",
       "author": { "name": "Keith Rowell" },
       "category": "workflow",

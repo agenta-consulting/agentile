@@ -1,12 +1,12 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# LAL Stop/SubagentStop hook: hold "done" until the project's tests pass.
+# Agentile Stop/SubagentStop hook: hold "done" until the project's tests pass.
 #
-# Reads the configured `test` command from the project's .lal/gates.json and
+# Reads the configured `test` command from the project's .agentile/gates.json and
 # runs it. If tests fail, it emits a block decision so Claude keeps working
 # until they pass. No-op (allow stop) whenever:
-#   - .lal/gates.json is missing or unparseable,
+#   - .agentile/gates.json is missing or unparseable,
 #   - the `test` command is blank,
 #   - this stop was itself triggered by a prior block (stop_hook_active),
 #     which prevents an infinite loop.
@@ -54,6 +54,6 @@ allow if status.success?
 
 tail = (stdout.to_s + stderr.to_s).split("\n").last(20).join("\n")
 block(
-  "LAL gate: tests are failing, so the work is not done. Run the project test " \
+  "Agentile gate: tests are failing, so the work is not done. Run the project test " \
   "command (`#{cmd}`), fix the failures, and try again.\n\nLast output:\n#{tail}"
 )

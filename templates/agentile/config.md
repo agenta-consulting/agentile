@@ -1,6 +1,6 @@
-# LAL Config
+# Agentile Config
 
-This file tailors the Lean Agentic Loop for **this project**. The methodology (the skills, the loop, the gates) is fixed and installed; the *content* below is yours to edit. Change it freely — the loop's shape stays the same.
+This file tailors Agentile for **this project**. The methodology (the skills, the loop, the gates) is fixed and installed; the *content* below is yours to edit. Change it freely — the loop's shape stays the same.
 
 ## Paths
 
@@ -12,7 +12,7 @@ Where the loop keeps its artefacts. Edit if your repo uses different locations.
 
 ## Two-axis triage
 
-Every stub is scored on **Business Value** and **Technical Certainty**, then routed. The loop uses this table during `/lal-shape`. Adjust the routes to match how your team works.
+Every stub is scored on **Business Value** and **Technical Certainty**, then routed. The loop uses this table during `/ag-shape`. Adjust the routes to match how your team works.
 
 | | High certainty | Low certainty |
 |---|---|---|
@@ -28,7 +28,7 @@ A Low-certainty item usually leaves shaping as a **spike** (a timeboxed explorat
 
 ## Routes
 
-The names `/lal-shape` may recommend. Rename or re-scope to taste.
+The names `/ag-shape` may recommend. Rename or re-scope to taste.
 
 - **foreground** — pair in real time; you steer step by step.
 - **background** — hand to a background/async agent; review the resulting PR.

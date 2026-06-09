@@ -1,10 +1,10 @@
 ---
-name: lal-retro
-description: Close the Lean Agentic Loop with a data-driven mini-retro — compile a flow digest from git history, specs, and ADRs (and PRs when available), surface where work waited and what needed rework, then propose concrete updates to CLAUDE.md and ADRs. Non-coding. Trigger phrases include "/lal-retro", "run a retro", "flow digest", "what did we learn", "weekly retro".
+name: ag-retro
+description: Close the loop with a data-driven mini-retro — compile a flow digest from git history, specs, and ADRs (and PRs when available), surface where work waited and what needed rework, then propose concrete updates to CLAUDE.md and ADRs. Non-coding. Trigger phrases include "/ag-retro", "run a retro", "flow digest", "what did we learn", "weekly retro".
 allowed-tools: Bash, Read, Edit, Agent
 ---
 
-# lal-retro
+# ag-retro
 
 The LEARN step. A non-coding pass that turns recent delivery into encoded lessons, so the next cycle is cheaper. Replaces the status-meeting standup with a digest of what the data actually shows.
 
@@ -38,7 +38,7 @@ For each lesson worth keeping, propose a concrete change (and make it on approva
 
 - A **`CLAUDE.md`** edit — a new convention, a do/don't, a clarified standard.
 - A new or updated **ADR** when the lesson is a decision.
-- A **`.lal/shaping.md`** addition when an item shipped wrong because shaping missed a question.
+- A **`.agentile/shaping.md`** addition when an item shipped wrong because shaping missed a question.
 
 ## Step 4 — Report
 

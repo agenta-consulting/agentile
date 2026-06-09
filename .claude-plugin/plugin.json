@@ -1,6 +1,6 @@
 {
-  "name": "lean-agentic-loop",
-  "description": "The Lean Agentic Loop (LAL) — a low-ceremony methodology for 1–5 person teams who direct AI agents: capture → shape → spec → plan → build → verify → ship → learn. Ships the fixed methodology (skills, agents, hooks); each project tailors its content via scaffolded .lal/ config.",
+  "name": "agentile",
+  "description": "Agentile — a low-ceremony methodology for 1–5 person teams who direct AI agents: capture → shape → spec → plan → build → verify → ship → learn. Ships the fixed methodology (skills, agents, hooks); each project tailors its content via scaffolded .agentile/ config.",
   "author": { "name": "Keith Rowell", "email": "keith@keithrowell.com" },
   "version": "0.1.0",
   "license": "MIT",

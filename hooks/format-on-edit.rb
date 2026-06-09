@@ -1,11 +1,11 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# LAL PostToolUse hook: run the project's formatter after an edit.
+# Agentile PostToolUse hook: run the project's formatter after an edit.
 #
-# Reads the configured `format` command from the project's .lal/gates.json and
+# Reads the configured `format` command from the project's .agentile/gates.json and
 # runs it. No-op (exit 0, no output) whenever:
-#   - .lal/gates.json is missing or unparseable,
+#   - .agentile/gates.json is missing or unparseable,
 #   - the `format` command is blank,
 #   - the edited file is outside the project.
 # So installing the plugin never disrupts an unconfigured repo.

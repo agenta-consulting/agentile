@@ -1,0 +1,10 @@
+{
+  "$comment": "Deterministic gates for Agentile. The /ag-* skills, the ag-builder/ag-reviewer agents, and the plugin hooks read these commands instead of improvising them. Leave a value as an empty string to disable that gate — hooks no-op when a command is empty or missing, so an unconfigured repo is never blocked. Fill these in with /ag-init or by hand.",
+  "format": "",
+  "lint": "",
+  "test": "",
+  "build": "",
+  "deploy": "",
+  "protected_paths": [],
+  "protected_branches": ["main", "master"]
+}

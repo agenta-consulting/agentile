@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# lal-sync — register/refresh the lean-agentic-loop plugin from this repo as a
+# ag-sync — register/refresh the agentile plugin from this repo as a
 # snapshot install. This is the distribution path: what it produces is exactly
 # what someone else gets when they install. Run it after a batch of edits to
 # re-snapshot, or once to register the marketplace + install the first time.
 #
-# For a live edit loop on your own machine, run bin/lal-dev-link instead.
+# For a live edit loop on your own machine, run bin/ag-dev-link instead.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MARKET="lean-agentic-loop-local"
-PLUGIN="lean-agentic-loop"
+MARKET="agentile-local"
+PLUGIN="agentile"
 
 echo "Repo:        $REPO"
 echo "Marketplace: $MARKET"
