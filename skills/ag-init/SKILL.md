@@ -33,7 +33,7 @@ Copy from `templates/` into the project root, preserving structure:
 
 - `inbox.md`
 - `.agentile/config.md`
-- `.agentile/shaping.md`
+- `.agentile/shape.md`
 - `.agentile/gates.json` — then fill in the commands and protected branches gathered in Step 2.
 - `.agentile/spec-template.md`
 - `.agentile/adr-template.md`
@@ -58,4 +58,4 @@ Merge the plugin's hooks into the project so the gates enforce themselves. The p
 
 Summarise what was created versus skipped, then point the user at the next move:
 
-> Agentile is initialised. Capture ideas with `/ag-capture`, review them with `/ag-inbox`, and shape one into a spec with `/ag-shape`. Tailor what "Ready" means by editing `.agentile/shaping.md`.
+> Agentile is initialised. Capture ideas with `/ag-capture`, review them with `/ag-inbox`, and shape one into a spec with `/ag-shape`. Tailor what "Ready" means by editing `.agentile/shape.md`.

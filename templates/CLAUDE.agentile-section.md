@@ -5,9 +5,9 @@ This project runs the **Agentile**: capture → shape → spec → plan → buil
 ### Where things live
 
 - **Inbox** (`inbox.md`) — one-line stubs awaiting shaping. Capture freely with `/ag-capture`.
-- **Specs** (`specs/`) — shaped, Ready-to-build specs. The Definition of Ready is `.agentile/shaping.md`.
+- **Specs** (`specs/`) — shaped, Ready-to-build specs. The Definition of Ready is `.agentile/shape.md`.
 - **ADRs** (`docs/adr/`) — the *why* behind significant decisions.
-- **Config** (`.agentile/`) — this project's tailoring: `config.md` (paths + triage), `shaping.md` (what Ready means), `gates.json` (deterministic build/test/lint/deploy commands), and the spec/ADR templates.
+- **Config** (`.agentile/`) — this project's tailoring: `config.md` (paths + triage), `shape.md` (what Ready means), `gates.json` (deterministic build/test/lint/deploy commands), and the spec/ADR templates.
 
 ### How to work
 

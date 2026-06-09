@@ -27,13 +27,13 @@ The plugin ships the **methodology** — the skills, the agents, the hooks. You 
 
 | File | What it controls |
 |------|------------------|
-| `.agentile/shaping.md` | **What "Ready" means** — the questions a stub must answer before it's a spec. The prime tailoring surface. |
+| `.agentile/shape.md` | **What "Ready" means** — the questions a stub must answer before it's a spec. The prime tailoring surface. |
 | `.agentile/config.md` | Paths and the Business Value × Technical Certainty triage routes. |
 | `.agentile/gates.json` | The deterministic commands — format, lint, test, build, deploy — and protected branches. |
 | `.agentile/spec-template.md` | The shape of a Ready spec. |
 | `.agentile/adr-template.md` | The shape of an ADR. |
 
-The fixed skills *read* these at runtime, so content flexes while the loop's structure holds. To change what a shaped item must answer, edit one file — `.agentile/shaping.md` — and every future `/ag-shape` asks accordingly.
+The fixed skills *read* these at runtime, so content flexes while the loop's structure holds. To change what a shaped item must answer, edit one file — `.agentile/shape.md` — and every future `/ag-shape` asks accordingly.
 
 ## Install (in a project)
 

@@ -12,7 +12,7 @@ Shaping is the bridge between a one-line stub and a buildable spec. It is **a co
 
 ## Step 1 — Load the project's definitions
 
-- Read `.agentile/shaping.md` — this is **this project's Definition of Ready**: the exact questions a stub must answer, plus any house additions. Drive the interview against *this* list, not a generic one.
+- Read `.agentile/shape.md` — this is **this project's Definition of Ready**: the exact questions a stub must answer, plus any house additions. Drive the interview against *this* list, not a generic one.
 - Read `.agentile/config.md` for the inbox/specs paths and the two-axis triage table.
 - Read the project's `CLAUDE.md` (and `docs/adr/`) for standing context so your questions fit the architecture.
 
@@ -23,7 +23,7 @@ Shaping is the bridge between a one-line stub and a buildable spec. It is **a co
 ## Step 3 — Interview
 
 - Ask **one or two questions at a time**, using `AskUserQuestion` where the choices are discrete. Let each answer shape the next question.
-- Work through every required item in `.agentile/shaping.md` — typically problem/who/why-now, acceptance criteria, edge cases and failure paths, scope boundary, affected areas, and open questions — plus any house additions.
+- Work through every required item in `.agentile/shape.md` — typically problem/who/why-now, acceptance criteria, edge cases and failure paths, scope boundary, affected areas, and open questions — plus any house additions.
 - Prefer concrete examples over abstractions. Push back gently on vague acceptance criteria.
 
 ## Step 4 — Triage
