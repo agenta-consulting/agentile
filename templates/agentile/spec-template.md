@@ -1,12 +1,17 @@
 ---
 title: <short imperative title>
 slug: <kebab-case-slug>
-status: ready
+status: ready                 # ready | in_progress | shipped
 type: feature
 route: <foreground | background | spike>
 business_value: <high | medium | low>
 technical_certainty: <high | medium | low>
+priority:                     # set by /ag-prioritise (1 = highest); blank until ranked
 created: <YYYY-MM-DD>
+# Claim fields — set by /ag-next when the item is pulled; blank until claimed:
+claimed_by:                   # session id (the resume handle: claude --resume <id>)
+label:                        # optional human label for the loop
+claimed_at:                   # ISO8601, e.g. 2026-06-10T12:04:00Z
 ---
 
 # <Title>
