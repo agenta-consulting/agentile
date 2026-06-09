@@ -169,8 +169,10 @@ Modified:
 - A central kanban UI; `/ag-wip` text view is enough for v1.
 - Auto-running loops (a background runner that calls `ag-next` on a schedule) — the pieces enable it, but the runner itself is a later piece.
 
-## 9. Open decisions for implementation
+## 9. Deferred decisions (build the certain core; revisit later)
 
-- Exact stale-claim TTL default (and whether it lives in `next.md` or `prioritise.md`).
-- Whether `ag-next` auto-starts the cycle or just claims + reports (likely a `next.md` policy flag).
-- Helper language/location confirmed as Ruby in `bin/` (matches existing hooks).
+These are intentionally **not** decided now. v1 takes the minimal, safe, forward-compatible default for each, so nothing is blocked and nothing is foreclosed.
+
+- **`ag-next` behaviour → claim + report (v1).** It atomically claims the top unclaimed item, stamps it, and reports what it pulled — it does **not** auto-start the cycle. Auto-start is a future `next.md` policy flag; "claim + report" is its prerequisite, so no rework.
+- **Stale claims → surfaced, not auto-reclaimed (v1).** `/ag-wip` shows each claim's age and flags likely-stale ones; reclaiming is **manual** (edit the spec / a small command). The TTL + auto-reclaim policy is parked.
+- **Confirmed now:** the claim helper is Ruby in `bin/` (matches the existing hooks).
