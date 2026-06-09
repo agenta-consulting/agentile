@@ -36,7 +36,13 @@ File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
   fm["claimed_by"] = session
   fm["label"]      = label.to_s
   fm["claimed_at"] = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+  # Note: this normalises the entire frontmatter block via YAML (key order/quoting
+  # may change), not just the claim fields — acceptable for v1.
   body = chosen[:raw].sub(/\A---\n.*?\n---\n/m, "---\n#{fm.to_yaml.sub(/\A---\n/, "")}---\n")
+  if body == chosen[:raw]
+    warn "ag-claim: could not rewrite frontmatter for #{chosen[:path]}"
+    exit 1
+  end
   File.write(chosen[:path], body)
   puts chosen[:path]
 end

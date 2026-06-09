@@ -15,7 +15,7 @@ This skill is **idempotent**: it must never overwrite a file that already exists
 The files to copy live in this plugin's `templates/` directory. Resolve its absolute path:
 
 1. Run `echo "$CLAUDE_PLUGIN_ROOT"`. If set, templates are at `$CLAUDE_PLUGIN_ROOT/templates/`.
-2. If unset, locate the plugin install: look under `~/.claude/plugins/cache/agentile-local/agentile/*/templates/` (or the symlinked dev path if `bin/ag-dev-link` was used). Use the newest version directory.
+2. If unset, locate the plugin install: look under `~/.claude/plugins/cache/agentile/agentile/*/templates/` (or the symlinked dev path if `bin/ag-dev-link` was used). Use the newest version directory.
 
 ## Step 2 — Confirm setup choices
 
