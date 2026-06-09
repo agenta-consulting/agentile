@@ -10,7 +10,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MARKET="agentile-local"
+MARKET="agentile"
 PLUGIN="agentile"
 
 VERSION="$(ruby -rjson -e 'print JSON.parse(File.read(ARGV[0]))["version"]' \

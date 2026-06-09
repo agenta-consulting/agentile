@@ -40,11 +40,9 @@ The fixed skills *read* these at runtime, so content flexes while the loop's str
 1. Add the marketplace and install the plugin:
 
    ```
-   claude plugin marketplace add <path-or-git-url-to-this-repo>
-   claude plugin install agentile@agentile-local
+   claude plugin marketplace add agenta-consulting/agentile
+   claude plugin install agentile@agentile
    ```
-
-   (Or run [`bin/ag-sync`](./bin/ag-sync), which does both.)
 2. Restart the session, then in your target project run `/ag-init` to scaffold `inbox.md`, `.agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section.
 3. Start the loop: `/ag-capture`, `/ag-inbox`, `/ag-shape`, …
 
