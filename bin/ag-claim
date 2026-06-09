@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# Atomically claim the highest-priority unclaimed ready spec.
+# Usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]
+# Prints the claimed spec path, or "NONE" (no ready specs) / "WIP_FULL".
+require "yaml"
+
+specs_dir, session, label, wip = ARGV
+abort "usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]" if specs_dir.nil? || session.to_s.empty?
+wip = (wip.to_s.empty? ? 0 : wip.to_i) # 0 => unlimited
+
+lock_path = File.join(specs_dir, ".pull.lock")
+File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
+  lock.flock(File::LOCK_EX)
+
+  specs = Dir.glob(File.join(specs_dir, "*.md")).map do |path|
+    raw = File.read(path)
+    fm  = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time]) || {})
+    { path: path, raw: raw, fm: fm }
+  end
+
+  in_progress = specs.count { |s| s[:fm]["status"] == "in_progress" }
+  if wip.positive? && in_progress >= wip
+    puts "WIP_FULL"; next
+  end
+
+  ready = specs.select { |s| s[:fm]["status"] == "ready" && s[:fm]["claimed_by"].to_s.empty? }
+  if ready.empty?
+    puts "NONE"; next
+  end
+
+  chosen = ready.min_by { |s| [s[:fm]["priority"] || Float::INFINITY, File.basename(s[:path])] }
+
+  fm = chosen[:fm]
+  fm["status"]     = "in_progress"
+  fm["claimed_by"] = session
+  fm["label"]      = label.to_s
+  fm["claimed_at"] = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+  body = chosen[:raw].sub(/\A---\n.*?\n---\n/m, "---\n#{fm.to_yaml.sub(/\A---\n/, "")}---\n")
+  File.write(chosen[:path], body)
+  puts chosen[:path]
+end
