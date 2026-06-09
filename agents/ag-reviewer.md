@@ -35,3 +35,5 @@ If the file is absent, use the baseline below unchanged.
 ## What to return
 
 A verdict — **pass** or **bounce back to build** — with a specific, prioritised list of findings (file:line where possible), each marked must-fix or nice-to-have. If you run the gates, show the evidence. If you pass it, say what you verified, not just "looks good".
+
+Apply the Definition of Done from `.agentile/verify.md` (its prose section) in addition to the baseline checks above. If `verify.md` sets `human_checkpoint: true`, end by requesting explicit human sign-off and do not signal ready-to-ship until it is given.

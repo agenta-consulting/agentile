@@ -31,4 +31,4 @@ If the file is absent, use the baseline below unchanged.
    - **ag-planner subagent** — dispatch the `ag-planner` agent (fresh context) for a focused plan when the spec is sizable or you want an independent read.
 4. The plan must cover: **files to touch**, **approach**, **test strategy** (which gates from `.agentile/gates.json` prove it), and **risks / unknowns**.
 5. **ADR check** — if the spec makes a far-reaching or hard-to-reverse decision, draft a new ADR in `docs/adr/` from `.agentile/adr-template.md` (next number in sequence) as part of the plan, and have the user accept it.
-6. Present the plan for approval. On approval, hand off to the build step (the `ag-builder` agent, ideally in a worktree). Do not write implementation code in this skill.
+6. Present the plan for approval. On approval, hand off to the build step: first read `.agentile/build.md`; if it sets `delegate_to: <skill>`, invoke that skill with the spec and approved plan **instead**; otherwise dispatch the `ag-builder` agent (ideally in a worktree). Do not write implementation code in this skill.
