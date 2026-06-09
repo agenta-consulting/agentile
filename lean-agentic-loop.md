@@ -102,6 +102,16 @@ Outcome of a good shaping session: the stub graduates out of `inbox.md` and beco
 
 A practical rhythm for 1–5 people: capture freely all day; shape in a short focused pass (e.g., once a day or before each build cycle) by walking the top of the Inbox with the agent. Don't let the Inbox become a graveyard — if a stub has sat unshaped for weeks, that's a signal to drop it.
 
+### Prioritisation and pulling as distinct acts
+
+The ready queue needs two operations that are easy to conflate but must stay separate.
+
+**Prioritisation** is an editorial act: you order the ready list by scoring each spec on Business Value × Technical Certainty and writing that score onto it. It answers "what should come next?" and can be re-run whenever the queue changes. It produces an ordered list; it does not start any work.
+
+**Pulling** is a transactional act: you claim the top unclaimed item, stamp it as in-progress, and begin a cycle. It answers "I am taking this one now" and must be atomic — especially when multiple loops run concurrently. A file lock ensures two loops can never claim the same item. The claim records the session id, so an interrupted loop can be resumed precisely where it stopped.
+
+Keeping them separate means prioritisation decisions (human, deliberate, editorial) never get tangled with execution mechanics (machine, concurrent, transactional).
+
 ### The loop (repeats per work item; a "cycle" is hours to a day, not a two-week sprint)
 
 **0. Standing context (set up once, maintained always).**
@@ -166,6 +176,14 @@ Claude Code maps onto LAL almost one-to-one. Here's the concrete setup.
 - Package every repeatable step as a **custom slash command** or a script Claude calls: `/test`, `/lint`, `/build`, `/deploy`. This is "reducing the agent's agency" — Claude runs the gate, it doesn't improvise it.
 - Enforce process with **hooks** (`.claude/settings.json`): e.g. a `PostToolUse` hook that auto-runs formatter/linter after every edit, or a `PreToolUse` hook that blocks edits to protected paths. Hooks make the rules deterministic instead of relying on Claude to remember.
 - For parallel agents, give each its own **git worktree** (or use the agent tool's `isolation: "worktree"`) so concurrent work doesn't collide — this is how you keep trunk-based concurrency safe.
+
+### 3b. PRIORITISE, NEXT, WIP → queue management for concurrent loops
+
+Before a build cycle begins, the ready queue should be ordered. `/ag-prioritise` scores each spec and writes a `priority` value; the weighting and WIP limit live in `.agentile/prioritise.md` so you can tune the scheme per project. Run it whenever new specs arrive or priorities shift.
+
+`/ag-next` is the pull step: it runs `bin/ag-claim` under a file lock, atomically stamps the top unclaimed spec with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Because the lock is at the filesystem level, two Claude Code sessions running concurrently will never grab the same item — this is the safety primitive that makes multiple loops viable.
+
+The session id doubles as a resume handle: `claude --resume <id>` restores the loop to the exact point it was interrupted, so a cycle is never silently lost. `/ag-wip` lists all in-flight claims and prints the resume command for each; stale claims (claimed but idle) are surfaced for human judgement rather than auto-reclaimed.
 
 ### 4. VERIFY → a reviewer subagent + `/security-review` + CI
 - Spin up a **separate review subagent** with fresh context to critique the builder's diff ("trust but verify" — the second agent catches what the first missed). The Agent tool / subagents make this a one-call step.

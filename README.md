@@ -35,6 +35,26 @@ The plugin ships the **methodology** — the skills, the agents, the hooks. You 
 
 The fixed skills *read* these at runtime, so content flexes while the loop's structure holds. To change what a shaped item must answer, edit one file — `.agentile/shape.md` — and every future `/ag-shape` asks accordingly.
 
+### Customising any stage
+
+Every loop stage can be further tailored through a **playbook**: a `.agentile/<stage>.md` file with optional YAML frontmatter and prose policy. The frontmatter keys are:
+
+- `delegate_to: <skill>` — run this stage by invoking a named skill instead of the built-in behaviour.
+- `also_run: [skill-a, skill-b]` — run additional skills alongside the built-in.
+- `human_checkpoint: true` — pause for human sign-off before the stage completes.
+
+Absent a playbook, the built-in baseline applies. Use `/ag-customise <stage>` to build one out conversationally — it interviews you about your project's needs and writes the file.
+
+### Concurrent loops
+
+Two skills govern the transition from ready work to in-flight work, and they are deliberately separate acts:
+
+- **`/ag-prioritise`** orders the ready list by writing a `priority` score onto each spec (default scheme: Business Value × Technical Certainty; the `wip_limit` and weighting live in `.agentile/prioritise.md`). Run it whenever the ready queue changes.
+- **`/ag-next`** is a transactional pull: it atomically claims the top unclaimed ready spec under a file lock (`bin/ag-claim`), stamps it with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Two loops running concurrently can never grab the same item.
+- **`/ag-wip`** lists every in-progress claim and prints the resume command (`claude --resume <session-id>`) for each. Stale claims are surfaced for human judgement — Agentile flags them, but does not auto-reclaim.
+
+The session id is a resume handle, so a loop that was interrupted mid-cycle can be picked back up exactly where it stopped.
+
 ## Install (in a project)
 
 1. Add the marketplace and install the plugin:
@@ -48,7 +68,7 @@ The fixed skills *read* these at runtime, so content flexes while the loop's str
 
 ## Skills
 
-`/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-retro`.
+`/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-customise`, `/ag-retro`.
 
 ## Agents (the "hats")
 
