@@ -5,6 +5,5 @@
   "version": "0.1.0",
   "license": "MIT",
   "keywords": ["agentic", "agile", "methodology", "workflow", "spec-driven", "lean"],
-  "skills": "./skills/",
-  "hooks": "./hooks/hooks.json"
+  "skills": "./skills/"
 }

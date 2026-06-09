@@ -21,19 +21,19 @@ claude plugin validate "$REPO"
 
 # Register the marketplace if missing, else update it from source.
 if claude plugin marketplace list 2>/dev/null | grep -q "$MARKET"; then
-  echo "Updating marketplace…"
+  echo "Updating marketplace..."
   claude plugin marketplace update "$MARKET"
 else
-  echo "Adding marketplace from $REPO…"
+  echo "Adding marketplace from ${REPO}..."
   claude plugin marketplace add "$REPO"
 fi
 
 # Install if missing, else update.
 if claude plugin list 2>/dev/null | grep -q "$PLUGIN"; then
-  echo "Updating plugin…"
+  echo "Updating plugin..."
   claude plugin update "$PLUGIN"
 else
-  echo "Installing plugin…"
+  echo "Installing plugin..."
   claude plugin install "$PLUGIN@$MARKET"
 fi
 
