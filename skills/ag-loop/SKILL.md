@@ -41,6 +41,10 @@ Invoke the `ag-next` skill to atomically claim the highest-priority ready spec. 
 - `BLOCKED` → all prioritised specs are waiting on unshipped dependencies. In drain mode, stop and report that the backlog is blocked; suggest `/ag-prioritise` to inspect dependencies. Under `/loop`, report "idle — blocked on dependencies" and return so `/loop` can re-invoke later (a dependency may ship in another iteration).
 - `UNPRIORITISED` → ready specs exist but none have been prioritised. In drain mode, stop and report that the backlog needs prioritisation; suggest `/ag-prioritise`. Under `/loop`, report "idle — backlog unprioritised" and return so the human can prioritise and the next iteration can proceed.
 
+**Never stop silently.** Whenever you stop in drain mode (i.e. invoked as a bare `/ag-loop`, not under `/loop`) because there was nothing to do — `NONE`, `BLOCKED`, `UNPRIORITISED`, or `max_iterations` reached — end your report with an explicit reminder, so the user is never left wondering why it stopped:
+
+> Stopped (drain mode — one pass). To keep the loop running and pick up new work as it appears, run `/loop /ag-loop`.
+
 ### Step 3 — Guard: max iterations
 
 If the counter has reached `max_iterations` before a new claim, report the limit reached, list what was completed, and stop.
