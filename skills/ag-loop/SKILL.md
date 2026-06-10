@@ -38,6 +38,8 @@ Invoke the `ag-next` skill to atomically claim the highest-priority ready spec. 
 - A file path → claim succeeded; proceed to Step 4 with that path.
 - `NONE` → the backlog is drained. Report what was completed this run and stop. If running under `/loop` and `on_empty` is `watch`, report "idle — nothing ready" so `/loop` can pace its next iteration cheaply. If `on_empty` is `stop`, signal that the loop is complete and exit.
 - `WIP_FULL` → the WIP limit is already reached. Report that the WIP limit is held, suggest running `/ag-wip` to inspect what is in flight, and stop.
+- `BLOCKED` → all prioritised specs are waiting on unshipped dependencies. In drain mode, stop and report that the backlog is blocked; suggest `/ag-prioritise` to inspect dependencies. Under `/loop`, report "idle — blocked on dependencies" and return so `/loop` can re-invoke later (a dependency may ship in another iteration).
+- `UNPRIORITISED` → ready specs exist but none have been prioritised. In drain mode, stop and report that the backlog needs prioritisation; suggest `/ag-prioritise`. Under `/loop`, report "idle — backlog unprioritised" and return so the human can prioritise and the next iteration can proceed.
 
 ### Step 3 — Guard: max iterations
 
@@ -84,8 +86,9 @@ On approval (or when no pause applies):
 1. Ship or merge the work per the project's conventions (check `.agentile/ship.md` if present; otherwise follow repository conventions).
 2. Set `status: shipped` in the spec's frontmatter.
 3. Clear the claim fields: remove or blank `claimed_by`, `claimed_at`, and `label`.
-4. Append the spec slug to the `completed` list and increment the counter.
-5. Return to Step 1 for the next iteration.
+4. Move the spec file into `specs/archive/` (create the directory if it does not exist) using `git mv`, preserving its `NNNN-<slug>.md` filename. This removes it from the active numbered list while keeping it resolvable as a shipped dependency by `ag-claim`.
+5. Append the spec slug to the `completed` list and increment the counter.
+6. Return to Step 1 for the next iteration.
 
 ## Pausing and resuming
 
@@ -97,6 +100,8 @@ The loop halts and reports its summary in any of these situations:
 
 - `NONE` returned by `ag-next` (backlog drained)
 - `WIP_FULL` returned by `ag-next` (WIP limit reached)
+- `BLOCKED` returned by `ag-next` in drain mode (all prioritised specs blocked on dependencies)
+- `UNPRIORITISED` returned by `ag-next` in drain mode (no prioritised specs to claim)
 - Gate failure past `verify_retry_limit` with `stop_on_gate_failure: true`
 - `max_iterations` reached
 - Any unrecoverable error (missing required file, agent crash, etc.)

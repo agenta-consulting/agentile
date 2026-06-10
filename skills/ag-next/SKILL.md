@@ -51,5 +51,7 @@ If the file is absent, use the baseline below unchanged.
    - **A file path** — the claim succeeded. Report: claimed `<path>` as session `<session-id>`. Tell the user that to resume this loop later they can run `claude --resume <session-id>`.
    - **`NONE`** — no ready work is available. Suggest running `/ag-shape` to shape inbox items or `/ag-prioritise` to rank the backlog.
    - **`WIP_FULL`** — the WIP limit (`<wip_limit>`) is already reached. Suggest shipping or releasing something first, then checking `/ag-wip` to see what is in flight.
+   - **`BLOCKED`** — all prioritised ready specs are waiting on unshipped dependencies; no work can be claimed right now. Suggest running `/ag-prioritise` to see which items are blocked and what each is waiting on.
+   - **`UNPRIORITISED`** — there is shaped work in the backlog but none of it has been prioritised yet (no `NNNN-` filename prefix). Suggest running `/ag-prioritise` to rank and number the ready specs so they can be claimed.
 
 6. **v1 behaviour: claim and report only — do NOT auto-start the build cycle.** Tell the user they can now run `/ag-plan <path>` to begin planning the claimed spec.
