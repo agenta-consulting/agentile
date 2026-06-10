@@ -32,7 +32,7 @@ or any other subdirectory.
 
 For each file, read its frontmatter and classify it into one of three groups:
 
-- **Prioritised** — filename begins with an `NNNN-` prefix (four or more digits followed
+- **Prioritised** — filename begins with an `NNNN-` prefix (one or more digits followed
   by a hyphen). Sort these ascending by their numeric prefix to produce the current
   queue order.
 - **Unprioritised ready** — filename has no `NNNN-` prefix and `status: ready`.
@@ -82,6 +82,11 @@ and unprioritised — using dense sequential prefixes: `0001-<slug>.md`,
 `0002-<slug>.md`, and so on. Strip any existing `NNNN-` prefix from the filename to
 obtain the bare `<slug>` before constructing the new name. Perform every rename with
 `git mv` so the history is preserved.
+
+To avoid intermediate filename collisions (e.g. renaming `0002-b.md` → `0001-b.md` while
+`0001-a.md` → `0002-a.md`), first move all affected files to unique temporary names
+(such as `tmp-<slug>.md` or a high reserved prefix), then move them to their final
+`NNNN-<slug>.md` names.
 
 **Never rename in-progress specs.** Their filenames are fixed references that may be
 held by another active session's claim; leave them entirely untouched.
