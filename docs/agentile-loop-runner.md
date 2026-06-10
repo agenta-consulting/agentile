@@ -6,7 +6,12 @@ Design spec. Status: draft for review. Date: 2026-06-10.
 
 Agentile has the pieces to run work — `/ag-prioritise` orders the ready backlog, `/ag-next` atomically claims the top item (session-stamped, resumable), and the per-stage playbooks customise how each stage runs. What's missing is the **runner**: something that pulls an item, carries it through the cycle, and goes back for the next — so a person isn't hand-invoking each `/ag-` command. This was explicitly deferred (the customisation/concurrency spec, §8: "auto-running loops — the pieces enable it, the runner itself is a later piece") and supersedes the parked `auto_start` flag.
 
-Claude Code is **turn-based** — there is no always-on process. So the runner is **drain mode**: a single `/ag-loop` invocation works through the ready backlog *within the turn*, keeping full context across items, and **pauses** (ends the turn) at human checkpoints. The human resumes by replying. This needs no external scheduler. (A "watch mode" that keeps polling an empty backlog is out of scope — the existing `/loop` harness can wrap `/ag-loop` for that later.)
+Claude Code is **turn-based** — there is no always-on process. So `/ag-loop` itself is **drain mode**: a single invocation works through the ready backlog *within the turn*, keeping full context across items, and **pauses** (ends the turn) at human checkpoints. The human resumes by replying. This needs no external scheduler.
+
+To also **wait for new work and self-start on it** ("watch mode"), `/ag-loop` rides Claude Code's existing **`/loop`** primitive rather than reinventing a scheduler — `/loop` is exactly "run a command repeatedly, on an interval or self-paced". So:
+
+- **`/ag-loop`** alone → drain the current backlog, then stop when it empties.
+- **`/loop /ag-loop`** → drain **and watch**: each tick drains; when the backlog is empty it waits (self-paced by default — longer when idle, sooner when active); when new ready work appears, the next tick starts on it. Pause-before-ship checkpoints still apply; a tick that pauses ends with the item `in_progress`, and the next tick resumes it (via the resume-check) before claiming anything new.
 
 ## The runner
 
@@ -45,6 +50,8 @@ max_iterations: 5          # items per /ag-loop invocation — a runaway guard
 pause_before_ship: true    # stop for human sign-off before each ship/merge
 stop_on_gate_failure: true # halt/pause on a failing gate rather than continuing
 verify_retry_limit: 1      # bounce a failed verify back to build this many times before pausing
+on_empty: watch            # under /loop, an empty backlog: watch (keep waiting) | stop (end the loop)
+watch: self-paced          # how to wait when idle: self-paced | a fixed interval like 10m
 ---
 
 # Loop policy
@@ -52,6 +59,11 @@ verify_retry_limit: 1      # bounce a failed verify back to build this many time
 Notes on how this project wants the runner to behave. The runner also honours
 every per-stage `human_checkpoint: true` regardless of these settings.
 ```
+
+`on_empty`/`watch` only take effect when `/ag-loop` is run under `/loop` (the
+watch case). A bare `/ag-loop` always drains-and-stops, because a single turn
+cannot wait. When run under `/loop` with `on_empty: watch`, an empty tick keeps
+the loop alive and waits; with `on_empty: stop`, an empty tick ends the `/loop`.
 
 Defaults are conservative: bounded iterations, pause before merge, stop on red. A team loosens them deliberately (e.g. `pause_before_ship: false` for a low-risk repo with strong gates).
 
@@ -77,14 +89,24 @@ New:
 Modified:
 
 - `skills/ag-init/SKILL.md` — scaffold `loop.md`; mention `/ag-loop` in the closing report.
-- `README.md`, `lean-agentic-loop.md`, `templates/CLAUDE.agentile-section.md` — document the runner, drain mode, the default pause-before-ship posture, and that it supersedes `auto_start`.
+- `README.md`, `lean-agentic-loop.md`, `templates/CLAUDE.agentile-section.md` — document the runner, drain mode, **watch mode via `/loop /ag-loop`** (the two invocations), the default pause-before-ship posture, and that it supersedes `auto_start`.
 - `templates/agentile/next.md` — drop/redirect the reserved `auto_start` note now that `/ag-loop` owns iteration.
+
+## Watch mode (via `/loop`)
+
+Watch is delivered by running `/ag-loop` under Claude Code's `/loop`, not by a bespoke scheduler. The implementation work is therefore mostly making `/ag-loop` behave well as a `/loop` body:
+
+- An empty tick is cheap and reports "idle — nothing ready" rather than erroring.
+- When self-paced, it picks a sensible re-check cadence (wait longer when idle, return promptly when it just did work) using the harness's wakeup scheduling.
+- A tick that finds an `in_progress` item still awaiting a human checkpoint does **not** claim new work — it reports "awaiting your approval on X" and waits.
+- `on_empty: stop` lets the loop terminate itself once the backlog drains.
+
+Documentation must teach the two invocations clearly: `/ag-loop` (drain once) vs `/loop /ag-loop` (drain + watch).
 
 ## Out of scope
 
-- **Watch mode** (polling an empty backlog) — wrap `/ag-loop` with the existing `/loop` harness when wanted; not built here.
 - **Scheduled/unattended cloud runs** — possible via the `schedule` skill later; a detached runner can't service a live human checkpoint, so it's a separate mode.
-- Parallel *fan-out within one `/ag-loop`* (claiming several items at once) — the loop is sequential per session; parallelism comes from running multiple `/ag-loop` sessions.
+- Parallel fan-out within one `/ag-loop` — sequential per session; parallelism comes from running multiple `/ag-loop` sessions.
 
 ## Deferred / open
 
