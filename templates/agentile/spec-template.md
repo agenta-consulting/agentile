@@ -2,11 +2,11 @@
 title: <short imperative title>
 slug: <kebab-case-slug>
 status: ready                 # ready | in_progress | shipped
+depends_on: []                # slugs of specs that must ship first (by slug, not filename); blank = none
 type: feature
 route: <foreground | background | spike>
 business_value: <high | medium | low>
 technical_certainty: <high | medium | low>
-priority:                     # set by /ag-prioritise (1 = highest); blank until ranked
 created: <YYYY-MM-DD>
 # Claim fields — set by /ag-next when the item is pulled; blank until claimed:
 claimed_by:                   # session id (the resume handle: claude --resume <id>)

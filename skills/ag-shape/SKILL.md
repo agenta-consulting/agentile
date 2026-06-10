@@ -37,8 +37,9 @@ If the file is absent, use the baseline below unchanged.
 ## Step 3 — Interview
 
 - Ask **one or two questions at a time**, using `AskUserQuestion` where the choices are discrete. Let each answer shape the next question.
-- Work through every required item in `.agentile/shape.md` — typically problem/who/why-now, acceptance criteria, edge cases and failure paths, scope boundary, affected areas, and open questions — plus any house additions.
+- Work through every required item in `.agentile/shape.md` — typically problem/who/why-now, acceptance criteria, edge cases and failure paths, scope boundary, affected areas, open questions, and dependencies — plus any house additions.
 - Prefer concrete examples over abstractions. Push back gently on vague acceptance criteria.
+- **Dependencies**: ask whether this item depends on any other specs being shipped first. Scan the `specs/` directory and offer the existing slugs (a spec's slug is its filename after stripping any leading `NNNN-` prefix and the `.md` extension) as candidates. Write the chosen slugs to `depends_on` in the spec's frontmatter; default is `[]`. Note that newly shaped specs are written **unprefixed** (they are Ready but not yet prioritised).
 
 ## Step 4 — Triage
 

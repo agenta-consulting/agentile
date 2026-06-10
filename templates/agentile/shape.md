@@ -12,6 +12,7 @@ This is the single most useful file to tailor. Add a question and every future s
 - **Scope boundary** — what is explicitly **out**, so the work can't balloon.
 - **Affected areas** — the files, services, or data the change likely touches.
 - **Open questions** — anything still unknown. Surviving unknowns become a timeboxed **spike**, not a guess.
+- **Dependencies** — does this need another spec shipped first? List those specs' slugs in `depends_on` (or none).
 
 ## Triage (always run during shaping)
 
