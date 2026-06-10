@@ -185,6 +185,8 @@ Before a build cycle begins, the ready queue should be ordered. `/ag-prioritise`
 
 The session id doubles as a resume handle: `claude --resume <id>` restores the loop to the exact point it was interrupted, so a cycle is never silently lost. `/ag-wip` lists all in-flight claims and prints the resume command for each; stale claims (claimed but idle) are surfaced for human judgement rather than auto-reclaimed.
 
+To run claims continuously, use **`/ag-loop`**: it runs the full cycle (claim → build → verify → pause for human sign-off → ship → repeat) in drain mode, stopping when the backlog is empty. **`/loop /ag-loop`** makes it a standing watcher — it pauses between cycles waiting for new ready work and starts on it as it appears. Pause-before-ship is the default posture.
+
 ### 4. VERIFY → a reviewer subagent + `/security-review` + CI
 - Spin up a **separate review subagent** with fresh context to critique the builder's diff ("trust but verify" — the second agent catches what the first missed). The Agent tool / subagents make this a one-call step.
 - Run the built-in **`/security-review`** (or the security-review GitHub Action on every PR) for vulnerability scanning.

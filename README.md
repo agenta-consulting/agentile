@@ -55,6 +55,13 @@ Two skills govern the transition from ready work to in-flight work, and they are
 
 The session id is a resume handle, so a loop that was interrupted mid-cycle can be picked back up exactly where it stopped.
 
+### Running the loop
+
+- **`/ag-loop`** drains the ready backlog: claim → build → verify → pause for your sign-off before ship → repeat, up to `max_iterations`. Use this when you want to clear a queue of ready specs in one session.
+- **`/loop /ag-loop`** drains and then watches — once the backlog is empty it keeps running, picking up new ready work as it appears.
+- Pause-before-ship is the default posture, so nothing merges without your approval.
+- All of this is configurable in `.agentile/loop.md`.
+
 ## Install (in a project)
 
 1. Add the marketplace and install the plugin:
@@ -68,7 +75,7 @@ The session id is a resume handle, so a loop that was interrupted mid-cycle can 
 
 ## Skills
 
-`/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-customise`, `/ag-retro`.
+`/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-loop`, `/ag-customise`, `/ag-retro`.
 
 ## Agents (the "hats")
 
