@@ -106,7 +106,7 @@ A practical rhythm for 1–5 people: capture freely all day; shape in a short fo
 
 The ready queue needs two operations that are easy to conflate but must stay separate.
 
-**Prioritisation** is an editorial act: you order the ready list by scoring each spec on Business Value × Technical Certainty and writing that score onto it. It answers "what should come next?" and can be re-run whenever the queue changes. It produces an ordered list; it does not start any work.
+**Prioritisation** is an editorial act: you order the ready list by scoring each spec on Business Value × Technical Certainty and writing that score onto it. It answers "what should come next?" and can be re-run whenever the queue changes. It produces an ordered list; it does not start any work. Specs may declare dependencies on other specs (by slug) in their frontmatter; claiming a spec is gated until all its dependencies have shipped, and the prioritisation step respects those constraints when proposing an order. In practice, prioritisation is an interactive session — the tool proposes a rank, you adjust it, and the rank is encoded as a filename prefix (`NNNN-<slug>.md`) so the queue is visible without opening any file.
 
 **Pulling** is a transactional act: you claim the top unclaimed item, stamp it as in-progress, and begin a cycle. It answers "I am taking this one now" and must be atomic — especially when multiple loops run concurrently. A file lock ensures two loops can never claim the same item. The claim records the session id, so an interrupted loop can be resumed precisely where it stopped.
 
@@ -179,9 +179,11 @@ Claude Code maps onto LAL almost one-to-one. Here's the concrete setup.
 
 ### 3b. PRIORITISE, NEXT, WIP → queue management for concurrent loops
 
-Before a build cycle begins, the ready queue should be ordered. `/ag-prioritise` scores each spec and writes a `priority` value; the weighting and WIP limit live in `.agentile/prioritise.md` so you can tune the scheme per project. Run it whenever new specs arrive or priorities shift.
+Before a build cycle begins, the ready queue should be ordered. `/ag-prioritise` is an interactive session: it proposes a rank order (Business Value × Technical Certainty, with `depends_on` constraints respected), you adjust it, and it renames ready specs densely to `specs/0001-<slug>.md`, `0002-…`. The number is the rank, visible from `ls` without opening files. An unprefixed spec is shaped and Ready but not yet prioritised — it is not claimable until it has a prefix. The weighting and WIP limit live in `.agentile/prioritise.md`. Run it whenever new specs arrive or priorities shift.
 
-`/ag-next` is the pull step: it runs `bin/ag-claim` under a file lock, atomically stamps the top unclaimed spec with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Because the lock is at the filesystem level, two Claude Code sessions running concurrently will never grab the same item — this is the safety primitive that makes multiple loops viable.
+Specs can declare `depends_on: [slug, …]` in their frontmatter, listing other specs that must ship before this one can be claimed. When a spec ships it moves to `specs/archive/`, keeping the active numbered list clean while remaining resolvable as a fulfilled dependency.
+
+`/ag-next` is the pull step: it runs `bin/ag-claim` under a file lock, atomically stamps the top unclaimed spec with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Because the lock is at the filesystem level, two Claude Code sessions running concurrently will never grab the same item — this is the safety primitive that makes multiple loops viable. If every prioritised spec is waiting on unshipped dependencies, `/ag-next` reports `BLOCKED`; if shaped work exists but has no prefix, it reports `UNPRIORITISED`.
 
 The session id doubles as a resume handle: `claude --resume <id>` restores the loop to the exact point it was interrupted, so a cycle is never silently lost. `/ag-wip` lists all in-flight claims and prints the resume command for each; stale claims (claimed but idle) are surfaced for human judgement rather than auto-reclaimed.
 

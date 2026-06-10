@@ -12,8 +12,8 @@ This project runs the **Agentile**: capture → shape → spec → plan → buil
 ### How to work
 
 - An idea arrives → `/ag-capture <one line>`. Never lose an idea for lack of a place to put it.
-- Ready to develop something → `/ag-shape` to interview it into a spec, then `/ag-plan` before any code.
-- Order the ready queue with `/ag-prioritise` (scores by Business Value × Technical Certainty). Pull the top item with `/ag-next` — safe for concurrent loops; the claim is atomic and session-stamped so it can be resumed with `claude --resume <id>`. Check what's in flight with `/ag-wip`.
+- Ready to develop something → `/ag-shape` to interview it into a spec, then `/ag-plan` before any code. Shaping asks about `depends_on` by default — list any specs (by slug) that must ship before this one can be claimed.
+- Order the ready queue with `/ag-prioritise` — an interactive session that proposes a rank (Business Value × Technical Certainty, dependencies respected), you adjust it, and it renames ready specs to `specs/NNNN-<slug>.md`. An unprefixed spec is not claimable. Shipped specs move to `specs/archive/`. Pull the top item with `/ag-next` — safe for concurrent loops; the claim is atomic and session-stamped so it can be resumed with `claude --resume <id>`. If the queue is blocked on dependencies or has no prefixed specs, `/ag-next` tells you which. Check what's in flight with `/ag-wip`.
 - Run the loop with `/ag-loop` (or `/loop /ag-loop` to keep watching for work); it pauses for your sign-off before each ship.
 - Build on a short-lived branch/worktree; run the gates in `.agentile/gates.json`; a fresh-context reviewer critiques the diff before merge.
 - Integrate to trunk in small, reversible, flagged batches. Close the loop with `/ag-retro`.
