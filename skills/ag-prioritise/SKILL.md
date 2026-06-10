@@ -1,12 +1,12 @@
 ---
 name: ag-prioritise
-description: Order the ready Agentile specs by this project's scheme, writing a priority onto each. Only sets the priority field. Trigger phrases include "/ag-prioritise", "prioritise the backlog", "order the ready work", "re-rank specs".
-allowed-tools: Bash, Read, Edit
+description: Interactively order the ready Agentile specs by assigning dense NNNN- filename prefixes that encode priority rank. Trigger phrases include "/ag-prioritise", "prioritise the backlog", "order the ready work", "re-rank specs".
+allowed-tools: AskUserQuestion, Bash, Read, Write, Edit
 ---
 
 # ag-prioritise
 
-Order every ready spec by the project's priority scheme, writing a `priority` integer onto each. No other fields are touched.
+Prioritisation encodes rank directly in the filename: `0001-<slug>.md` is first in the queue, `0002-<slug>.md` is second, and so on. The claim helper always picks the lowest-numbered ready spec whose dependencies are shipped, so the file order *is* the work order. This skill is a short interactive conversation that produces that ordering.
 
 ## Apply this project's playbook
 
@@ -24,14 +24,84 @@ If the file is absent, use the baseline below unchanged.
 
 ## Baseline steps
 
-1. Read `.agentile/prioritise.md` for the ranking scheme and `wip_limit`. If the file is absent, use the default scheme (Business Value × Technical Certainty) and no WIP limit.
+### Step 1 — Read the active set
 
-2. Read the specs directory from `.agentile/config.md` (default `specs/`).
+Read the specs directory from `.agentile/config.md` (default `specs/`). List every
+`*.md` file at the top level of that directory — do **not** descend into `specs/archive/`
+or any other subdirectory.
 
-3. List all spec files in that directory whose frontmatter contains `status: ready`.
+For each file, read its frontmatter and classify it into one of three groups:
 
-4. Rank the ready specs per the project scheme. The default ranking is **Business Value × Technical Certainty** — multiply each spec's `business_value` by its `technical_certainty` and sort descending (high product first). Where scores are equal, break ties alphabetically by slug.
+- **Prioritised** — filename begins with an `NNNN-` prefix (four or more digits followed
+  by a hyphen). Sort these ascending by their numeric prefix to produce the current
+  queue order.
+- **Unprioritised ready** — filename has no `NNNN-` prefix and `status: ready`.
+  These are shaped and buildable but have not yet been placed in the queue.
+- **In-progress** — `status: in_progress`, regardless of whether the filename is
+  prefixed. These are actively being worked and must never be renamed.
 
-5. Write a `priority:` integer into each ready spec's frontmatter via Edit, assigning `1` to the highest-ranked spec and incrementing by one for each subsequent spec. Touch **only** the `priority` field — leave all other frontmatter unchanged.
+A spec's **slug** is its filename with any leading `NNNN-` prefix and the `.md`
+extension stripped. Read each spec's `business_value`, `technical_certainty`, and
+`depends_on` (default `[]`) fields. Treat missing numeric fields as `0`.
 
-6. Report the ordered list in a table: rank, slug, business_value, technical_certainty, and computed score. Note any specs that were missing `business_value` or `technical_certainty` values (treat missing as `0`).
+### Step 2 — Show the current state
+
+Present the user with two lists:
+
+1. **Current queue** — the prioritised specs in their existing order, one per line,
+   showing slug, business value, technical certainty, and dependencies.
+2. **Unprioritised ready specs** — the same columns for every spec not yet in the
+   queue.
+
+Note any in-progress specs separately so the user knows they are excluded from
+reordering.
+
+### Step 3 — Propose a starting order
+
+Combine the prioritised specs and the unprioritised ready specs into a single
+candidate list. Rank it by **Business Value × Technical Certainty** (descending),
+breaking ties alphabetically by slug. Then enforce dependency ordering: if spec A
+declares `depends_on: [B]`, move A to a position *after* B in the list.
+
+Present this proposal as a clear numbered list. For each entry note the BV × TC
+score and any dependencies. Use `AskUserQuestion` to ask the user whether they want
+to accept this proposal as-is or adjust it.
+
+### Step 4 — Reorder interactively
+
+Accept adjustments from the user in plain language ("put X first", "move Y above Z",
+"add the new login spec after auth-tokens") and apply each change to the working
+list. Show the revised list after each change. Continue until the user confirms the
+final order. Use `AskUserQuestion` for discrete choices (e.g. "Accept this order, or
+make more changes?").
+
+### Step 5 — Apply the order
+
+Once the user confirms, rename the **ready** specs only — both previously prioritised
+and unprioritised — using dense sequential prefixes: `0001-<slug>.md`,
+`0002-<slug>.md`, and so on. Strip any existing `NNNN-` prefix from the filename to
+obtain the bare `<slug>` before constructing the new name. Perform every rename with
+`git mv` so the history is preserved.
+
+**Never rename in-progress specs.** Their filenames are fixed references that may be
+held by another active session's claim; leave them entirely untouched.
+
+### Step 6 — Report
+
+Print the final ordered list. For each entry, annotate its claimability:
+
+- **claimable** — `status: ready` and every slug listed in `depends_on` belongs to a
+  spec whose `status` is `shipped`.
+- **blocked — waiting on `<slug>`** — one or more `depends_on` slugs are not yet
+  shipped.
+
+Additionally, emit a warning for each of the following problems detected in the
+final order:
+
+- **Dependency tension** — a spec appears earlier in the queue than a spec it depends
+  on (the dependency will not be shipped first).
+- **Dependency cycle** — two or more specs depend on each other, directly or
+  transitively.
+
+Finish with a one-line summary: how many specs were renamed, how many were left
+untouched (in-progress), and how many are immediately claimable.
