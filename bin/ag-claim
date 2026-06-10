@@ -7,6 +7,7 @@
 #  - UNPRIORITISED ready specs exist but none have an NNNN- prefix
 #  - BLOCKED       prioritised ready specs exist but all have an unshipped dependency
 require "yaml"
+require "date" # spec frontmatter has `created: YYYY-MM-DD`, which YAML loads as a Date
 
 specs_dir, session, label, wip = ARGV
 abort "usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]" if specs_dir.nil? || session.to_s.empty?
@@ -14,7 +15,7 @@ wip = (wip.to_s.empty? ? 0 : wip.to_i) # 0 => unlimited
 
 def load_spec(path)
   raw  = File.read(path)
-  fm   = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time]) || {})
+  fm   = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
   base = File.basename(path, ".md")
   m    = base.match(/\A(\d+)-(.+)\z/)
   { path: path, raw: raw, fm: fm, prefix: (m ? m[1].to_i : nil), slug: (m ? m[2] : base) }

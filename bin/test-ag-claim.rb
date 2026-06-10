@@ -1,10 +1,12 @@
-require "yaml"; require "tmpdir"; require "open3"; require "fileutils"
+require "yaml"; require "date"; require "tmpdir"; require "open3"; require "fileutils"
 HELP = File.expand_path("ag-claim", __dir__)
 
 def spec(dir, fname, status:, depends_on: [])
   dep = depends_on.empty? ? "[]" : "[#{depends_on.join(", ")}]"
+  # `created` is a bare YYYY-MM-DD, which YAML loads as a Date — every test spec
+  # carries one so the helper's safe_load must permit Date (regression guard).
   File.write(File.join(dir, fname),
-    "---\nstatus: #{status}\nclaimed_by:\nlabel:\nclaimed_at:\ndepends_on: #{dep}\n---\n# #{fname}\n")
+    "---\nstatus: #{status}\ncreated: 2026-06-10\nclaimed_by:\nlabel:\nclaimed_at:\ndepends_on: #{dep}\n---\n# #{fname}\n")
 end
 
 def claim(dir, session: "s", wip: 0)
@@ -18,7 +20,7 @@ Dir.mktmpdir do |d|
   spec(d, "0001-high.md", status: "ready")
   path = claim(d)
   raise "prefix order: #{path}" unless path.end_with?("0001-high.md")
-  fm = YAML.load(File.read(path)[/^---\n(.*?)\n---/m, 1])
+  fm = YAML.safe_load(File.read(path)[/^---\n(.*?)\n---/m, 1], permitted_classes: [Time, Date])
   raise "stamp" unless fm["status"] == "in_progress" && fm["claimed_by"] == "s" && !fm["claimed_at"].to_s.empty?
 end
 
