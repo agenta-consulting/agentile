@@ -1,43 +1,67 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
-# Atomically claim the highest-priority unclaimed ready spec.
+# Atomically claim the lowest-prefix ready spec whose dependencies are all shipped.
 # Usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]
-# Prints the claimed spec path, or "NONE" (no ready specs) / "WIP_FULL".
+# Prints the claimed spec path, or one of: WIP_FULL | BLOCKED | UNPRIORITISED | NONE.
+#  - NONE          no ready specs at all
+#  - UNPRIORITISED ready specs exist but none have an NNNN- prefix
+#  - BLOCKED       prioritised ready specs exist but all have an unshipped dependency
 require "yaml"
 
 specs_dir, session, label, wip = ARGV
 abort "usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]" if specs_dir.nil? || session.to_s.empty?
 wip = (wip.to_s.empty? ? 0 : wip.to_i) # 0 => unlimited
 
+def load_spec(path)
+  raw  = File.read(path)
+  fm   = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time]) || {})
+  base = File.basename(path, ".md")
+  m    = base.match(/\A(\d+)-(.+)\z/)
+  { path: path, raw: raw, fm: fm, prefix: (m ? m[1].to_i : nil), slug: (m ? m[2] : base) }
+end
+
 lock_path = File.join(specs_dir, ".pull.lock")
 File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
   lock.flock(File::LOCK_EX)
 
-  specs = Dir.glob(File.join(specs_dir, "*.md")).map do |path|
-    raw = File.read(path)
-    fm  = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time]) || {})
-    { path: path, raw: raw, fm: fm }
-  end
+  # Status map across ALL specs (recursive, so archived shipped specs resolve deps).
+  all = Dir.glob(File.join(specs_dir, "**", "*.md")).map { |p| load_spec(p) }
+  shipped = {}
+  all.each { |s| shipped[s[:slug]] = true if s[:fm]["status"] == "shipped" }
 
-  in_progress = specs.count { |s| s[:fm]["status"] == "in_progress" }
+  # Claim pool: top-level specs only (exclude specs/archive/**).
+  archive_prefix = File.join(File.expand_path(specs_dir), "archive") + File::SEPARATOR
+  pool = all.reject { |s| File.expand_path(s[:path]).start_with?(archive_prefix) }
+
+  in_progress = pool.count { |s| s[:fm]["status"] == "in_progress" }
   if wip.positive? && in_progress >= wip
     puts "WIP_FULL"; next
   end
 
-  ready = specs.select { |s| s[:fm]["status"] == "ready" && s[:fm]["claimed_by"].to_s.empty? }
+  ready = pool.select { |s| s[:fm]["status"] == "ready" && s[:fm]["claimed_by"].to_s.empty? }
   if ready.empty?
     puts "NONE"; next
   end
 
-  chosen = ready.min_by { |s| [s[:fm]["priority"] || Float::INFINITY, File.basename(s[:path])] }
+  prioritised = ready.select { |s| s[:prefix] }
+  if prioritised.empty?
+    puts "UNPRIORITISED"; next
+  end
+
+  eligible = prioritised.select do |s|
+    Array(s[:fm]["depends_on"]).all? { |dep| shipped[dep.to_s] }
+  end
+  if eligible.empty?
+    puts "BLOCKED"; next
+  end
+
+  chosen = eligible.min_by { |s| [s[:prefix], File.basename(s[:path])] }
 
   fm = chosen[:fm]
   fm["status"]     = "in_progress"
   fm["claimed_by"] = session
   fm["label"]      = label.to_s
   fm["claimed_at"] = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-  # Note: this normalises the entire frontmatter block via YAML (key order/quoting
-  # may change), not just the claim fields — acceptable for v1.
   body = chosen[:raw].sub(/\A---\n.*?\n---\n/m, "---\n#{fm.to_yaml.sub(/\A---\n/, "")}---\n")
   if body == chosen[:raw]
     warn "ag-claim: could not rewrite frontmatter for #{chosen[:path]}"
