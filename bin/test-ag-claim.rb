@@ -50,12 +50,22 @@ Dir.mktmpdir do |d|
   raise "blocked: #{claim(d)}" unless claim(d) == "BLOCKED"
 end
 
-# 4c. dep shipped in archive/ -> a becomes claimable
+# 4c. dep shipped in done/ -> a becomes claimable, and the done/ spec is never claimed
+#     itself (top-level-only pool excludes subdirectories regardless of name)
 Dir.mktmpdir do |d|
   spec(d, "0001-a.md", status: "ready", depends_on: ["b"])
-  FileUtils.mkdir_p(File.join(d, "archive"))
-  spec(File.join(d, "archive"), "0005-b.md", status: "shipped")
-  raise "archived dep: #{claim(d)}" unless claim(d).end_with?("0001-a.md")
+  FileUtils.mkdir_p(File.join(d, "done"))
+  spec(File.join(d, "done"), "0005-b.md", status: "shipped")
+  raise "done dep: #{claim(d)}" unless claim(d).end_with?("0001-a.md")
+end
+
+# 4d. dep abandoned in abandoned/ -> dependent stays BLOCKED (abandoned != shipped),
+#     and the abandoned spec is not in the claim pool
+Dir.mktmpdir do |d|
+  spec(d, "0001-a.md", status: "ready", depends_on: ["b"])
+  FileUtils.mkdir_p(File.join(d, "abandoned"))
+  spec(File.join(d, "abandoned"), "0002-b.md", status: "abandoned")
+  raise "abandoned dep: #{claim(d)}" unless claim(d) == "BLOCKED"
 end
 
 # 5. missing/typo'd dep -> BLOCKED (never silently satisfied)

@@ -25,14 +25,17 @@ lock_path = File.join(specs_dir, ".pull.lock")
 File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
   lock.flock(File::LOCK_EX)
 
-  # Status map across ALL specs (recursive, so archived shipped specs resolve deps).
+  # Status map across ALL specs (recursive, so shipped specs in specs/done/ resolve deps).
   all = Dir.glob(File.join(specs_dir, "**", "*.md")).map { |p| load_spec(p) }
   shipped = {}
   all.each { |s| shipped[s[:slug]] = true if s[:fm]["status"] == "shipped" }
 
-  # Claim pool: top-level specs only (exclude specs/archive/**).
-  archive_prefix = File.join(File.expand_path(specs_dir), "archive") + File::SEPARATOR
-  pool = all.reject { |s| File.expand_path(s[:path]).start_with?(archive_prefix) }
+  # Claim pool: top-level specs only — anything in a subdirectory (specs/done/**,
+  # specs/abandoned/**) is excluded by sitting below the specs root, regardless of name.
+  # Abandoned specs keep status: abandoned, so they never count as shipped above; a
+  # dependent of an abandoned spec therefore stays BLOCKED.
+  specs_root = File.expand_path(specs_dir)
+  pool = all.select { |s| File.dirname(File.expand_path(s[:path])) == specs_root }
 
   in_progress = pool.count { |s| s[:fm]["status"] == "in_progress" }
   if wip.positive? && in_progress >= wip
