@@ -12,14 +12,25 @@ Agentile is the implementation of the **Lean Agentic Loop** methodology — the 
 capture → shape → spec → plan → build → verify → ship → learn
 ```
 
-- **capture** — `/ag-capture <idea>` drops a one-line stub in `inbox.md`. Instant, mid-build safe.
+- **capture** — `/ag-capture <idea>` drops a one-line stub in `docs/agentile/inbox.md`. Instant, mid-build safe.
 - **shape** — `/ag-shape` interviews a stub into a Ready spec, against your project's Definition of Ready.
-- **spec** — shaped specs land in `specs/`. `/ag-spec` writes one directly for trivial work.
+- **spec** — shaped specs land in `docs/agentile/specs/`. `/ag-spec` writes one directly for trivial work.
 - **plan** — `/ag-plan` (Plan Mode or the `ag-planner` agent) proposes the approach before any code.
 - **build** — the `ag-builder` agent implements on a branch/worktree, running your gates.
 - **verify** — the `ag-reviewer` agent critiques the diff with fresh context; gates + `/security-review` + a human read.
 - **ship** — small, flagged, reversible PRs to trunk.
 - **learn** — `/ag-retro` compiles a flow digest and encodes lessons into `CLAUDE.md` and ADRs.
+
+The whole backlog lives under one configurable **Agentile directory** (`docs/agentile/` by default, set in `.agentile/config.md`), with a fixed internal layout:
+
+```
+docs/agentile/
+  inbox.md            # captured stubs awaiting shaping
+  specs/              # active specs (ready / in_progress)
+    0001-<slug>.md
+    done/             # shipped specs
+    abandoned/        # dropped specs (via /ag-abandon), reason recorded
+```
 
 ## Fixed core vs. tailorable content
 
@@ -28,7 +39,7 @@ The plugin ships the **methodology** — the skills, the agents, the hooks. You 
 | File | What it controls |
 |------|------------------|
 | `.agentile/shape.md` | **What "Ready" means** — the questions a stub must answer before it's a spec. The prime tailoring surface. |
-| `.agentile/config.md` | Paths and the Business Value × Technical Certainty triage routes. |
+| `.agentile/config.md` | The **Agentile directory** (where the backlog lives, default `docs/agentile/`) and the Business Value × Technical Certainty triage routes. |
 | `.agentile/gates.json` | The deterministic commands — format, lint, test, build, deploy — and protected branches. |
 | `.agentile/spec-template.md` | The shape of a Ready spec. |
 | `.agentile/adr-template.md` | The shape of an ADR. |
@@ -49,15 +60,16 @@ Absent a playbook, the built-in baseline applies. Use `/ag-customise <stage>` to
 
 Two skills govern the transition from ready work to in-flight work, and they are deliberately separate acts:
 
-- **`/ag-prioritise`** is an interactive ordering session: it proposes a rank order (Business Value × Technical Certainty, with any `depends_on` constraints respected), you reorder it, and it renames the ready specs densely to `specs/0001-<slug>.md`, `0002-…` — the number is the rank, visible in `ls`. An unprefixed spec (`specs/<slug>.md`) is shaped and Ready but not yet prioritised, so it is not claimable. The old `priority:` frontmatter field is retired; the filename prefix is the single source of truth. The `wip_limit` and weighting live in `.agentile/prioritise.md`. Run it whenever the ready queue changes.
+- **`/ag-prioritise`** is an interactive ordering session: it proposes a rank order (Business Value × Technical Certainty, with any `depends_on` constraints respected), you reorder it, and it renames the ready specs densely to `docs/agentile/specs/0001-<slug>.md`, `0002-…` — the number is the rank, visible in `ls`. An unprefixed spec (`specs/<slug>.md`) is shaped and Ready but not yet prioritised, so it is not claimable. The old `priority:` frontmatter field is retired; the filename prefix is the single source of truth. The `wip_limit` and weighting live in `.agentile/prioritise.md`. Run it whenever the ready queue changes.
 - **`/ag-next`** is a transactional pull: it atomically claims the top unclaimed ready spec under a file lock (`bin/ag-claim`), stamps it with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Two loops running concurrently can never grab the same item. If all prioritised work is blocked waiting on dependencies, `/ag-next` reports `BLOCKED`; if shaped work exists but none of it has been prioritised yet, it reports `UNPRIORITISED` — run `/ag-prioritise` to proceed.
 - **`/ag-wip`** lists every in-progress claim and prints the resume command (`claude --resume <session-id>`) for each. Stale claims are surfaced for human judgement — Agentile flags them, but does not auto-reclaim.
+- **`/ag-abandon <slug>`** drops a spec that won't ship (failed review, withdrawn, not worth doing). It records the reason, walks the dependency chain with `bin/ag-dependents`, and offers — per dependent — to cascade the abandonment (with an auto-reason referencing the top-level one) or to keep it active and strip the now-dead link so it isn't silently `BLOCKED`. Abandoned specs move to `specs/abandoned/` with `status: abandoned`.
 
 The session id is a resume handle, so a loop that was interrupted mid-cycle can be picked back up exactly where it stopped.
 
 ### Spec dependencies
 
-A spec can declare `depends_on: [slug, …]` in its frontmatter — a list of other specs (by slug) that must ship before this one can be claimed. Shaping asks about this by default, so dependencies are captured at the point of writing the spec rather than discovered mid-build. A spec isn't claimable until all its dependencies have shipped. When a spec ships it moves to `specs/archive/`, keeping the active numbered list clean while remaining resolvable as a fulfilled dependency.
+A spec can declare `depends_on: [slug, …]` in its frontmatter — a list of other specs (by slug) that must ship before this one can be claimed. Shaping asks about this by default, so dependencies are captured at the point of writing the spec rather than discovered mid-build. A spec isn't claimable until all its dependencies have shipped. When a spec ships it moves to `specs/done/`, keeping the active numbered list clean while remaining resolvable as a fulfilled dependency. (Abandoning a dependency, by contrast, leaves its dependents `BLOCKED` — `/ag-abandon` walks that chain so nothing is stranded silently.)
 
 ### Running the loop
 
@@ -81,12 +93,12 @@ Either way, **pause-before-ship is the default** (nothing merges without your ap
    claude plugin marketplace add agenta-consulting/agentile
    claude plugin install agentile@agentile
    ```
-2. Restart the session, then in your target project run `/ag-init` to scaffold `inbox.md`, `.agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section.
+2. Restart the session, then in your target project run `/ag-init` to scaffold `docs/agentile/` (inbox + specs tree), `.agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section. On a project that used the old root-level layout (`inbox.md`, `specs/`, `specs/archive/`), `/ag-init` detects it and offers to migrate everything into `docs/agentile/` with `git mv`.
 3. Start the loop: `/ag-capture`, `/ag-inbox`, `/ag-shape`, …
 
 ## Skills
 
-`/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-loop`, `/ag-customise`, `/ag-retro`.
+`/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-abandon`, `/ag-loop`, `/ag-customise`, `/ag-retro`.
 
 ## Agents (the "hats")
 

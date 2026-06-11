@@ -27,7 +27,7 @@ Repeat the following steps up to `max_iterations` times. Track a counter startin
 
 ### Step 1 — Resume check
 
-Before claiming anything new, scan the specs directory (read path from `.agentile/config.md`, default `specs/`) for any spec whose frontmatter has both `status: in_progress` and `claimed_by` equal to this session's id (surfaced by the SessionStart hook as "Agentile: this session's id is …"). If such a spec exists, resume it — proceed to Step 4 with that spec path. Do NOT invoke `ag-next` for a spec that is already claimed by this session.
+Before claiming anything new, scan the specs directory (resolve **Agentile directory** from `.agentile/config.md`, default `docs/agentile/`; the specs dir is `<dir>/specs/` — honour the old `Specs directory:` key or a root-level `specs/` if that is what the project still has, and note `/ag-init` can migrate) for any spec whose frontmatter has both `status: in_progress` and `claimed_by` equal to this session's id (surfaced by the SessionStart hook as "Agentile: this session's id is …"). If such a spec exists, resume it — proceed to Step 4 with that spec path. Do NOT invoke `ag-next` for a spec that is already claimed by this session.
 
 If no in-progress spec is found for this session, proceed to Step 2.
 
@@ -66,7 +66,7 @@ Dispatch the `ag-reviewer` agent, which applies `.agentile/verify.md`. The revie
 **On a failing gate:** retry the build+verify cycle (Steps 5–6) up to `verify_retry_limit` additional times, noting the failure reason each time.
 
 - If verify passes on a retry, continue to Step 7.
-- If verify still fails after all retries and `stop_on_gate_failure` is `true`, **pause** — end the turn, report the failure, name the spec that is blocked, and stop the loop. Do not claim or start any new item while this failure is unresolved.
+- If verify still fails after all retries and `stop_on_gate_failure` is `true`, **pause** — end the turn, report the failure, name the spec that is blocked, and stop the loop. Do not claim or start any new item while this failure is unresolved. If the spec cannot be salvaged and should be dropped rather than fixed, point the user at `/ag-abandon <slug>` to drop it (and walk its dependents).
 - If `stop_on_gate_failure` is `false`, log the failure, skip this item, and continue the loop.
 
 If `.agentile/verify.md` sets `human_checkpoint: true`, pause after a passing verify — end the turn with the reviewer's findings and require explicit approval before shipping.
@@ -90,7 +90,7 @@ On approval (or when no pause applies):
 1. Ship or merge the work per the project's conventions (check `.agentile/ship.md` if present; otherwise follow repository conventions).
 2. Set `status: shipped` in the spec's frontmatter.
 3. Clear the claim fields: remove or blank `claimed_by`, `claimed_at`, and `label`.
-4. Move the spec file into `specs/archive/` (create the directory if it does not exist) using `git mv`, preserving its `NNNN-<slug>.md` filename. This removes it from the active numbered list while keeping it resolvable as a shipped dependency by `ag-claim`.
+4. Move the spec file into `<dir>/specs/done/` (create the directory if it does not exist) using `git mv`, preserving its `NNNN-<slug>.md` filename. This removes it from the active numbered list while keeping it resolvable as a shipped dependency by `ag-claim`.
 5. Append the spec slug to the `completed` list and increment the counter.
 6. Return to Step 1 for the next iteration.
 

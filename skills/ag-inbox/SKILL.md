@@ -10,7 +10,7 @@ Show the stubs currently awaiting shaping. This is a deliberate review surface, 
 
 ## Steps
 
-1. Find the inbox path: read `.agentile/config.md` for the **Inbox** path under "## Paths". Default to `inbox.md` at repo root.
+1. Resolve the inbox path: read **Agentile directory** from `.agentile/config.md` under "## Paths" (default `docs/agentile/`); the inbox is `<dir>/inbox.md`. If the project still has the old `Inbox:` key or a root-level `inbox.md` and no `Agentile directory` key, honour that path and note that `/ag-init` can migrate the layout.
 2. Read the inbox file. If it does not exist, tell the user to run `/ag-init` first.
 3. List the open stubs (lines beginning `- [ ]`), numbered, exactly as written — including any capture dates. Do not reword, triage, or summarise them.
 4. End with a one-line count and a gentle nudge: e.g. "5 stubs awaiting shaping. Run `/ag-shape <number>` to shape one." If a stub has sat unshaped for weeks, you may flag it as a candidate to drop — the Inbox should not become a graveyard.

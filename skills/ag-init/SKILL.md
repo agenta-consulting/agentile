@@ -27,11 +27,48 @@ Use `AskUserQuestion` to gather (one compact round):
 
 If the user is mid-flow and does not want questions, accept defaults and leave `gates.json` blank — they can fill it in later.
 
-## Step 3 — Scaffold files (skip any that exist)
+## Step 3 — Migrate a legacy layout (only if one is detected)
 
-Copy from `templates/` into the project root, preserving structure:
+Older Agentile projects kept the backlog at the repo root (`inbox.md`, `specs/`,
+`specs/archive/`) with `Inbox:` / `Specs directory:` keys in `.agentile/config.md`. The
+current layout puts everything under one **Agentile directory** (default `docs/agentile/`):
+`inbox.md`, `specs/`, `specs/done/` (was `archive/`), `specs/abandoned/`.
 
-- `inbox.md`
+Detect a legacy layout if **any** of these are present: a root-level `inbox.md`, a
+root-level `specs/` directory, a `specs/archive/` directory, or an `.agentile/config.md`
+that still has an `Inbox:` or `Specs directory:` key (and no `Agentile directory:` key).
+
+If detected, do **not** silently move anything. Show the user exactly what will move and
+ask for confirmation (`AskUserQuestion`):
+
+```
+Detected a legacy Agentile layout. Migrate to docs/agentile/ ?
+  inbox.md            → docs/agentile/inbox.md
+  specs/*.md          → docs/agentile/specs/
+  specs/archive/*     → docs/agentile/specs/done/
+```
+
+On confirmation:
+
+1. Create `docs/agentile/specs/done/` and `docs/agentile/specs/abandoned/` (with `.gitkeep`).
+2. `git mv` each file into its new home (root `inbox.md` → `docs/agentile/inbox.md`;
+   each top-level `specs/*.md` → `docs/agentile/specs/`; each `specs/archive/*.md` →
+   `docs/agentile/specs/done/`), preserving filenames so history follows via `git mv`.
+3. Rewrite the "## Paths" section of `.agentile/config.md`: drop the `Inbox:` and
+   `Specs directory:` keys and add `**Agentile directory:** docs/agentile/` (keep
+   `ADR directory:`). Use the template's Paths block as the model.
+4. Remove the now-empty `specs/` and `specs/archive/` directories.
+
+If the project already uses the new layout (an `Agentile directory:` key, or a populated
+`docs/agentile/`), there is nothing to migrate — skip this step. Migration is a one-time,
+explicitly-confirmed action; a second `/ag-init` run is a no-op here.
+
+## Step 4 — Scaffold files (skip any that exist)
+
+Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`).
+Copy from `templates/` into the project, preserving structure:
+
+- `<dir>/inbox.md` (from `templates/inbox.md`)
 - `.agentile/config.md`
 - `.agentile/shape.md`
 - `.agentile/playbooks.md`
@@ -44,11 +81,11 @@ Copy from `templates/` into the project root, preserving structure:
 - `.agentile/spec-template.md`
 - `.agentile/adr-template.md`
 - `docs/adr/0000-record-architecture-decisions.md` — replace `<YYYY-MM-DD>` with today's date (`date +%Y-%m-%d`).
-- Create an empty `specs/` directory (add a `.gitkeep`).
+- Create the specs tree: `<dir>/specs/`, `<dir>/specs/done/`, and `<dir>/specs/abandoned/`, each with a `.gitkeep`.
 
 Note the source `templates/agentile/` maps to the project's `.agentile/` directory.
 
-## Step 4 — Standing context
+## Step 5 — Standing context
 
 Append the contents of `templates/CLAUDE.agentile-section.md` to the project's root `CLAUDE.md`:
 
@@ -56,11 +93,11 @@ Append the contents of `templates/CLAUDE.agentile-section.md` to the project's r
 - If `CLAUDE.md` does not exist, suggest the user run `/init` first to bootstrap it from the codebase, then create `CLAUDE.md` containing just the Agentile section.
 - If the section is already present, leave it.
 
-## Step 5 — Hooks (only if enabled in Step 2)
+## Step 6 — Hooks (only if enabled in Step 2)
 
 Merge the plugin's hooks into the project so the gates enforce themselves. The plugin ships `hooks/hooks.json`; if the user enabled hooks, ensure the project's `.claude/settings.json` references them (the plugin's own `hooks` declaration already registers them when the plugin is installed, so in most cases no project edit is needed — confirm the plugin is installed rather than duplicating the hook registration). Explain that the hooks read `.agentile/gates.json` and no-op while commands are blank.
 
-## Step 6 — Report
+## Step 7 — Report
 
 Summarise what was created versus skipped, then point the user at the next move:
 

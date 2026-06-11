@@ -26,8 +26,11 @@ If the file is absent, use the baseline below unchanged.
 
 ### Step 1 — Read the active set
 
-Read the specs directory from `.agentile/config.md` (default `specs/`). List every
-`*.md` file at the top level of that directory — do **not** descend into `specs/archive/`
+Resolve the specs directory: read **Agentile directory** from `.agentile/config.md`
+(default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses
+the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory`
+key, honour that path and note `/ag-init` can migrate.) List every `*.md` file at the
+top level of that directory — do **not** descend into `specs/done/`, `specs/abandoned/`,
 or any other subdirectory.
 
 For each file, read its frontmatter and classify it into one of three groups:

@@ -1,7 +1,7 @@
 ---
 title: <short imperative title>
 slug: <kebab-case-slug>
-status: ready                 # ready | in_progress | shipped
+status: ready                 # ready | in_progress | shipped | abandoned
 depends_on: []                # slugs of specs that must ship first (by slug, not filename); blank = none
 type: feature
 route: <foreground | background | spike>
@@ -12,6 +12,9 @@ created: <YYYY-MM-DD>
 claimed_by:                   # session id (the resume handle: claude --resume <id>)
 label:                        # optional human label for the loop
 claimed_at:                   # ISO8601, e.g. 2026-06-10T12:04:00Z
+# Abandon fields — set by /ag-abandon when the spec is dropped; absent otherwise:
+# abandoned_reason:           # why it was dropped (free text)
+# abandoned_at:               # ISO8601
 ---
 
 # <Title>

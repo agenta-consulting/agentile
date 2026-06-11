@@ -31,7 +31,7 @@ If the file is absent, use the baseline below unchanged.
 ## Steps
 
 1. The stub text is `$ARGUMENTS`. If it is empty, ask the user for the one line (this is the only question allowed) and stop until they answer.
-2. Find the inbox path: read `.agentile/config.md` for the **Inbox** path under "## Paths". Default to `inbox.md` at repo root if `.agentile/config.md` is absent.
+2. Resolve the inbox path: read **Agentile directory** from `.agentile/config.md` under "## Paths" (default `docs/agentile/`); the inbox is `<dir>/inbox.md`. If the project still has the old `Inbox:` key or a root-level `inbox.md` and no `Agentile directory` key, honour that path for this run and tell the user `/ag-init` can migrate the layout.
 3. Get today's date with `date +%Y-%m-%d`.
 4. Append a new line at the end of the file, under the `# Inbox` heading:
 

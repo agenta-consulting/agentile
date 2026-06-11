@@ -32,7 +32,7 @@ If the file is absent, use the baseline below unchanged.
 
    Note that the id was minted locally rather than injected by the hook.
 
-2. Read the specs directory from `.agentile/config.md` (default `specs/`). Read `wip_limit` from `.agentile/prioritise.md` (default: unlimited if the file or field is absent).
+2. Resolve the specs directory: read **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that path and note `/ag-init` can migrate.) Read `wip_limit` from `.agentile/prioritise.md` (default: unlimited if the file or field is absent).
 
 3. Resolve the claim helper path. Use `"${CLAUDE_PLUGIN_ROOT}/bin/ag-claim"`. If `$CLAUDE_PLUGIN_ROOT` is empty or the file is not found there, fall back to the newest match of:
 

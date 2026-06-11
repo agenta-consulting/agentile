@@ -13,13 +13,14 @@ Both are **derived / stateless**: nothing stores a "blocked" flag or a numeric p
 
 ## Backlog model
 
-Spec states are visible in the filename, in the specs dir (default `specs/`, from `.agentile/config.md`):
+Spec states are visible in the filename, in the specs dir (`<Agentile directory>/specs/`, default `docs/agentile/specs/`, from `.agentile/config.md`):
 
 | File | Meaning |
 |------|---------|
 | `specs/<slug>.md` | shaped, `status: ready`, **unprioritised** (no prefix) → **not claimable** |
 | `specs/<NNNN>-<slug>.md` | **prioritised**; `NNNN` (zero-padded, e.g. `0001`) is its rank |
-| `specs/archive/<NNNN>-<slug>.md` | **shipped** — moved out of the active list on ship |
+| `specs/done/<NNNN>-<slug>.md` | **shipped** — moved out of the active list on ship |
+| `specs/abandoned/<NNNN>-<slug>.md` | **abandoned** (`status: abandoned`) — dropped via `/ag-abandon`, reason recorded |
 
 - **Slug** is the filename minus an optional leading `NNNN-` prefix and the `.md` — it is the stable identifier (used by `depends_on`).
 - The `priority:` frontmatter field added in the concurrency work is **retired**; the filename prefix is the single source of truth for order.
@@ -60,9 +61,9 @@ Replaces the auto-rank behaviour:
 
 `/ag-prioritise` is the only place that assigns/changes prefixes.
 
-## Shipping → archive
+## Shipping → done
 
-When a spec ships (the `/ag-loop` ship step, or a manual ship), set `status: shipped` and **move the file to `specs/archive/`** (preserving its `NNNN-<slug>.md` name as a record). This keeps the active numbered list clean and keeps numbers from colliding with done work. `ag-claim` still sees archived specs for dependency resolution (recursive status map).
+When a spec ships (the `/ag-loop` ship step, or a manual ship), set `status: shipped` and **move the file to `specs/done/`** (preserving its `NNNN-<slug>.md` name as a record). This keeps the active numbered list clean and keeps numbers from colliding with done work. `ag-claim` still sees done specs for dependency resolution (recursive status map), but its claim pool is **top-level only**, so neither `done/` nor `abandoned/` specs are ever claimed.
 
 ## Shaping asks about dependencies (default)
 

@@ -27,7 +27,7 @@ If the file is absent, use the baseline below unchanged.
 ## Step 1 — Load the project's definitions
 
 - Read `.agentile/shape.md` — this is **this project's Definition of Ready**: the exact questions a stub must answer, plus any house additions. Drive the interview against *this* list, not a generic one.
-- Read `.agentile/config.md` for the inbox/specs paths and the two-axis triage table.
+- Read `.agentile/config.md` for the **Agentile directory** (default `docs/agentile/`) and the two-axis triage table. The inbox is `<dir>/inbox.md` and specs live in `<dir>/specs/`. If the project still uses the old `Inbox:` / `Specs directory:` keys (or root-level `inbox.md` / `specs/`) with no `Agentile directory` key, honour those paths and note that `/ag-init` can migrate the layout.
 - Read the project's `CLAUDE.md` (and `docs/adr/`) for standing context so your questions fit the architecture.
 
 ## Step 2 — Pick the stub
@@ -39,7 +39,7 @@ If the file is absent, use the baseline below unchanged.
 - Ask **one or two questions at a time**, using `AskUserQuestion` where the choices are discrete. Let each answer shape the next question.
 - Work through every required item in `.agentile/shape.md` — typically problem/who/why-now, acceptance criteria, edge cases and failure paths, scope boundary, affected areas, open questions, and dependencies — plus any house additions.
 - Prefer concrete examples over abstractions. Push back gently on vague acceptance criteria.
-- **Dependencies**: ask whether this item depends on any other specs being shipped first. Scan the `specs/` directory and offer the existing slugs (a spec's slug is its filename after stripping any leading `NNNN-` prefix and the `.md` extension) as candidates. Write the chosen slugs to `depends_on` in the spec's frontmatter; default is `[]`. Note that newly shaped specs are written **unprefixed** (they are Ready but not yet prioritised).
+- **Dependencies**: ask whether this item depends on any other specs being shipped first. Scan the specs directory (`<dir>/specs/`) and offer the existing slugs (a spec's slug is its filename after stripping any leading `NNNN-` prefix and the `.md` extension) as candidates. Write the chosen slugs to `depends_on` in the spec's frontmatter; default is `[]`. Note that newly shaped specs are written **unprefixed** (they are Ready but not yet prioritised).
 
 ## Step 4 — Triage
 
@@ -51,7 +51,7 @@ If the file is absent, use the baseline below unchanged.
 
 Based on the conversation, do **one** of:
 
-- **Graduate to a spec** — write `specs/<slug>.md` using `.agentile/spec-template.md`, filling every field from the interview, and set `route`, `business_value`, `technical_certainty`. Then remove the stub line from the inbox.
+- **Graduate to a spec** — write `<dir>/specs/<slug>.md` using `.agentile/spec-template.md`, filling every field from the interview, and set `route`, `business_value`, `technical_certainty`. Then remove the stub line from the inbox.
 - **Spike** — write the spec with `type: spike` and `status: ready`, framing the open questions as the timeboxed exploration goal. Remove the stub.
 - **Split** — write multiple stubs back to the inbox (or multiple specs), and remove the original.
 - **Merge** — fold the stub into an existing stub or spec; remove the original.
@@ -61,4 +61,4 @@ Always **remove the original stub from the inbox** once its fate is decided — 
 
 ## Step 6 — Report
 
-Confirm what you wrote (path), the recommended route, and the next step (usually `/ag-plan specs/<slug>.md`). Do not start building.
+Confirm what you wrote (path), the recommended route, and the next step (usually `/ag-plan <dir>/specs/<slug>.md`). Do not start building.

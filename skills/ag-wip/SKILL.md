@@ -10,9 +10,9 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
 ## Steps
 
-1. Read the specs directory from `.agentile/config.md` (default `specs/`).
+1. Resolve the specs directory: read **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that path and note `/ag-init` can migrate.)
 
-2. List all spec files in that directory whose frontmatter contains `status: in_progress`.
+2. List the spec files at the top level of that directory (not its `done/` or `abandoned/` subdirectories) whose frontmatter contains `status: in_progress`.
 
 3. For each in-progress spec, print:
 

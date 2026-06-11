@@ -4,10 +4,16 @@ This file tailors Agentile for **this project**. The methodology (the skills, th
 
 ## Paths
 
-Where the loop keeps its artefacts. Edit if your repo uses different locations.
+Where the loop keeps its backlog. Change **Agentile directory** if you want it somewhere other than `docs/agentile/` — the internal layout under it is fixed:
 
-- **Inbox:** `inbox.md`
-- **Specs directory:** `specs/`
+- `inbox.md` — captured stubs awaiting shaping
+- `specs/` — active specs (`ready` / `in_progress`)
+- `specs/done/` — shipped specs
+- `specs/abandoned/` — abandoned specs
+
+The settings:
+
+- **Agentile directory:** `docs/agentile/`
 - **ADR directory:** `docs/adr/`
 
 ## Two-axis triage
