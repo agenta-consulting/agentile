@@ -1,6 +1,6 @@
 # Agentile — Spec Dependencies & Prefix-Based Prioritisation
 
-Design spec. Status: draft for review. Date: 2026-06-10.
+Design spec. Status: implemented 2026-06-10 — historical snapshot; the README and `methodology.md` are normative. `specs/done/` was later renamed `specs/done/` (see agentile-backlog-layout-and-abandon.md); specs may now be directories (`NNNN-<slug>/SPEC.md`).
 
 ## Context
 
@@ -37,7 +37,7 @@ Spec states are visible in the filename, in the specs dir (`<Agentile directory>
 `bin/ag-claim <specs-dir> <session-id> [label] [wip-limit]`, under the existing exclusive `flock`, changes to:
 
 1. Build a **status map** from every spec under the specs dir **recursively** (`specs/**/*.md`, so archived shipped specs count for dependency resolution): for each, derive `slug` (strip optional `^\d+-` prefix and `.md`) and read `status`. A slug is "shipped" if any spec with that slug is `shipped`.
-2. The **claim pool** is only the top-level `specs/*.md` (exclude `specs/archive/**`).
+2. The **claim pool** is only the top-level `specs/*.md` (exclude `specs/done/**`).
 3. WIP check first: if `wip-limit > 0` and the in_progress count (top-level) ≥ limit → print `WIP_FULL`.
 4. `ready` = claim-pool specs with `status: ready` and empty `claimed_by`. If none → print `NONE`.
 5. `prioritised` = `ready` specs whose filename has an `^\d+-` prefix. If none → print `UNPRIORITISED`.
@@ -55,7 +55,7 @@ Replaces the auto-rank behaviour:
 3. **Interactively reorder** with the user (present the proposed list; accept "move X above Y", "X first", insertions, etc.).
 4. Apply the order by **densely renaming the ready specs** to `0001-<slug>.md`, `0002-…` via `git mv`:
    - **In-progress** specs are **not renamed** — they are being actively worked (possibly by another session whose claim references the current path), so renaming would break that loop. They keep their existing filename and are shown at the top of the listing as "in progress" for context, but they are outside the renumbered ready queue.
-   - **Shipped** specs are not part of the active list (they live in `specs/archive/`).
+   - **Shipped** specs are not part of the active list (they live in `specs/done/`).
    - Numbering therefore covers only the **ready** specs (`0001…N`). An in-progress spec may share a number with a ready one; that is harmless because `ag-claim` filters by status before ordering, and in-progress items are transient.
 5. Annotate the final list: each entry as claimable or `blocked — waiting on <slug>`; warn on **dependency tension** (a dependant ordered above a dependency) and on **cycles**.
 

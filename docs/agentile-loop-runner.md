@@ -1,6 +1,6 @@
 # Agentile — `/ag-loop` Drain-Mode Runner
 
-Design spec. Status: draft for review. Date: 2026-06-10.
+Design spec. Status: implemented 2026-06-11 — historical snapshot; the README and `methodology.md` are normative. Amended since: plan checkpoints are route-aware (`pause_at_plan: route` — foreground/spike specs pause at plan), and ship keeps claim timestamps, stamping `shipped_at`.
 
 ## Context
 

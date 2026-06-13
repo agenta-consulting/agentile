@@ -7,7 +7,7 @@ This project runs the **Agentile**: capture → shape → spec → plan → buil
 The backlog lives under one configurable **Agentile directory** (`docs/agentile/` by default, set in `.agentile/config.md`); the layout under it is fixed:
 
 - **Inbox** (`docs/agentile/inbox.md`) — one-line stubs awaiting shaping. Capture freely with `/ag-capture`.
-- **Specs** (`docs/agentile/specs/`) — shaped, Ready-to-build specs (`ready` / `in_progress`). The Definition of Ready is `.agentile/shape.md`.
+- **Specs** (`docs/agentile/specs/`) — shaped, Ready-to-build specs (`ready` / `in_progress`). A spec is a flat `NNNN-<slug>.md` until planning, then a directory `NNNN-<slug>/` holding `SPEC.md`, `plan.md`, and supporting files. The Definition of Ready is `.agentile/shape.md`.
   - `specs/done/` — shipped specs.
   - `specs/abandoned/` — specs that were dropped (via `/ag-abandon`), each with the reason recorded.
 - **ADRs** (`docs/adr/`) — the *why* behind significant decisions.
@@ -16,10 +16,10 @@ The backlog lives under one configurable **Agentile directory** (`docs/agentile/
 ### How to work
 
 - An idea arrives → `/ag-capture <one line>`. Never lose an idea for lack of a place to put it.
-- Ready to develop something → `/ag-shape` to interview it into a spec, then `/ag-plan` before any code. Shaping asks about `depends_on` by default — list any specs (by slug) that must ship before this one can be claimed.
+- Ready to develop something → `/ag-shape` to interview it into a spec, then `/ag-plan` before any code — it writes `plan.md` beside the spec; review or amend that file, it is the approved plan. Shaping asks about `depends_on` by default — list any specs (by slug) that must ship before this one can be claimed.
 - Order the ready queue with `/ag-prioritise` — an interactive session that proposes a rank (Business Value × Technical Certainty, dependencies respected), you adjust it, and it renames ready specs to `specs/NNNN-<slug>.md`. An unprefixed spec is not claimable. Shipped specs move to `specs/done/`. Pull the top item with `/ag-next` — safe for concurrent loops; the claim is atomic and session-stamped so it can be resumed with `claude --resume <id>`. If the queue is blocked on dependencies or has no prefixed specs, `/ag-next` tells you which. Check what's in flight with `/ag-wip`.
 - Drop work that won't ship with `/ag-abandon <slug>` — it records why, walks the dependency chain, and offers to cascade-abandon (or unblock) anything that depended on it. Abandoned specs move to `specs/abandoned/`.
-- Run the loop with **`/ag-loop`** — it works through the ready queue once, then stops (a single command can't sit and wait; Claude Code is turn-based). To keep it running continuously — waiting and starting on new work as it appears — use **`/loop /ag-loop`**. Either way it pauses for your sign-off before each ship.
+- Run the loop with **`/ag-loop`** — it works through the ready queue once, then stops (a single command can't sit and wait; Claude Code is turn-based). To keep it running continuously — waiting and starting on new work as it appears — use **`/loop /ag-loop`**. It pauses at plan for `foreground`/`spike` specs (review `plan.md`, reply approved) and for your sign-off before each ship.
 - Build on a short-lived branch/worktree; run the gates in `.agentile/gates.json`; a fresh-context reviewer critiques the diff before merge.
 - Integrate to trunk in small, reversible, flagged batches. Close the loop with `/ag-retro`.
 

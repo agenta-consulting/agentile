@@ -1,6 +1,6 @@
 # Agentile — Per-Stage Customisation & Concurrent Loops
 
-Design spec. Status: draft for review. Date: 2026-06-10.
+Design spec. Status: implemented 2026-06-10 — historical snapshot; the README and `methodology.md` are normative. Known drift: §5's "on abandon: back to ready" describes what is now called **releasing** a claim — abandoning moves a spec to `specs/abandoned/` (see agentile-backlog-layout-and-abandon.md); the status enum now includes `abandoned`; per-spec `priority:` frontmatter was replaced by `NNNN-` filename prefixes (see agentile-dependencies-and-prioritisation.md); the parked `auto_start` flag was superseded by `/ag-loop` (see agentile-loop-runner.md); specs may now be directories (`NNNN-<slug>/SPEC.md`).
 
 ## Context
 
@@ -119,7 +119,7 @@ label: billing-loop          # optional human-readable tag
 claimed_at: 2026-06-10T12:04:00Z
 ```
 
-- Release on ship: `status: shipped` and clear the claim. On abandon: back to `ready`, claim cleared.
+- On release: back to `ready`, claim cleared (abandoning — dropping the spec entirely — came later; see the backlog-layout doc). On ship: `status: shipped`; claim fields are kept and `shipped_at` is stamped (the claim→ship interval is the cycle-time record).
 - **Multiple WIP is first-class**, bounded by `wip_limit` in `prioritise.md`/`next.md`. `ag-next` refuses to pull past the limit.
 - **Stale-claim recovery.** A claim whose session is long dead with no progress (e.g. no commits, `claimed_at` older than a configurable TTL) can be reclaimed; `/ag-wip` surfaces stale claims.
 

@@ -1,6 +1,6 @@
 # Agentile — Backlog Layout, Abandonment & Migration
 
-Design note. Status: implemented. Date: 2026-06-11.
+Design note. Status: implemented. Date: 2026-06-11. Historical snapshot; the README and `methodology.md` are normative.
 
 ## Why
 
