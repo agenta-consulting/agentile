@@ -10,7 +10,7 @@ Show the stubs currently awaiting shaping. This is a deliberate review surface, 
 
 Current inbox (default path; the steps below resolve the real path for non-default layouts):
 
-!`cat docs/agentile/inbox.md 2>/dev/null || echo "(no inbox at docs/agentile/inbox.md — resolve the configured Agentile directory)"`
+!`cat docs/agentile/inbox.md 2>/dev/null || echo "(nothing at the default path — this project may use a custom Agentile directory; Step 1 resolves it)"`
 
 ## Steps
 

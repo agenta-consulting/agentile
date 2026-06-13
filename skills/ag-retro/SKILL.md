@@ -28,11 +28,11 @@ If the file is absent, use the baseline below unchanged.
 
 ## Step 1 — Gather the window
 
-Default to the last 7 days (or a window the user names). Collect, read-only:
+Default to the last 7 days (or a window the user names). First resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) so the spec paths below are correct for this project. Collect, read-only:
 
 - `git log --since` with stats — commits, churn, which areas changed most.
 - Merge/PR history via `gh pr list --state merged` and `gh pr view` when the `gh` CLI is available; otherwise rely on git.
-- `specs/` and `specs/done/` — which specs shipped, which stalled, which became spikes. Shipped specs keep `created`, `claimed_at`, and `shipped_at` in frontmatter: compute ready→claim (queue wait) and claim→ship (cycle time) from them directly.
+- `<dir>/specs/` and `<dir>/specs/done/` — which specs shipped, which stalled, which became spikes. Shipped specs keep `created`, `claimed_at`, and `shipped_at` in frontmatter: compute ready→claim (queue wait) and claim→ship (cycle time) from them directly.
 - `docs/adr/` — decisions made in the window.
 
 Run heavy log/grep commands so only your summary lands in context, not raw output.

@@ -1,4 +1,4 @@
-require "json"; require "open3"; require "tmpdir"; require "fileutils"
+require "json"; require "open3"; require "tmpdir"; require "fileutils"; require "digest"
 FORMAT = File.expand_path("format-on-edit.rb", __dir__)
 TESTG  = File.expand_path("test-gate.rb", __dir__)
 
@@ -57,9 +57,14 @@ Dir.mktmpdir do |d|
   File.write(File.join(d, ".agentile", "gates.json"), JSON.generate("test" => "false"))
   File.write(File.join(d, "dirty.txt"), "uncommitted\n") # dirty tree so the clean-tree skip doesn't fire
   sid = "sess-guard-#{Process.pid}"
-  results = (1..6).map { run(TESTG, "cwd" => d, "session_id" => sid)[0] }
-  raise "first attempt should block: #{results.first.inspect}" unless results.first.include?('"decision":"block"')
-  raise "should eventually stop blocking: #{results.last.inspect}" unless results.last.strip.empty?
+  counter = File.join(Dir.tmpdir, "agentile-stopgate-#{Digest::SHA1.hexdigest(sid + d)}")
+  begin
+    results = (1..6).map { run(TESTG, "cwd" => d, "session_id" => sid)[0] }
+    raise "first attempt should block: #{results.first.inspect}" unless results.first.include?('"decision":"block"')
+    raise "should eventually stop blocking: #{results.last.inspect}" unless results.last.strip.empty?
+  ensure
+    File.delete(counter) if File.exist?(counter) # don't leak the counter into Dir.tmpdir
+  end
 end
 
 puts "ALL PASS"

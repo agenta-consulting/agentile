@@ -88,6 +88,10 @@ File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
     "claimed_at" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
   }
   fm_text = chosen[:raw][/\A---\n(.*?)\n---/m, 1]
+  if fm_text.nil?
+    warn "ag-claim: #{chosen[:path]} has no YAML frontmatter — cannot stamp"
+    exit 1
+  end
   new_fm = fm_text.dup
   # Block form on both subs: label is arbitrary user text ($ARGUMENTS), and the
   # string form of sub would interpret \&, \1, \\ etc. in the replacement.
