@@ -2,7 +2,7 @@
 name: ag-planner
 description: Fresh-context architect for Agentile. Reads a Ready spec plus the standing context (CLAUDE.md, ADRs) and returns an implementation plan — files to touch, approach, test strategy, risks — without editing any code. Use during /ag-plan for sizable or risky specs, or whenever you want an independent read of the approach before building.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: inherit
 color: blue
 ---
 

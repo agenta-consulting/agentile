@@ -2,7 +2,8 @@
 name: ag-reviewer
 description: Fresh-context reviewer for Agentile — the "trust but verify" gate. Critiques the builder's diff against the spec, runs the project's gates, and does a security skim, with no stake in the implementation. Use after ag-builder finishes and before merge. Agents catch others' mistakes better than their own, so this must be a separate context from the builder.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: inherit
+memory: project
 color: orange
 ---
 
