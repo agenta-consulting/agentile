@@ -1,6 +1,6 @@
 ---
 name: ag-loop
-description: Run the Agentile loop as a runner — claim the next ready item, carry it through plan/build/verify, pause before ship (and at any human checkpoint), then repeat. Drains the backlog within one turn; wrap in /loop to also watch for new work. Trigger phrases include "/ag-loop", "run the loop", "start working through the backlog", "keep building ready items".
+description: Run the Agentile loop as a runner — claim the next ready item, carry it through plan/build/verify, pause at plan for foreground/spike work, pause before ship, and honour any human checkpoint, then repeat. Drains the backlog within one turn; wrap in /loop to also watch for new work. Trigger phrases include "/ag-loop", "run the loop", "start working through the backlog", "keep building ready items".
 allowed-tools: AskUserQuestion, Bash, Read, Edit, Skill, Agent
 ---
 
@@ -14,6 +14,7 @@ Read `.agentile/loop.md` from the project root. If it is absent, use the default
 
 - `max_iterations` — maximum specs to process in one run (default `5`)
 - `pause_before_ship` — pause and request sign-off before shipping each item (default `true`)
+- `pause_at_plan` — when to pause for plan review: `always`, `route` (pause when the spec's `route` is `foreground` or `spike`), or `never` (default `route`)
 - `stop_on_gate_failure` — halt the entire loop if verify fails past the retry limit (default `true`)
 - `verify_retry_limit` — how many times to retry build+verify before giving up on an item (default `1`)
 - `on_empty` — behaviour when the backlog is drained: `watch` continues under `/loop`, `stop` exits (default `watch`)
@@ -27,7 +28,7 @@ Repeat the following steps up to `max_iterations` times. Track a counter startin
 
 ### Step 1 — Resume check
 
-Before claiming anything new, scan the specs directory (resolve **Agentile directory** from `.agentile/config.md`, default `docs/agentile/`; the specs dir is `<dir>/specs/` — honour the old `Specs directory:` key or a root-level `specs/` if that is what the project still has, and note `/ag-init` can migrate) for any spec whose frontmatter has both `status: in_progress` and `claimed_by` equal to this session's id (surfaced by the SessionStart hook as "Agentile: this session's id is …"). If such a spec exists, resume it — proceed to Step 4 with that spec path. Do NOT invoke `ag-next` for a spec that is already claimed by this session.
+Before claiming anything new, scan the specs directory (resolve **Agentile directory** from `.agentile/config.md`, default `docs/agentile/`; the specs dir is `<dir>/specs/` — honour the old `Specs directory:` key or a root-level `specs/` if that is what the project still has, and note `/ag-init` can migrate) — both flat `*.md` files and `*/SPEC.md` directory specs at its top level — for any spec whose frontmatter has both `status: in_progress` and `claimed_by` equal to this session's id (surfaced by the SessionStart hook as "Agentile: this session's id is …"). If such a spec exists, resume it — proceed to Step 4 with that spec path. Do NOT invoke `ag-next` for a spec that is already claimed by this session.
 
 If no in-progress spec is found for this session, proceed to Step 2.
 
@@ -51,11 +52,20 @@ If the counter has reached `max_iterations` before a new claim, report the limit
 
 ### Step 4 — Plan
 
-Invoke `/ag-plan <spec-path>`. If the plan stage's playbook (`.agentile/plan.md`) sets `human_checkpoint: true`, pause here — end the turn with a summary of the plan output and require an explicit "approved" reply before continuing. Do not advance until approval is given.
+Invoke `/ag-plan <spec-path>`. It writes the plan to `plan.md` inside the spec's directory (promoting a flat spec to its directory form first).
+
+Then decide whether to pause for plan review:
+
+- If `.agentile/plan.md` (the stage playbook) sets `human_checkpoint: true` — always pause.
+- Else if `pause_at_plan` is `always` — pause.
+- Else if `pause_at_plan` is `route` and the spec's `route` is `foreground` or `spike` — pause. This is the methodology's "cheapest place to steer": low-certainty work gets a human eye on the plan before any code exists; `background` (high-certainty) work runs through.
+- Else continue to Step 5.
+
+On a pause: end the turn with a one-paragraph summary of the plan and the line "Plan written to `<spec-dir>/plan.md` — review or amend it, then reply 'approved'." An amended `plan.md` is the approved plan; do not advance until approval is given.
 
 ### Step 5 — Build
 
-Read `.agentile/build.md`. If its frontmatter sets `delegate_to: <skill>`, invoke that skill to perform the build. Otherwise dispatch the `ag-builder` agent to carry out the build, passing the spec path and the build playbook as context.
+Read `.agentile/build.md`. If its frontmatter sets `delegate_to: <skill>`, invoke that skill to perform the build. Otherwise dispatch the `ag-builder` agent to carry out the build, passing the spec path, its `plan.md`, and the build playbook as context.
 
 If `.agentile/build.md` sets `human_checkpoint: true`, pause after build output is produced — end the turn with a summary and require explicit sign-off before proceeding to verify.
 
@@ -88,9 +98,9 @@ If `pause_before_ship` is `false` and no checkpoint requires a pause, continue d
 On approval (or when no pause applies):
 
 1. Ship or merge the work per the project's conventions (check `.agentile/ship.md` if present; otherwise follow repository conventions).
-2. Set `status: shipped` in the spec's frontmatter.
-3. Clear the claim fields: remove or blank `claimed_by`, `claimed_at`, and `label`.
-4. Move the spec file into `<dir>/specs/done/` (create the directory if it does not exist) using `git mv`, preserving its `NNNN-<slug>.md` filename. This removes it from the active numbered list while keeping it resolvable as a shipped dependency by `ag-claim`.
+2. Set `status: shipped` in the spec's frontmatter and add `shipped_at:` (ISO8601 — `date -u +%Y-%m-%dT%H:%M:%SZ`).
+3. **Keep** `claimed_by`, `claimed_at`, and `label` — the claim→ship interval is the cycle-time data `/ag-retro` mines; never erase it at the finish line.
+4. Move the spec into `<dir>/specs/done/` (create the directory if it does not exist) using `git mv` — the whole `NNNN-<slug>/` directory for a directory spec (plan and supporting files travel with it), or the `NNNN-<slug>.md` file for a flat spec. This removes it from the active numbered list while keeping it resolvable as a shipped dependency by `ag-claim`.
 5. Append the spec slug to the `completed` list and increment the counter.
 6. Return to Step 1 for the next iteration.
 
