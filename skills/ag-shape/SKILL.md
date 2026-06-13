@@ -28,6 +28,7 @@ If the file is absent, use the baseline below unchanged.
 
 - Read `.agentile/shape.md` — this is **this project's Definition of Ready**: the exact questions a stub must answer, plus any house additions. Drive the interview against *this* list, not a generic one.
 - Read `.agentile/config.md` for the **Agentile directory** (default `docs/agentile/`) and the two-axis triage table. The inbox is `<dir>/inbox.md` and specs live in `<dir>/specs/`. If the project still uses the old `Inbox:` / `Specs directory:` keys (or root-level `inbox.md` / `specs/`) with no `Agentile directory` key, honour those paths and note that `/ag-init` can migrate the layout.
+- Read `<dir>/brief.md` if present — the project's prioritised outcomes, users, and constraints. Score Business Value in the triage against the brief's outcomes, and let it inform the shaping questions.
 - Read the project's `CLAUDE.md` (and `docs/adr/`) for standing context so your questions fit the architecture.
 
 ## Step 2 — Pick the stub

@@ -30,7 +30,7 @@ If the file is absent, use the baseline below unchanged.
 Resolve the specs directory: read **Agentile directory** from `.agentile/config.md`
 (default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses
 the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory`
-key, honour that path and note `/ag-init` can migrate.) List every spec at the top level of that directory — flat `*.md` files and `NNNN-<slug>/` directories containing a `SPEC.md` (skip `done/` and `abandoned/`) — do **not** descend into `specs/done/`, `specs/abandoned/`, or any other subdirectory looking for more.
+key, honour that path and note `/ag-init` can migrate.) Read `<dir>/brief.md` if present — rank Business Value against its prioritised outcomes rather than gut feel. List every spec at the top level of that directory — flat `*.md` files and `NNNN-<slug>/` directories containing a `SPEC.md` (skip `done/` and `abandoned/`) — do **not** descend into `specs/done/`, `specs/abandoned/`, or any other subdirectory looking for more.
 
 For each file, read its frontmatter and classify it into one of three groups:
 

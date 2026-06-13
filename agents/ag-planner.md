@@ -14,6 +14,7 @@ You do not write or edit implementation code. You produce a plan.
 
 - The spec you were given (in `specs/`).
 - `CLAUDE.md` and any relevant ADRs in `docs/adr/` — honour the existing architecture and conventions.
+- `docs/agentile/brief.md` if present — the project's outcomes, constraints, and non-goals, so the plan serves the actual goal and respects the walls.
 - `.agentile/gates.json` — so your test strategy names the project's real commands.
 - The actual code paths the spec touches — trace them; do not guess.
 

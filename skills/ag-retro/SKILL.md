@@ -54,6 +54,7 @@ For each lesson worth keeping, propose a concrete change (and make it on approva
 - A **`CLAUDE.md`** edit — a new convention, a do/don't, a clarified standard.
 - A new or updated **ADR** when the lesson is a decision.
 - A **`.agentile/shape.md`** addition when an item shipped wrong because shaping missed a question.
+- A **`brief.md`** update when the project's outcomes, constraints, or non-goals have shifted — keep the brief living rather than a launch document.
 
 ## Step 4 — Report
 

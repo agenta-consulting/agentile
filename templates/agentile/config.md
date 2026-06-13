@@ -27,7 +27,7 @@ Every stub is scored on **Business Value** and **Technical Certainty**, then rou
 
 ### Scoring guidance
 
-- **Business Value** — how much does shipping this move the outcome that matters right now? Score High / Medium / Low against current priorities, not gut feel.
+- **Business Value** — how much does shipping this move the outcome that matters right now? Score High / Medium / Low against the project brief's prioritised outcomes (`brief.md`), not gut feel. No brief yet? Run `/ag-init`'s interview (or write one) — otherwise this score is guesswork.
 - **Technical Certainty** — how confident are we in *how* to build it? High = the approach is obvious and low-risk; Low = unknowns in approach, data, or dependencies.
 
 A Low-certainty item usually leaves shaping as a **spike** (a timeboxed exploration spec), not a build.

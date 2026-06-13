@@ -26,7 +26,7 @@ If the file is absent, use the baseline below unchanged.
 ## Steps
 
 1. The idea is `$idea` (or `$ARGUMENTS`). If empty, ask for it once.
-2. Read `.agentile/spec-template.md` (the output structure) and `.agentile/config.md` for the **Agentile directory** (default `docs/agentile/`); specs live in `<dir>/specs/`. (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that and note `/ag-init` can migrate.) Skim `CLAUDE.md` for standing context.
+2. Read `.agentile/spec-template.md` (the output structure) and `.agentile/config.md` for the **Agentile directory** (default `docs/agentile/`); specs live in `<dir>/specs/`. (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that and note `/ag-init` can migrate.) Skim `CLAUDE.md` for standing context, and `<dir>/brief.md` if present (for the project's outcomes and constraints, so the triage self-check has a reference).
 3. **Self-check the triage.** Estimate Business Value × Technical Certainty. If Technical Certainty is not High, or the work touches more than a small, well-understood area, tell the user this should be shaped, and offer to run `/ag-shape` instead. Only continue for genuinely trivial work.
 4. Write `<dir>/specs/<slug>.md` from the template, filling every field, including `outcome:` (the observable check that proves it worked). For a trivial spec, keep edge cases and scope tight and explicit. Set `route` (usually `foreground` or `background`), `business_value`, `technical_certainty`, and today's date.
 5. Report the path and the next step (`/ag-plan <dir>/specs/<slug>.md`). Do not start building.
