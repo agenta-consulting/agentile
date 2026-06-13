@@ -1,6 +1,6 @@
 {
   "subagentStatusLine": {
     "type": "command",
-    "command": "ruby \"${CLAUDE_PLUGIN_ROOT}/bin/ag-subagent-statusline.rb\""
+    "command": "ruby \"${CLAUDE_PLUGIN_ROOT}/hooks/ag-subagent-statusline.rb\""
   }
 }
