@@ -29,6 +29,9 @@ end
 # Enumerate the specs directly under one root: flat *.md files plus */SPEC.md dirs.
 def specs_in(root)
   flat = Dir.glob(File.join(root, "*.md")).map { |p| load_spec(p, File.basename(p, ".md")) }
+  # The single-level glob means done/ and abandoned/ contents never match here;
+  # the RESERVED reject covers the degenerate case of a SPEC.md placed directly
+  # inside <root>/done/ or <root>/abandoned/.
   dirs = Dir.glob(File.join(root, "*", "SPEC.md"))
             .reject { |p| RESERVED.include?(File.basename(File.dirname(p))) }
             .map { |p| load_spec(p, File.basename(File.dirname(p))) }
@@ -42,6 +45,9 @@ File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
   # Claim pool: specs directly under the specs root. done/ and abandoned/ hold
   # specs one level deeper, so they fall outside these globs by construction.
   pool = specs_in(specs_dir)
+
+  dupes = pool.group_by { |s| s[:slug] }.select { |_, v| v.size > 1 }.keys
+  abort "ag-claim: duplicate slug(s) in claim pool: #{dupes.join(', ')}" if dupes.any?
 
   # Status map includes done/ and abandoned/ so shipped specs resolve deps.
   # Abandoned specs keep status: abandoned, so they never count as shipped; a

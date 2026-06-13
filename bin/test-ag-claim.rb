@@ -126,4 +126,19 @@ Dir.mktmpdir do |d|
   raise "junk dir: #{claim(d)}" unless claim(d) == "NONE"
 end
 
+# 12. a SPEC.md placed directly inside done/ is never a spec (RESERVED guard)
+Dir.mktmpdir do |d|
+  FileUtils.mkdir_p(File.join(d, "done"))
+  spec(File.join(d, "done"), "SPEC.md", status: "ready")
+  raise "done/SPEC.md: #{claim(d)}" unless claim(d) == "NONE"
+end
+
+# 13. same slug in flat and directory form aborts loudly
+Dir.mktmpdir do |d|
+  spec(d, "0001-x.md", status: "ready")
+  dirspec(d, "0002-x", status: "ready")
+  out, err, st = Open3.capture3("ruby", HELP, d, "s", "", "0")
+  raise "dupe slug: #{out.inspect} #{err.inspect}" if st.success? || !err.include?("duplicate slug")
+end
+
 puts "ALL PASS"
