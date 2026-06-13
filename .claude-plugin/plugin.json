@@ -4,5 +4,7 @@
   "author": { "name": "Keith Rowell", "email": "keith@keithrowell.com" },
   "license": "MIT",
   "keywords": ["agentic", "agile", "methodology", "workflow", "spec-driven", "lean"],
-  "skills": "./skills/"
+  "displayName": "Agentile",
+  "homepage": "https://github.com/agenta-consulting/agentile",
+  "repository": "https://github.com/agenta-consulting/agentile"
 }
