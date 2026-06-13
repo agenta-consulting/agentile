@@ -1,6 +1,6 @@
 ---
 name: ag-init
-description: Initialise Agentile in the current project — scaffold inbox.md, the .agentile/ config layer, docs/adr/, and the CLAUDE.md standing-context section, then optionally enable the deterministic gate hooks. Idempotent; never overwrites existing files. Trigger phrases include "/ag-init", "set up Agentile here", "initialise Agentile", "scaffold the loop".
+description: Initialise Agentile in the current project — scaffold inbox.md, the project brief, the .agentile/ config layer, docs/adr/, and the CLAUDE.md standing-context section, and configure the deterministic gate commands. Idempotent; never overwrites existing files. Trigger phrases include "/ag-init", "set up Agentile here", "initialise Agentile", "scaffold the loop".
 allowed-tools: AskUserQuestion, Bash, Read, Write, Edit
 disable-model-invocation: true
 ---
