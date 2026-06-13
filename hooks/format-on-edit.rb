@@ -33,7 +33,7 @@ end
 cwd = data['cwd'] || Dir.pwd
 file = data.dig('tool_input', 'file_path')
 
-gates_path = File.join(cwd, '.lal', 'gates.json')
+gates_path = File.join(cwd, '.agentile', 'gates.json')
 bail unless File.exist?(gates_path)
 
 gates = begin

@@ -37,7 +37,7 @@ end
 allow if data['stop_hook_active']
 
 cwd = data['cwd'] || Dir.pwd
-gates_path = File.join(cwd, '.lal', 'gates.json')
+gates_path = File.join(cwd, '.agentile', 'gates.json')
 allow unless File.exist?(gates_path)
 
 gates = begin
