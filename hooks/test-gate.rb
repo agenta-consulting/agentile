@@ -55,20 +55,26 @@ end
 cmd = gates['test'].to_s.strip
 allow if cmd.empty?
 
-# Skip when the working tree is clean: an idle loop tick or an already-green
-# commit has nothing new to test. Only applies inside a git repo.
-porcelain, _pe, pst = Open3.capture3('git', '-C', cwd, 'status', '--porcelain')
-allow if pst.success? && porcelain.strip.empty?
-
 # Independent re-block guard (stop_hook_active is unreliable): cap consecutive
-# blocks per session so a suite that can never pass can't loop forever.
-# The counter file persists until tests pass (clearing it) or the session ends.
-# Once the cap is reached we write "capped" so all subsequent stops also allow.
+# blocks per session+dir so a suite that can never pass can't loop forever.
+# The counter file persists until tests pass or the tree goes clean (both clear
+# it) or the session ends. Once the cap is reached we write "capped" so all
+# subsequent stops also allow — a transient cooling-off, reset by a clean tree.
 MAX_CONSECUTIVE_BLOCKS = 5
 sid = (data['session_id'] || 'nosession').to_s
 counter = File.join(Dir.tmpdir, "agentile-stopgate-#{Digest::SHA1.hexdigest(sid + cwd)}")
 
-# Already given up for this session+dir: allow immediately.
+# Skip when the working tree is clean: an idle loop tick or an already-green
+# commit has nothing new to test. A clean state also resets the consecutive
+# count (and clears any "capped" state), so a later edit gets a fresh guard
+# cycle. Only applies inside a git repo.
+porcelain, _pe, pst = Open3.capture3('git', '-C', cwd, 'status', '--porcelain')
+if pst.success? && porcelain.strip.empty?
+  File.delete(counter) if File.exist?(counter)
+  allow
+end
+
+# Already given up for this session+dir (and tree still dirty): allow immediately.
 allow if File.exist?(counter) && File.read(counter).strip == 'capped'
 
 stdout, stderr, status = Open3.capture3(cmd, chdir: cwd)
