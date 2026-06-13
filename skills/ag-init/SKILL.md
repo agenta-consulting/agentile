@@ -79,6 +79,7 @@ Copy from `templates/` into the project, preserving structure:
 - `.agentile/loop.md`
 - `.agentile/gates.json` — then fill in the commands and protected branches gathered in Step 2.
 - `.agentile/spec-template.md`
+- `.agentile/plan-template.md`
 - `.agentile/adr-template.md`
 - `docs/adr/0000-record-architecture-decisions.md` — replace `<YYYY-MM-DD>` with today's date (`date +%Y-%m-%d`).
 - Create the specs tree: `<dir>/specs/`, `<dir>/specs/done/`, and `<dir>/specs/abandoned/`, each with a `.gitkeep`.
@@ -97,7 +98,20 @@ Append the contents of `templates/CLAUDE.agentile-section.md` to the project's r
 
 Merge the plugin's hooks into the project so the gates enforce themselves. The plugin ships `hooks/hooks.json`; if the user enabled hooks, ensure the project's `.claude/settings.json` references them (the plugin's own `hooks` declaration already registers them when the plugin is installed, so in most cases no project edit is needed — confirm the plugin is installed rather than duplicating the hook registration). Explain that the hooks read `.agentile/gates.json` and no-op while commands are blank.
 
-## Step 7 — Report
+## Step 7 — Readiness report (observations, not blockers)
+
+The methodology's precondition is "first be agile, then agentic" — a working
+trunk, gates, and tests. Check and report, without blocking:
+
+- **Tests** — does `gates.json` have a `test` command? Does the repo have a test directory/framework?
+- **CI** — is there a CI config (`.github/workflows/`, etc.)?
+- **Trunk** — is there a default branch the team integrates to? Any long-lived divergent branches?
+
+Phrase each as an observation ("No test command configured — the test-gate hook
+will no-op until one exists"), so an unhealthy loop is visible rather than
+silently amplified.
+
+## Step 8 — Report
 
 Summarise what was created versus skipped, then point the user at the next move:
 

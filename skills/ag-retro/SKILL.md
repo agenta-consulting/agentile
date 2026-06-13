@@ -30,7 +30,7 @@ Default to the last 7 days (or a window the user names). Collect, read-only:
 
 - `git log --since` with stats — commits, churn, which areas changed most.
 - Merge/PR history via `gh pr list --state merged` and `gh pr view` when the `gh` CLI is available; otherwise rely on git.
-- `specs/` — which specs shipped, which stalled, which became spikes.
+- `specs/` and `specs/done/` — which specs shipped, which stalled, which became spikes. Shipped specs keep `created`, `claimed_at`, and `shipped_at` in frontmatter: compute ready→claim (queue wait) and claim→ship (cycle time) from them directly.
 - `docs/adr/` — decisions made in the window.
 
 Run heavy log/grep commands so only your summary lands in context, not raw output.
@@ -43,6 +43,7 @@ Answer, with evidence:
 - **What needed the most rework?** Files or areas with repeated churn or repeated review bounces.
 - **What surprised us?** Incidents, reverts, or specs that ballooned past their scope boundary.
 - **Lead time** — is it dropping? If not, the constraint is upstream of coding; say so plainly.
+- **Did shipped work actually work?** For each spec shipped since the last retro, check its `outcome:` field — was the outcome observed? Unverified or unmet outcomes become new inbox stubs (`/ag-capture`), referencing the original slug.
 
 Measure **flow, not output** — do not report lines of code or "agent velocity".
 
