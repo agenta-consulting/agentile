@@ -33,17 +33,6 @@
           }
         ]
       }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "ruby \"${CLAUDE_PLUGIN_ROOT}/hooks/session-id.rb\"",
-            "timeout": 10
-          }
-        ]
-      }
     ]
   }
 }

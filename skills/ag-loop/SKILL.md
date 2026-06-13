@@ -28,7 +28,7 @@ Repeat the following steps up to `max_iterations` times. Track a counter startin
 
 ### Step 1 — Resume check
 
-Before claiming anything new, scan the specs directory (resolve **Agentile directory** from `.agentile/config.md`, default `docs/agentile/`; the specs dir is `<dir>/specs/` — honour the old `Specs directory:` key or a root-level `specs/` if that is what the project still has, and note `/ag-init` can migrate) — both flat `*.md` files and `*/SPEC.md` directory specs at its top level — for any spec whose frontmatter has both `status: in_progress` and `claimed_by` equal to this session's id (surfaced by the SessionStart hook as "Agentile: this session's id is …"). If such a spec exists, resume it — proceed to Step 4 with that spec path. Do NOT invoke `ag-next` for a spec that is already claimed by this session.
+Before claiming anything new, scan the specs directory (resolve **Agentile directory** from `.agentile/config.md`, default `docs/agentile/`; the specs dir is `<dir>/specs/` — honour the old `Specs directory:` key or a root-level `specs/` if that is what the project still has, and note `/ag-init` can migrate) — both flat `*.md` files and `*/SPEC.md` directory specs at its top level — for any spec whose frontmatter has both `status: in_progress` and `claimed_by` equal to this session's id (`${CLAUDE_SESSION_ID}`). If such a spec exists, resume it — proceed to Step 4 with that spec path. Do NOT invoke `ag-next` for a spec that is already claimed by this session.
 
 If no in-progress spec is found for this session, proceed to Step 2.
 

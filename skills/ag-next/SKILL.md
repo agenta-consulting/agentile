@@ -24,13 +24,7 @@ If the file is absent, use the baseline below unchanged.
 
 ## Baseline steps
 
-1. Determine this session's id from the context the SessionStart hook injected — look for a line matching "Agentile: this session's id is …". If it is not present, mint a fallback id with Bash:
-
-   ```
-   echo "$(whoami)@$(hostname -s)/$(date +%s)"
-   ```
-
-   Note that the id was minted locally rather than injected by the hook.
+1. This session's id is `${CLAUDE_SESSION_ID}` — Claude Code substitutes the real session id here when the skill runs. Use it directly as the claim's `claimed_by` handle; it is what `claude --resume <id>` needs. (If for any reason it is empty, fall back to `echo "$(whoami)@$(hostname -s)/$(date +%s)"` and note that this fallback is not a resume handle.)
 
 2. Resolve the specs directory: read **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that path and note `/ag-init` can migrate.) Read `wip_limit` from `.agentile/prioritise.md` (default: unlimited if the file or field is absent).
 
@@ -43,7 +37,7 @@ If the file is absent, use the baseline below unchanged.
 4. Run the helper:
 
    ```
-   ruby "<helper>" "<specs-dir>" "<session-id>" "<optional label from $ARGUMENTS>" "<wip_limit>"
+   ruby "<helper>" "<specs-dir>" "${CLAUDE_SESSION_ID}" "<optional label from $ARGUMENTS>" "<wip_limit>"
    ```
 
 5. Interpret the single line of output:
