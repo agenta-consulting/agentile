@@ -37,7 +37,7 @@ If the file is absent, use the baseline below unchanged.
 ## Step 3 — Interview
 
 - Ask **one or two questions at a time**, using `AskUserQuestion` where the choices are discrete. Let each answer shape the next question.
-- Work through every required item in `.agentile/shape.md` — typically problem/who/why-now, acceptance criteria, edge cases and failure paths, scope boundary, affected areas, open questions, and dependencies — plus any house additions.
+- Work through every required item in `.agentile/shape.md` — typically problem/who/why-now, acceptance criteria, the observable **outcome** (the one metric or check that will prove the change worked — written to the `outcome:` frontmatter field), edge cases and failure paths, scope boundary, affected areas, open questions, and dependencies — plus any house additions.
 - Prefer concrete examples over abstractions. Push back gently on vague acceptance criteria.
 - **Dependencies**: ask whether this item depends on any other specs being shipped first. Scan the specs directory (`<dir>/specs/`) and offer the existing slugs (a spec's slug is its filename after stripping any leading `NNNN-` prefix and the `.md` extension) as candidates. Write the chosen slugs to `depends_on` in the spec's frontmatter; default is `[]`. Note that newly shaped specs are written **unprefixed** (they are Ready but not yet prioritised).
 
@@ -51,8 +51,8 @@ If the file is absent, use the baseline below unchanged.
 
 Based on the conversation, do **one** of:
 
-- **Graduate to a spec** — write `<dir>/specs/<slug>.md` using `.agentile/spec-template.md`, filling every field from the interview, and set `route`, `business_value`, `technical_certainty`. Then remove the stub line from the inbox.
-- **Spike** — write the spec with `type: spike` and `status: ready`, framing the open questions as the timeboxed exploration goal. Remove the stub.
+- **Graduate to a spec** — write `<dir>/specs/<slug>.md` using `.agentile/spec-template.md`, filling every field from the interview, and set `route`, `business_value`, `technical_certainty`. Then remove the stub line from the inbox. Write the spec as a flat file; the plan stage promotes it to a directory (`NNNN-<slug>/SPEC.md`) when `plan.md` is written. If the shaping session itself produced supporting material (a sketch, a data sample), create the directory form now and put the material beside `SPEC.md`.
+- **Spike** — write the spec with `type: spike` and `status: ready`, framing the open questions as the timeboxed exploration goal. Remove the stub. A spike's deliverable is a written answer, not code: its build is the timeboxed exploration, its verify is 'question answered within the timebox', and on ship its findings (`findings.md` in the spec's directory, or an ADR) move to `done/` — satisfying dependencies like any spec.
 - **Split** — write multiple stubs back to the inbox (or multiple specs), and remove the original.
 - **Merge** — fold the stub into an existing stub or spec; remove the original.
 - **Drop** — remove the stub with a one-line note on why.
