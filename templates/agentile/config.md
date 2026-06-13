@@ -36,7 +36,11 @@ A Low-certainty item usually leaves shaping as a **spike** (a timeboxed explorat
 
 The names `/ag-shape` may recommend. Rename or re-scope to taste.
 
-- **foreground** — pair in real time; you steer step by step.
+- **foreground** — pair in real time; you steer step by step. Under `/ag-loop`,
+  a foreground spec pauses after planning so you can review `plan.md` before
+  any code is written.
 - **background** — hand to a background/async agent; review the resulting PR.
-- **spike** — timeboxed exploration to resolve unknowns; produces findings, not shipping code.
+- **spike** — timeboxed exploration to resolve unknowns; produces findings
+  (`findings.md` or an ADR in the spec's directory), not shipping code. Pauses
+  at plan like foreground work.
 - **drop** — not worth doing now; remove the stub.

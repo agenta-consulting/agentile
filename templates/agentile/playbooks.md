@@ -15,3 +15,8 @@ Each playbook is optional YAML frontmatter + prose:
     Prose: this project's policy / definition for the stage.
 
 Build one out conversationally with `/ag-customise <stage>`.
+
+Design rule for any future config surface: **frontmatter keys are for the
+machine** (deterministic, forward-compatible — unknown keys are ignored);
+**prose is for judgement** (policy the agent weighs in context). Keep the two
+separate, the way every playbook above does.

@@ -8,14 +8,23 @@ route: <foreground | background | spike>
 business_value: <high | medium | low>
 technical_certainty: <high | medium | low>
 created: <YYYY-MM-DD>
-# Claim fields — set by /ag-next when the item is pulled; blank until claimed:
+outcome: <one observable metric or check that will prove the change worked in production>
+# Claim fields — set by /ag-next when the item is pulled; KEPT after ship so the
+# claim→ship interval (cycle time) survives for /ag-retro:
 claimed_by:                   # session id (the resume handle: claude --resume <id>)
 label:                        # optional human label for the loop
 claimed_at:                   # ISO8601, e.g. 2026-06-10T12:04:00Z
 # Abandon fields — set by /ag-abandon when the spec is dropped; absent otherwise:
 # abandoned_reason:           # why it was dropped (free text)
 # abandoned_at:               # ISO8601
+# Ship fields — set by the ship stage; absent until shipped:
+# shipped_at:                 # ISO8601
 ---
+
+<!-- A spec may be a flat file (specs/NNNN-<slug>.md) or a directory
+     (specs/NNNN-<slug>/SPEC.md). The plan stage promotes a flat spec to a
+     directory so plan.md and supporting files (designs, notes, findings)
+     can live beside it. -->
 
 # <Title>
 
