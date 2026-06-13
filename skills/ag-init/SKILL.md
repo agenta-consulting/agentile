@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # ag-init
 
-Scaffold the **tailorable layer** of Agentile into this project. The methodology core (skills, agents, hooks) is already installed via the plugin; this skill drops the per-project files the skills read at runtime, so the team can tailor *content* without touching the methodology.
+Scaffold the **tailorable layer** of Agentile for Claude into this project. The **fixed implementation** (skills, agents, hooks) is already installed via the plugin; this skill drops the per-project files the skills read at runtime, so the team can tailor *content* without touching the plugin.
 
 This skill is **idempotent**: it must never overwrite a file that already exists. For each target, check first, and report whether it was created or left as-is.
 

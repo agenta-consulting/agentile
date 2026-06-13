@@ -1,6 +1,6 @@
-# The Lean Agentic Loop
+# Agentile
 
-*A methodology for small teams who direct AI agents as their primary way of building software. Synthesised from ten sources (see [docs/sources.md](docs/sources.md)); shipped as the Agentile Claude Code plugin.*
+*Agile, with agency. A methodology for small teams who direct AI agents as their primary way of building software — applicable with any tool. Distilled from the Lean Agentic Loop synthesis of ten sources (see [docs/sources.md](docs/sources.md)); a Claude Code implementation ships as the Agentile plugin (see the binding section).*
 
 ## Cross-cutting themes
 
@@ -37,13 +37,13 @@ Borrowed from danicat: score each task on **Business Value** and **Technical Cer
 | **High value** | Delegate to a **background/async agent**, review the PR | **Pair in foreground** — you drive, agent executes step by step |
 | **Low value** | Batch to background agents; thin review | Spike first (timeboxed exploration) or drop |
 
-The route is not advice that evaporates — it is written to the spec's frontmatter and consumed downstream: a `foreground` or `spike` spec pauses the loop at plan for human steering; a `background` spec runs through to the pre-ship gate.
+The route is not advice that evaporates — it is **recorded on the spec itself** and travels with it: a `foreground` or `spike` spec pauses the loop at plan for human steering; a `background` spec runs through to the pre-ship gate. (How the route is stored is an implementation detail.)
 
 ### The Inbox: capture now, shape later
 
 The friction in any small-team process is the moment an idea arrives. You're mid-build and you think "we should rate-limit the login endpoint" — too small to plan, too important to forget, not worth a full spec right now. So you don't want a blank page; you want a **one-line drop box**.
 
-LAL has a single capture surface, the **Inbox** (`inbox.md`). Anything can go in it as a **stub** — a placeholder that is *not yet ready to build*. A stub is literally one line: a title, optionally a word about why. No acceptance criteria, no estimate, no triage. The only rule is that capture must be instant, so the cost of writing it down is lower than the cost of holding it in your head.
+Agentile has a single capture surface, the **Inbox** — one place where any idea can land. Anything can go in it as a **stub** — a placeholder that is *not yet ready to build*. A stub is literally one line: a title, optionally a word about why. No acceptance criteria, no estimate, no triage. The only rule is that capture must be instant, so the cost of writing it down is lower than the cost of holding it in your head.
 
 ```
 # Inbox (stubs awaiting shaping)
@@ -70,32 +70,32 @@ A shaping conversation drives toward answering:
 
 The agent should also do the **two-axis triage** during shaping: estimate Business Value × Technical Certainty and recommend a route (foreground pair, background agent, spike, or drop). Low-certainty stubs often leave shaping as a spike, not a build.
 
-Outcome of a good shaping session: the stub graduates out of `inbox.md` and becomes a Ready spec in `/specs/` (the input to step 1), **or** it's split into several stubs, merged, deferred, or deleted. Shaping is the cheapest place to kill or reshape an idea — do it here, in words, before any code exists.
+Outcome of a good shaping session: the stub graduates out of the Inbox and becomes a Ready spec (the input to step 1), **or** it's split into several stubs, merged, deferred, or deleted. Shaping is the cheapest place to kill or reshape an idea — do it here, in words, before any code exists.
 
 A practical rhythm for 1–5 people: capture freely all day; shape in a short focused pass (e.g., once a day or before each build cycle) by walking the top of the Inbox with the agent. Don't let the Inbox become a graveyard — if a stub has sat unshaped for weeks, that's a signal to drop it.
 
-A spike's deliverable is a written answer, not code: its build is the timeboxed exploration, its verify is "question answered within the timebox", and on ship its findings (`findings.md` in the spec's directory, or an ADR) move to `done/` — satisfying dependencies like any spec.
+A spike's deliverable is a written answer, not code: its build is the timeboxed exploration, its verify is "question answered within the timebox", and on ship its findings (a short write-up, or an ADR) are **archived alongside completed work** — satisfying dependencies like any spec.
 
 ### The spec artefact
 
-A spec begins as a single markdown file — frontmatter for the machine, prose
-for people. When planning starts it is promoted to a directory of the same
-name: the spec becomes `SPEC.md`, the plan is written beside it as `plan.md`,
-and any supporting material (designs, data samples, spike findings) lives in
-the same directory. The artefact carries its own history in frontmatter —
-`created`, `claimed_at`, `shipped_at` — so flow metrics need no external
-tracker, and each spec names an `outcome`: the one observable check that will
-prove the change worked. Shipping moves the whole artefact, directory and all,
-into `done/`, where it remains resolvable as a fulfilled dependency and
-mineable for the learn step.
+A spec is a **written artefact**: a human-readable statement of the work, plus
+a small set of machine-readable facts about it — when it was created, when it
+was claimed, when it shipped — so flow metrics need no external tracker. Each
+spec names an **outcome**: the one observable check that will prove the change
+worked. When planning starts, the spec gains a **plan** kept beside it,
+together with any supporting material (designs, data samples, spike findings).
+Shipping **archives the whole artefact**, where it stays resolvable as a
+fulfilled dependency and mineable for the learn step. (How the artefact is
+stored — file formats, directory layout, where the metadata lives — is the
+implementation's business.)
 
 ### Prioritisation and pulling as distinct acts
 
 The ready queue needs two operations that are easy to conflate but must stay separate.
 
-**Prioritisation** is an editorial act: you order the ready list by scoring each spec on Business Value × Technical Certainty and writing that score onto it. It answers "what should come next?" and can be re-run whenever the queue changes. It produces an ordered list; it does not start any work. Specs may declare dependencies on other specs (by slug) in their frontmatter; claiming a spec is gated until all its dependencies have shipped, and the prioritisation step respects those constraints when proposing an order. In practice, prioritisation is an interactive session — the tool proposes a rank, you adjust it, and the rank is encoded as a filename prefix (`NNNN-<slug>.md`) so the queue is visible without opening any file.
+**Prioritisation** is an editorial act: you order the ready list by scoring each spec on Business Value × Technical Certainty and writing that score onto it. It answers "what should come next?" and can be re-run whenever the queue changes. It produces an ordered list; it does not start any work. Specs may declare dependencies on other specs; claiming a spec is gated until all its dependencies have shipped, and the prioritisation step respects those constraints when proposing an order. In practice, prioritisation is an interactive session — the tool proposes a rank, you adjust it, and the rank is **recorded on each spec so the ordered queue is visible at a glance**, without opening anything. (One implementation encodes the rank as a filename prefix; the methodology only requires that order be visible.)
 
-**Pulling** is a transactional act: you claim the top unclaimed item, stamp it as in-progress, and begin a cycle. It answers "I am taking this one now" and must be **atomic** — two workers can never claim the same item, especially when multiple loops run concurrently. The claim records a **resumable worker handle**, so an interrupted cycle can be picked up exactly where it stopped. How atomicity and resumption are implemented belongs to the binding (in Claude Code: a file lock and the session id).
+**Pulling** is a transactional act: you claim the top unclaimed item, stamp it as in-progress, and begin a cycle. It answers "I am taking this one now" and must be **atomic** — two workers can never claim the same item, especially when multiple loops run concurrently. The claim records a **resumable worker handle**, so an interrupted cycle can be picked up exactly where it stopped. How atomicity and resumption are implemented belongs to the implementation (in Claude Code: a file lock and the session id).
 
 Keeping them separate means prioritisation decisions (human, deliberate, editorial) never get tangled with execution mechanics (machine, concurrent, transactional).
 
@@ -108,7 +108,7 @@ A living project brief the agents always see: stack, conventions, architecture, 
 Capture intent, business justification, acceptance criteria, edge cases, and affected files. This is your Definition of Ready. A spec usually arrives here already **shaped** from the Inbox (see above); for anything non-trivial, shape first rather than building straight off a stub. No spec, no build.
 
 **2. PLAN — let the agent propose, you approve.**
-The agent reads the spec plus standing context and writes the plan as a file beside the spec — files to touch, approach, test strategy, risks — *before* any code. You correct the plan by editing the file; it is the cheapest place to steer. Whether the loop stops here for you is route-aware: low-certainty work pauses, high-certainty work proceeds. Big or risky specs get an ADR.
+The agent reads the spec plus standing context and **writes the plan down** — files to touch, approach, test strategy, risks — *before* any code. You correct the plan **where it's written**; it is the cheapest place to steer. Whether the loop stops here for you is route-aware: low-certainty work pauses, high-certainty work proceeds. Big or risky specs get an ADR.
 
 **3. BUILD — agent implements against deterministic tooling.**
 The agent writes code and tests on a short-lived branch/worktree, running your packaged commands (build, test, lint) itself. For parallel work, give each agent its own worktree to preserve trunk concurrency without conflicts.
@@ -117,7 +117,7 @@ The agent writes code and tests on a short-lived branch/worktree, running your p
 Automated, non-negotiable: unit + **end-to-end** tests, static analysis/code-quality scan, security review, and a human read of the diff. A *separate* agent (a reviewer with fresh context) critiques the builder's output — agents are better at finding others' mistakes than their own. Failures bounce back to step 3. End-to-end coverage is part of the `test` gate's job — if your test command doesn't include it, that is a gap in the gate, not a different gate.
 
 **5. SHIP — merge to trunk, deploy behind a flag, observe.**
-Small, flagged, reversible. Watch the metric that proves the outcome from step 1. Shipping stamps `shipped_at` and keeps the claim timestamps — the artefact's own frontmatter is the flow record. Each spec names the **outcome** that proves it (one observable metric or check, written at shaping); watching that outcome is part of shipping, not a separate ceremony.
+Small, flagged, reversible. Watch the metric that proves the outcome from step 1. Shipping **records when the work shipped** and preserves the earlier claim times — the spec's own metadata is the flow record, so no external tracker is needed. Each spec names the **outcome** that proves it (one observable metric or check, written at shaping); watching that outcome is part of shipping, not a separate ceremony.
 
 **6. LEARN — close the loop.**
 A non-coding agent compiles a data-driven mini-retro from PRs, ticket transitions, and incidents: where did work wait? Which area needed the most rework? Update the standing context and ADRs so the lesson is *encoded*, not just discussed. The system gets smarter; the next cycle is cheaper. Learning covers product as well as process: for each spec shipped since the last retro, was its outcome observed? Shipped-but-wrong work re-enters as a new stub referencing the original.
@@ -127,7 +127,7 @@ A non-coding agent compiles a data-driven mini-retro from PRs, ticket transition
 A runner has two modes. **Drain**: work the current queue, then stop.
 **Watch**: keep waiting for new work and start on it as it appears. The
 methodology owns these two modes; how a given harness implements them is the
-binding's business (in Claude Code today: `/ag-loop` drains; `/loop /ag-loop`
+implementation's business (in Claude Code today: `/ag-loop` drains; `/loop /ag-loop`
 watches).
 
 ### What you deliberately drop
@@ -140,7 +140,7 @@ The whole loop is one trunk, one context file set, a handful of commands, and a 
 
 ## Binding: Claude Code and the Agentile plugin
 
-The methodology above is tool-agnostic; the **Agentile plugin** is its Claude Code binding. Everything the loop needs — the capture surface, the shaping interview, the atomic claim, the three agents, the gates — ships as installable skills, agents, and hooks, so install the plugin rather than hand-building the pieces:
+The methodology above is tool-agnostic; the **Agentile plugin** ("Agentile for Claude") is its Claude Code binding. Everything the loop needs — the capture surface, the shaping interview, the atomic claim, the three agents, the gates — ships as installable skills, agents, and hooks, so install the plugin rather than hand-building the pieces:
 
 ```
 claude plugin marketplace add agenta-consulting/agentile

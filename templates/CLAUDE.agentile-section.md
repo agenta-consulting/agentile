@@ -1,6 +1,6 @@
 ## Agentile
 
-This project runs the **Agentile**: capture → shape → spec → plan → build → verify → ship → learn. Work builds from a written, shaped spec — never from a prompt typed from memory.
+This project runs the **Agentile loop** (via Agentile for Claude): capture → shape → spec → plan → build → verify → ship → learn. Work builds from a written, shaped spec — never from a prompt typed from memory.
 
 ### Where things live
 

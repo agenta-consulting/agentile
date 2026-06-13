@@ -1,6 +1,6 @@
 {
   "name": "agentile",
-  "description": "Agentile — a low-ceremony methodology for 1–5 person teams who direct AI agents: capture → shape → spec → plan → build → verify → ship → learn. Ships the fixed methodology (skills, agents, hooks); each project tailors its content via scaffolded .agentile/ config.",
+  "description": "Agentile for Claude — the Claude Code implementation of the Agentile methodology for 1–5 person teams who direct AI agents: capture → shape → spec → plan → build → verify → ship → learn. Ships the fixed loop machinery (skills, agents, hooks); each project tailors its content via scaffolded .agentile/ config.",
   "author": { "name": "Keith Rowell", "email": "keith@keithrowell.com" },
   "license": "MIT",
   "keywords": ["agentic", "agile", "methodology", "workflow", "spec-driven", "lean"],

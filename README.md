@@ -1,10 +1,10 @@
-# Agentile — Claude Code plugin
+# Agentile for Claude — the Claude Code plugin
 
 *Agile, with agency.*
 
-A low-ceremony methodology for **1–5 person teams** who direct AI agents as their primary way of building software. It keeps the agile *spirit* — short loops, working software, respond to change — while dropping the ceremony small teams can't justify.
+**Agentile** is a low-ceremony methodology for **1–5 person teams** who direct AI agents as their primary way of building software. It keeps the agile *spirit* — short loops, working software, respond to change — while dropping the ceremony small teams can't justify.
 
-Agentile is the implementation of the **Lean Agentic Loop** methodology — the full statement is in [`methodology.md`](./methodology.md). This README is the operating manual for the plugin, and the normative description of its current behaviour; the design notes in `docs/` are historical snapshots.
+**Agentile for Claude** is the Claude Code implementation of that methodology (which was itself distilled from the *Lean Agentic Loop* synthesis). The full methodology is in [`methodology.md`](./methodology.md); this README is the operating manual for the plugin, and the normative description of its current behaviour — the design notes in `docs/` are historical snapshots.
 
 ## The loop
 
@@ -42,7 +42,7 @@ A spec starts as a flat file and is **promoted to a directory by the plan stage*
 
 ## Fixed core vs. tailorable content
 
-The plugin ships the **methodology** — the skills, the agents, the hooks. You don't fork them. Each project tailors its **content** through the `.agentile/` files that `/ag-init` scaffolds:
+The plugin ships the **fixed implementation** — the skills, the agents, the hooks. You don't fork them. (The *methodology* they implement is tool-agnostic and lives in [`methodology.md`](./methodology.md).) Each project tailors its **content** through the `.agentile/` files that `/ag-init` scaffolds:
 
 | File | What it controls |
 |------|------------------|
@@ -177,7 +177,7 @@ The plugin ships these three at the lowest precedence, so you can **override any
 of them per project** without forking the plugin: create `.claude/agents/ag-builder.md`
 (or `ag-planner`/`ag-reviewer`) and Claude Code uses yours instead — change the
 model, tools, effort, or prompt. User-level `~/.claude/agents/` works the same
-across projects. The methodology core stays fixed; the agent definitions are
+across projects. The loop's structure stays fixed; the agent definitions are
 yours to tune.
 
 ## Hooks

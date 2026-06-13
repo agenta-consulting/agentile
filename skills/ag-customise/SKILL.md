@@ -6,7 +6,7 @@ allowed-tools: AskUserQuestion, Bash, Read, Write, Edit
 
 # ag-customise
 
-Customisation is how a project makes Agentile its own. Interview the user about a single loop stage, then write or update its playbook so the methodology reflects how *this* project actually works.
+Customisation is how a project makes Agentile its own. Interview the user about a single loop stage, then write or update its playbook so *this project's loop* reflects how *this* project actually works.
 
 ## Step 1 — Resolve the stage
 
