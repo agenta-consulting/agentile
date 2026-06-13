@@ -2,6 +2,7 @@
 name: ag-prioritise
 description: Interactively order the ready Agentile specs by assigning dense NNNN- filename prefixes that encode priority rank. Trigger phrases include "/ag-prioritise", "prioritise the backlog", "order the ready work", "re-rank specs".
 allowed-tools: AskUserQuestion, Bash, Read, Write, Edit
+disable-model-invocation: true
 ---
 
 # ag-prioritise

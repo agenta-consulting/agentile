@@ -2,6 +2,8 @@
 name: ag-abandon
 description: Abandon an Agentile spec that won't ship — record why, walk its dependent chain, and offer to cascade the abandonment so nothing is left silently blocked. Trigger phrases include "/ag-abandon", "abandon this spec", "drop this spec", "this didn't pass review", "kill this work item".
 allowed-tools: AskUserQuestion, Bash, Read, Edit
+disable-model-invocation: true
+arguments: [slug]
 ---
 
 # ag-abandon
@@ -25,7 +27,7 @@ root-level `specs/` with no `Agentile directory` key, honour that path and note 
 
 ## Step 2 — Identify the target spec
 
-The target may be named in `$ARGUMENTS` (a slug, or text matching a title). If it is not,
+The target may be named as `$slug` (or in `$ARGUMENTS`) (a slug, or text matching a title). If it is not,
 or is ambiguous, list the active top-level specs (`<dir>/specs/*.md` and `<dir>/specs/*/SPEC.md`, `status: ready` or
 `in_progress`) and ask which one to abandon. A spec's **slug** is its filename (flat form) or directory name (directory form) with any leading `NNNN-` prefix and the `.md` extension stripped.
 

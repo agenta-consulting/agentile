@@ -2,6 +2,7 @@
 name: ag-plan
 description: Turn a Ready spec into a written, reviewable plan before any code — promotes the spec to its directory form and writes plan.md (files to touch, approach, test strategy, risks) beside SPEC.md, using the ag-planner subagent or Plan Mode. Recommends an ADR for risky specs. Trigger phrases include "/ag-plan", "plan this spec", "plan the work", "propose an approach".
 allowed-tools: Bash, Read, Write, Edit, Agent
+arguments: [spec]
 ---
 
 # ag-plan
@@ -24,7 +25,7 @@ If the file is absent, use the baseline below unchanged.
 
 ## Steps
 
-1. Identify the spec: `$ARGUMENTS` names a file in `specs/` (or ask which spec). Read it.
+1. Identify the spec: `$spec` (or `$ARGUMENTS`) names a file in `specs/` (or ask which spec). Read it.
 2. Read the standing context: `CLAUDE.md`, the relevant ADRs in `docs/adr/`, and `.agentile/gates.json` (so the plan's test strategy uses the real gate commands).
 3. Produce the plan. Prefer one of:
    - **Plan Mode** — propose the approach and edit nothing until the user approves. This is the default for foreground work.
