@@ -172,6 +172,8 @@ The hook scripts are Ruby (`hooks/*.rb`), so Ruby must be on `PATH`.
 
 Claude Code freezes an installed plugin as a snapshot, so source edits aren't seen until you reinstall. Two layered modes over this one repo:
 
+The plugin omits a pinned `version`, so git-distributed installs pick up every pushed commit as a new version — there is no field to bump during development. Tag a semver release when cutting a stable version.
+
 - **Live (your machine):** run [`dev/ag-dev-link`](./dev/ag-dev-link) once (after a first `dev/ag-sync`) to symlink the install location to this repo. Edits to skills/agents/hooks then apply on the next session reload — no reinstall.
 - **Snapshot (distribution / fresh machine / CI):** [`dev/ag-sync`](./dev/ag-sync) validates, registers the marketplace, and installs/updates. This is the path everyone else uses, so what you test equals what ships.
 

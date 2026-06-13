@@ -13,11 +13,16 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MARKET="agentile"
 PLUGIN="agentile"
 
-VERSION="$(ruby -rjson -e 'print JSON.parse(File.read(ARGV[0]))["version"]' \
-  "$REPO/.claude-plugin/plugin.json")"
-
 CACHE="$HOME/.claude/plugins/cache/$MARKET/$PLUGIN"
-TARGET="$CACHE/$VERSION"
+
+# With version omitted from plugin.json, the cache dir is named by git SHA (or
+# "latest") rather than a fixed version — link whichever version dir currently
+# exists; if the cache is empty (plugin not yet installed), use a "dev" dir.
+TARGET="$(ls -d "$CACHE"/*/ 2>/dev/null | head -1)"
+TARGET="${TARGET%/}"
+if [ -z "$TARGET" ]; then
+  TARGET="$CACHE/dev"
+fi
 
 mkdir -p "$CACHE"
 
