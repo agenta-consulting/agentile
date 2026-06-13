@@ -6,6 +6,7 @@ This project runs the **Agentile**: capture → shape → spec → plan → buil
 
 The backlog lives under one configurable **Agentile directory** (`docs/agentile/` by default, set in `.agentile/config.md`); the layout under it is fixed:
 
+- **Brief** (`docs/agentile/brief.md`) — the living project context: who it's for, the prioritised outcomes, constraints, non-goals. Business Value in triage is scored against it. Imported below so it loads every session.
 - **Inbox** (`docs/agentile/inbox.md`) — one-line stubs awaiting shaping. Capture freely with `/ag-capture`.
 - **Specs** (`docs/agentile/specs/`) — shaped, Ready-to-build specs (`ready` / `in_progress`). A spec is a flat `NNNN-<slug>.md` until planning, then a directory `NNNN-<slug>/` holding `SPEC.md`, `plan.md`, and supporting files. The Definition of Ready is `.agentile/shape.md`.
   - `specs/done/` — shipped specs.
@@ -28,3 +29,5 @@ The backlog lives under one configurable **Agentile directory** (`docs/agentile/
 - Determinism over instruction: repeatable steps (build, test, lint, deploy) are commands in `.agentile/gates.json`, not hopeful sentences.
 - Trust but verify: no agent output merges until it passes tests, static analysis, a security skim, and a human read of the diff.
 - Measure flow, not output: if lead time does not drop, the constraint is upstream — fix that, not the agents.
+
+@docs/agentile/brief.md

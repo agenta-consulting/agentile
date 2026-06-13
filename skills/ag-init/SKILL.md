@@ -22,9 +22,29 @@ Use `AskUserQuestion` to gather (one compact round):
 
 - **Gate commands** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands (any may be left blank). These populate `.agentile/gates.json`.
 - **Protected branches** — branches agents must not commit to directly (default `main`, `master`).
-- **Enable hooks?** — whether to wire the format-on-edit and test-gate hooks into this project's `.claude/settings.json` now. Default yes; they no-op until `gates.json` has commands, so they are safe.
+- **Configure gate commands now?** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands for `.agentile/gates.json` (any may be left blank). The plugin's hooks are active whenever the plugin is enabled; they simply no-op until these commands are filled in. So this is about *enabling the gates*, not the hooks themselves.
 
 If the user is mid-flow and does not want questions, accept defaults and leave `gates.json` blank — they can fill it in later.
+
+## Step 2a — Project brief (fresh projects)
+
+Detect a fresh project: no `CLAUDE.md` of substance (absent, or only the Agentile
+section) AND a near-empty repo (no significant source tree). If it looks
+established, skip this step — the brief is optional for existing code, and
+`/ag-retro` can seed it later.
+
+For a fresh project, offer a short interview (decline-able — accept defaults and
+leave the brief a template to fill in later). Ask, a couple at a time
+(`AskUserQuestion` where the choices are discrete): who is this for; the one
+outcome that matters first; the next two or three outcomes; hard constraints
+(stack, platform, timeline); explicit non-goals; what "shipped v1" looks like.
+Write the answers into `<dir>/brief.md` from `templates/agentile/brief-template.md`,
+replacing every `<…>` placeholder. If a stack decision emerges, offer to capture
+it as `docs/adr/0001-…` from the ADR template.
+
+The brief is what makes triage real: without it, `/ag-shape` and `/ag-prioritise`
+score Business Value against nothing. With it, they score against the brief's
+prioritised outcomes.
 
 ## Step 3 — Migrate a legacy layout (only if one is detected)
 
@@ -68,6 +88,7 @@ Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/age
 Copy from `templates/` into the project, preserving structure:
 
 - `<dir>/inbox.md` (from `templates/inbox.md`)
+- `<dir>/brief.md` (from `templates/agentile/brief-template.md`) — only if it does not exist; populated by the interview in Step 2a below.
 - `.agentile/config.md`
 - `.agentile/shape.md`
 - `.agentile/playbooks.md`
@@ -82,6 +103,7 @@ Copy from `templates/` into the project, preserving structure:
 - `.agentile/adr-template.md`
 - `docs/adr/0000-record-architecture-decisions.md` — replace `<YYYY-MM-DD>` with today's date (`date +%Y-%m-%d`).
 - Create the specs tree: `<dir>/specs/`, `<dir>/specs/done/`, and `<dir>/specs/abandoned/`, each with a `.gitkeep`.
+- Add `**/specs/.pull.lock` to the project's `.gitignore` (create `.gitignore` if absent; skip if the entry is already present) — the claim lock is a runtime file, not source.
 
 Note the source `templates/agentile/` maps to the project's `.agentile/` directory.
 
@@ -93,9 +115,11 @@ Append the contents of `templates/CLAUDE.agentile-section.md` to the project's r
 - If `CLAUDE.md` does not exist, suggest the user run `/init` first to bootstrap it from the codebase, then create `CLAUDE.md` containing just the Agentile section.
 - If the section is already present, leave it.
 
-## Step 6 — Hooks (only if enabled in Step 2)
+Ensure the appended Agentile section imports the brief so it loads every session — the template ends with `@docs/agentile/brief.md` (rewrite this path to the configured Agentile directory if it differs from `docs/agentile/`).
 
-Merge the plugin's hooks into the project so the gates enforce themselves. The plugin ships `hooks/hooks.json`; if the user enabled hooks, ensure the project's `.claude/settings.json` references them (the plugin's own `hooks` declaration already registers them when the plugin is installed, so in most cases no project edit is needed — confirm the plugin is installed rather than duplicating the hook registration). Explain that the hooks read `.agentile/gates.json` and no-op while commands are blank.
+## Step 6 — Hooks
+
+There is nothing to wire per-project. The plugin's hooks (`hooks/hooks.json`) register automatically whenever the plugin is enabled — they merge in without any edit to the project's `.claude/settings.json`. The only project-level control is `.agentile/gates.json`: the hooks read it and no-op while its commands are blank, then enforce the gates once commands are filled in. Confirm the plugin is enabled rather than duplicating the hook registration.
 
 ## Step 7 — Readiness report (observations, not blockers)
 
