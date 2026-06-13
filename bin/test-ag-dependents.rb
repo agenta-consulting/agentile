@@ -7,6 +7,12 @@ def spec(dir, fname, status:, depends_on: [])
     "---\nstatus: #{status}\ncreated: 2026-06-10\ndepends_on: #{dep}\n---\n# #{fname}\n")
 end
 
+def dirspec(dir, dname, status:, depends_on: [])
+  d = File.join(dir, dname)
+  FileUtils.mkdir_p(d)
+  spec(d, "SPEC.md", status: status, depends_on: depends_on)
+end
+
 def dependents(dir, slug)
   out, _e, _st = Open3.capture3("ruby", HELP, dir, slug)
   out.strip.split("\n").reject(&:empty?)
@@ -55,6 +61,23 @@ Dir.mktmpdir do |d|
   spec(File.join(d, "abandoned"), "0004-gone.md", status: "abandoned", depends_on: ["a"])
   got = dependents(d, "a")
   raise "candidates: #{got.inspect}" unless got == ["live"]
+end
+
+# 6. directory-spec dependent is found, identified by its directory slug
+Dir.mktmpdir do |d|
+  spec(d, "0001-a.md", status: "ready")
+  dirspec(d, "0002-b", status: "ready", depends_on: ["a"])
+  got = dependents(d, "a")
+  raise "dir dependent: #{got.inspect}" unless got == ["b"]
+end
+
+# 7. plan.md beside SPEC.md is not read as a spec
+Dir.mktmpdir do |d|
+  spec(d, "0001-a.md", status: "ready")
+  dirspec(d, "0002-b", status: "ready", depends_on: ["a"])
+  File.write(File.join(d, "0002-b", "plan.md"), "---\nstatus: ready\ndepends_on: [a]\n---\n")
+  got = dependents(d, "a")
+  raise "plan ignored: #{got.inspect}" unless got == ["b"]
 end
 
 puts "ALL PASS"

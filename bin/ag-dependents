@@ -3,9 +3,9 @@
 # Print the transitive set of ACTIVE specs whose depends_on reaches <slug>.
 # Usage: ag-dependents <specs-dir> <slug>
 #
-# Active = top-level specs (specs/*.md) with status ready or in_progress. Specs in
-# subdirectories (specs/done/, specs/abandoned/) are ignored — a shipped or already-
-# abandoned spec is not a cascade candidate when deciding what to abandon next.
+# Active = specs directly under the specs root — flat `*.md` or `*/SPEC.md` directories.
+# Specs in done/ or abandoned/ are ignored — a shipped or already-abandoned spec is not
+# a cascade candidate when deciding what to abandon next.
 # Output: one dependent slug per line, nearest-first (BFS order); empty if none.
 # Cycle-safe. Used by /ag-abandon to walk the abandonment cascade.
 require "yaml"
@@ -14,18 +14,23 @@ require "date" # spec frontmatter has `created: YYYY-MM-DD`, which YAML loads as
 specs_dir, target = ARGV
 abort "usage: ag-dependents <specs-dir> <slug>" if specs_dir.nil? || target.to_s.empty?
 
-def slug_of(path)
-  base = File.basename(path, ".md")
-  m = base.match(/\A(\d+)-(.+)\z/)
-  m ? m[2] : base
+def each_active_spec(specs_dir)
+  Dir.glob(File.join(specs_dir, "*.md")).each do |path|
+    yield path, File.basename(path, ".md")
+  end
+  Dir.glob(File.join(specs_dir, "*", "SPEC.md")).each do |path|
+    dname = File.basename(File.dirname(path))
+    next if %w[done abandoned].include?(dname)
+    yield path, dname
+  end
 end
 
-# Top-level specs only (`*.md`, not `**/*.md`), active statuses only.
 reverse = Hash.new { |h, k| h[k] = [] } # dep slug -> [dependent slugs]
-Dir.glob(File.join(specs_dir, "*.md")).each do |path|
+each_active_spec(specs_dir) do |path, ident|
   fm = (YAML.safe_load(File.read(path)[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
   next unless %w[ready in_progress].include?(fm["status"])
-  s = slug_of(path)
+  m = ident.match(/\A(\d+)-(.+)\z/)
+  s = m ? m[2] : ident
   Array(fm["depends_on"]).each { |dep| reverse[dep.to_s] << s }
 end
 
