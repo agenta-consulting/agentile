@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 # Atomically claim the lowest-prefix ready spec whose dependencies are all shipped.
+# Prints the spec's .md file — for a directory spec, its SPEC.md.
 # Usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]
 # Prints the claimed spec path, or one of: WIP_FULL | BLOCKED | UNPRIORITISED | NONE.
 #  - NONE          no ready specs at all
@@ -13,29 +14,41 @@ specs_dir, session, label, wip = ARGV
 abort "usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]" if specs_dir.nil? || session.to_s.empty?
 wip = (wip.to_s.empty? ? 0 : wip.to_i) # 0 => unlimited
 
-def load_spec(path)
-  raw  = File.read(path)
-  fm   = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
-  base = File.basename(path, ".md")
-  m    = base.match(/\A(\d+)-(.+)\z/)
-  { path: path, raw: raw, fm: fm, prefix: (m ? m[1].to_i : nil), slug: (m ? m[2] : base) }
+RESERVED = %w[done abandoned].freeze
+
+# A spec is a flat file <root>/NNNN-<slug>.md (identity from the filename) or a
+# directory <root>/NNNN-<slug>/SPEC.md (identity from the directory name; plan.md
+# and supporting files beside SPEC.md are never specs).
+def load_spec(path, ident)
+  raw = File.read(path)
+  fm  = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
+  m   = ident.match(/\A(\d+)-(.+)\z/)
+  { path: path, raw: raw, fm: fm, prefix: (m ? m[1].to_i : nil), slug: (m ? m[2] : ident) }
+end
+
+# Enumerate the specs directly under one root: flat *.md files plus */SPEC.md dirs.
+def specs_in(root)
+  flat = Dir.glob(File.join(root, "*.md")).map { |p| load_spec(p, File.basename(p, ".md")) }
+  dirs = Dir.glob(File.join(root, "*", "SPEC.md"))
+            .reject { |p| RESERVED.include?(File.basename(File.dirname(p))) }
+            .map { |p| load_spec(p, File.basename(File.dirname(p))) }
+  flat + dirs
 end
 
 lock_path = File.join(specs_dir, ".pull.lock")
 File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
   lock.flock(File::LOCK_EX)
 
-  # Status map across ALL specs (recursive, so shipped specs in specs/done/ resolve deps).
-  all = Dir.glob(File.join(specs_dir, "**", "*.md")).map { |p| load_spec(p) }
-  shipped = {}
-  all.each { |s| shipped[s[:slug]] = true if s[:fm]["status"] == "shipped" }
+  # Claim pool: specs directly under the specs root. done/ and abandoned/ hold
+  # specs one level deeper, so they fall outside these globs by construction.
+  pool = specs_in(specs_dir)
 
-  # Claim pool: top-level specs only — anything in a subdirectory (specs/done/**,
-  # specs/abandoned/**) is excluded by sitting below the specs root, regardless of name.
-  # Abandoned specs keep status: abandoned, so they never count as shipped above; a
+  # Status map includes done/ and abandoned/ so shipped specs resolve deps.
+  # Abandoned specs keep status: abandoned, so they never count as shipped; a
   # dependent of an abandoned spec therefore stays BLOCKED.
-  specs_root = File.expand_path(specs_dir)
-  pool = all.select { |s| File.dirname(File.expand_path(s[:path])) == specs_root }
+  resolved = pool + specs_in(File.join(specs_dir, "done")) + specs_in(File.join(specs_dir, "abandoned"))
+  shipped = {}
+  resolved.each { |s| shipped[s[:slug]] = true if s[:fm]["status"] == "shipped" }
 
   in_progress = pool.count { |s| s[:fm]["status"] == "in_progress" }
   if wip.positive? && in_progress >= wip
@@ -59,7 +72,7 @@ File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
     puts "BLOCKED"; next
   end
 
-  chosen = eligible.min_by { |s| [s[:prefix], File.basename(s[:path])] }
+  chosen = eligible.min_by { |s| [s[:prefix], s[:slug]] }
 
   fm = chosen[:fm]
   fm["status"]     = "in_progress"

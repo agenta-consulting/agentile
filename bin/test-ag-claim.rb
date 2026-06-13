@@ -14,6 +14,12 @@ def claim(dir, session: "s", wip: 0)
   out.strip
 end
 
+def dirspec(dir, dname, status:, depends_on: [])
+  d = File.join(dir, dname)
+  FileUtils.mkdir_p(d)
+  spec(d, "SPEC.md", status: status, depends_on: depends_on)
+end
+
 # 1. picks the lowest prefix among eligible, and stamps it
 Dir.mktmpdir do |d|
   spec(d, "0002-low.md",  status: "ready")
@@ -79,6 +85,45 @@ Dir.mktmpdir do |d|
   spec(d, "0001-a.md", status: "in_progress")
   spec(d, "0002-b.md", status: "ready")
   raise "wip: #{claim(d, wip: 1)}" unless claim(d, wip: 1) == "WIP_FULL"
+end
+
+# 7. directory spec: specs/0001-x/SPEC.md is claimable; path returned is the SPEC.md; stamped
+Dir.mktmpdir do |d|
+  dirspec(d, "0001-x", status: "ready")
+  path = claim(d)
+  raise "dir claim: #{path}" unless path.end_with?("0001-x/SPEC.md")
+  fm = YAML.safe_load(File.read(path)[/^---\n(.*?)\n---/m, 1], permitted_classes: [Time, Date])
+  raise "dir stamp" unless fm["status"] == "in_progress" && fm["claimed_by"] == "s"
+end
+
+# 8. mixed flat + dir specs order by prefix across both forms
+Dir.mktmpdir do |d|
+  spec(d, "0002-flat.md", status: "ready")
+  dirspec(d, "0001-dir", status: "ready")
+  raise "mixed order: #{claim(d)}" unless claim(d).end_with?("0001-dir/SPEC.md")
+end
+
+# 9. plan.md and other files beside SPEC.md are never specs
+Dir.mktmpdir do |d|
+  dirspec(d, "0001-x", status: "ready")
+  File.write(File.join(d, "0001-x", "plan.md"), "---\nstatus: ready\n---\n# plan\n")
+  first = claim(d)
+  raise "spec not plan: #{first}" unless first.end_with?("0001-x/SPEC.md")
+  raise "plan not claimable: #{claim(d)}" unless claim(d) == "NONE"
+end
+
+# 10. dependency shipped as a directory spec in done/ resolves
+Dir.mktmpdir do |d|
+  spec(d, "0001-a.md", status: "ready", depends_on: ["b"])
+  dirspec(File.join(d, "done"), "0005-b", status: "shipped")
+  raise "done dir dep: #{claim(d)}" unless claim(d).end_with?("0001-a.md")
+end
+
+# 11. a directory without SPEC.md is not a spec
+Dir.mktmpdir do |d|
+  FileUtils.mkdir_p(File.join(d, "0003-junk"))
+  File.write(File.join(d, "0003-junk", "notes.md"), "---\nstatus: ready\n---\n")
+  raise "junk dir: #{claim(d)}" unless claim(d) == "NONE"
 end
 
 puts "ALL PASS"
