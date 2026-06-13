@@ -2,6 +2,8 @@
 name: ag-retro
 description: Close the loop with a data-driven mini-retro — compile a flow digest from git history, specs, and ADRs (and PRs when available), surface where work waited and what needed rework, then propose concrete updates to CLAUDE.md and ADRs. Non-coding. Trigger phrases include "/ag-retro", "run a retro", "flow digest", "what did we learn", "weekly retro".
 allowed-tools: Bash, Read, Edit, Agent
+context: fork
+agent: general-purpose
 ---
 
 # ag-retro

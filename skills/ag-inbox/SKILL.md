@@ -8,6 +8,10 @@ allowed-tools: Read
 
 Show the stubs currently awaiting shaping. This is a deliberate review surface, not part of the build loop — it never blocks anything.
 
+Current inbox (default path; the steps below resolve the real path for non-default layouts):
+
+!`cat docs/agentile/inbox.md 2>/dev/null || echo "(no inbox at docs/agentile/inbox.md — resolve the configured Agentile directory)"`
+
 ## Steps
 
 1. Resolve the inbox path: read **Agentile directory** from `.agentile/config.md` under "## Paths" (default `docs/agentile/`); the inbox is `<dir>/inbox.md`. If the project still has the old `Inbox:` key or a root-level `inbox.md` and no `Agentile directory` key, honour that path and note that `/ag-init` can migrate the layout.
