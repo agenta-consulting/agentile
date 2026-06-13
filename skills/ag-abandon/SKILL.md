@@ -35,14 +35,10 @@ before proceeding.
 
 ## Step 3 — Find the dependent chain
 
-Resolve the dependents helper path. Use `"${CLAUDE_PLUGIN_ROOT}/bin/ag-dependents"`. If
-`$CLAUDE_PLUGIN_ROOT` is empty or the file is not found there, fall back to the newest
-match of `~/.claude/plugins/cache/agentile/agentile/*/bin/ag-dependents`.
-
-Run it:
+Call the dependents helper as the bare command `ag-dependents` (it ships in this plugin's `bin/`, on your PATH while the plugin is enabled; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-dependents"` only if not found):
 
 ```
-ruby "<helper>" "<specs-dir>" "<target-slug>"
+ag-dependents "<specs-dir>" "<target-slug>"
 ```
 
 It prints the transitive set of active specs whose `depends_on` reaches the target, one

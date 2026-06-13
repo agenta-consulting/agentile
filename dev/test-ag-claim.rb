@@ -1,5 +1,5 @@
 require "yaml"; require "date"; require "tmpdir"; require "open3"; require "fileutils"
-HELP = File.expand_path("ag-claim", __dir__)
+HELP = File.expand_path("../bin/ag-claim", __dir__)
 
 def spec(dir, fname, status:, depends_on: [])
   dep = depends_on.empty? ? "[]" : "[#{depends_on.join(", ")}]"
