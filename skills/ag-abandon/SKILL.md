@@ -26,9 +26,8 @@ root-level `specs/` with no `Agentile directory` key, honour that path and note 
 ## Step 2 — Identify the target spec
 
 The target may be named in `$ARGUMENTS` (a slug, or text matching a title). If it is not,
-or is ambiguous, list the active top-level specs (`<dir>/specs/*.md`, `status: ready` or
-`in_progress`) and ask which one to abandon. A spec's **slug** is its filename with any
-leading `NNNN-` prefix and the `.md` extension stripped.
+or is ambiguous, list the active top-level specs (`<dir>/specs/*.md` and `<dir>/specs/*/SPEC.md`, `status: ready` or
+`in_progress`) and ask which one to abandon. A spec's **slug** is its filename (flat form) or directory name (directory form) with any leading `NNNN-` prefix and the `.md` extension stripped.
 
 If the target is `in_progress`, note who holds it (`claimed_by`) — abandoning will clear
 that claim. If it is owned by another active session, surface that so the user is aware
@@ -86,8 +85,8 @@ For each abandoned spec:
    - **Cascaded dependent** — an automatic reason referencing the target, e.g.
      `Abandoned as a consequence of abandoning <target-slug>: <target-reason>`.
 4. Clear the claim fields: blank `claimed_by`, `claimed_at`, and `label`.
-5. `git mv` the file into `<dir>/specs/abandoned/` (create the directory if it does not
-   exist), preserving its `NNNN-<slug>.md` filename as a record.
+5. `git mv` the spec into `<dir>/specs/abandoned/` (create the directory if it does not
+   exist) — the whole `NNNN-<slug>/` directory for a directory spec, or the `NNNN-<slug>.md` file for a flat spec — preserving its name as a record.
 
 ## Step 7 — Report
 

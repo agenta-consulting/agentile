@@ -12,7 +12,7 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
 1. Resolve the specs directory: read **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that path and note `/ag-init` can migrate.)
 
-2. List the spec files at the top level of that directory (not its `done/` or `abandoned/` subdirectories) whose frontmatter contains `status: in_progress`.
+2. List the specs at the top level of that directory — flat `*.md` files and `*/SPEC.md` directory specs (not the `done/` or `abandoned/` subdirectories) — whose frontmatter contains `status: in_progress`.
 
 3. For each in-progress spec, print:
 
@@ -25,6 +25,6 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
 4. Flag any spec whose `claimed_at` timestamp is older than approximately 24 hours with a warning:
 
-   > Likely stale — reclaim by setting `status: ready` and clearing `claimed_by`, `claimed_at`, and `label`.
+   > Likely stale — **release the claim** (set `status: ready` and clear `claimed_by`, `claimed_at`, and `label`) to put it back in the queue, or resume it with the command above. Releasing a claim is not abandoning: the spec stays live.
 
 5. Make no changes to any file.

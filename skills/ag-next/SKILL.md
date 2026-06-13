@@ -48,7 +48,7 @@ If the file is absent, use the baseline below unchanged.
 
 5. Interpret the single line of output:
 
-   - **A file path** — the claim succeeded. Report: claimed `<path>` as session `<session-id>`. Tell the user that to resume this loop later they can run `claude --resume <session-id>`.
+   - **A file path** — the claim succeeded. Report: claimed `<path>` as session `<session-id>`. Tell the user that to resume this loop later they can run `claude --resume <session-id>`. The path is the spec's `.md` file — for a directory spec, its `SPEC.md`; the spec's working set (`plan.md`, supporting files) lives in the same directory.
    - **`NONE`** — no ready work is available. Suggest running `/ag-shape` to shape inbox items or `/ag-prioritise` to rank the backlog.
    - **`WIP_FULL`** — the WIP limit (`<wip_limit>`) is already reached. Suggest shipping or releasing something first, then checking `/ag-wip` to see what is in flight.
    - **`BLOCKED`** — all prioritised ready specs are waiting on unshipped dependencies; no work can be claimed right now. Suggest running `/ag-prioritise` to see which items are blocked and what each is waiting on.

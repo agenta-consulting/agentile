@@ -29,9 +29,7 @@ If the file is absent, use the baseline below unchanged.
 Resolve the specs directory: read **Agentile directory** from `.agentile/config.md`
 (default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses
 the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory`
-key, honour that path and note `/ag-init` can migrate.) List every `*.md` file at the
-top level of that directory — do **not** descend into `specs/done/`, `specs/abandoned/`,
-or any other subdirectory.
+key, honour that path and note `/ag-init` can migrate.) List every spec at the top level of that directory — flat `*.md` files and `NNNN-<slug>/` directories containing a `SPEC.md` (skip `done/` and `abandoned/`) — do **not** descend into `specs/done/`, `specs/abandoned/`, or any other subdirectory looking for more.
 
 For each file, read its frontmatter and classify it into one of three groups:
 
@@ -43,8 +41,7 @@ For each file, read its frontmatter and classify it into one of three groups:
 - **In-progress** — `status: in_progress`, regardless of whether the filename is
   prefixed. These are actively being worked and must never be renamed.
 
-A spec's **slug** is its filename with any leading `NNNN-` prefix and the `.md`
-extension stripped. Read each spec's `business_value`, `technical_certainty`, and
+A spec's **slug** is its filename (flat form) or directory name (directory form) with any leading `NNNN-` prefix and the `.md` extension stripped. Read each spec's `business_value`, `technical_certainty`, and
 `depends_on` (default `[]`) fields. Treat missing numeric fields as `0`.
 
 ### Step 2 — Show the current state
@@ -85,6 +82,8 @@ and unprioritised — using dense sequential prefixes: `0001-<slug>.md`,
 `0002-<slug>.md`, and so on. Strip any existing `NNNN-` prefix from the filename to
 obtain the bare `<slug>` before constructing the new name. Perform every rename with
 `git mv` so the history is preserved.
+
+For a directory spec, rename the **directory** (`git mv <specs>/0003-<slug>/ <specs>/0001-<slug>/`) — never the `SPEC.md` inside it. The collision-safe two-step applies to directories exactly as to files.
 
 To avoid intermediate filename collisions (e.g. renaming `0002-b.md` → `0001-b.md` while
 `0001-a.md` → `0002-a.md`), first move all affected files to unique temporary names
