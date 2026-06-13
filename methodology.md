@@ -155,20 +155,20 @@ Then run `/ag-init` in your project: it scaffolds the backlog and configuration 
 | Capture & Inbox | `/ag-capture` and `/ag-inbox`, writing to `docs/agentile/inbox.md` |
 | Shaping & DoR | `/ag-shape`, interviewing against `.agentile/shape.md` |
 | Direct spec for trivial work | `/ag-spec` |
-| The spec artefact | `specs/NNNN-<slug>.md`, promoted at planning to `NNNN-<slug>/SPEC.md` + `plan.md` |
+| The spec artefact | `docs/agentile/specs/NNNN-<slug>.md`, promoted at planning to `NNNN-<slug>/SPEC.md` + `plan.md` |
 | Prioritise — editorial | `/ag-prioritise`; the rank is the filename prefix |
 | Pull — transactional | `/ag-next` → `bin/ag-claim`: a file lock; the session id is the worker handle (`claude --resume <id>`) |
 | Plan | `/ag-plan` writes `plan.md`, via Plan Mode or the `ag-planner` agent |
 | Build | the `ag-builder` agent on a branch/worktree, running the gates from `.agentile/gates.json` |
 | Verify | the `ag-reviewer` agent with fresh context, plus `/security-review` and the hooks |
-| Ship | orchestrated by `/ag-loop` — a step, not an agent: merge, stamp `shipped_at`, move to `done/` |
+| Ship | orchestrated by `/ag-loop` — a step, not an agent: merge, stamp `shipped_at`, move to `specs/done/` |
 | Learn | `/ag-retro` |
 | Drain & watch | `/ag-loop` vs `/loop /ag-loop` |
 | Tailoring | `.agentile/` playbooks, built conversationally with `/ag-customise` |
 
 The "hats" are exactly three agents: `ag-planner` (architecture and approach), `ag-builder` (implementation), and `ag-reviewer` (verification and security). Each runs in its own context, which is the point — the reviewer catches what the builder missed because it never saw the builder's reasoning. Shaping is not an agent but a skill-run conversation with you; ship is not an agent but a skill-orchestrated step. The human stays the accountable anchor who approves plans and owns outcomes.
 
-Deterministic enforcement comes from two hooks: **format-on-edit** (`PostToolUse`) runs your formatter after every edit, and **test-gate** (`Stop`/`SubagentStop`) blocks "done" until your test command passes. Both read `.agentile/gates.json` and no-op until commands are configured, so installation never disrupts an unconfigured repo.
+Deterministic enforcement comes from two hooks: **format-on-edit** (`PostToolUse`) runs your formatter after every edit, and **test-gate** (`Stop`/`SubagentStop`) blocks "done" until your test command passes. Both read `.agentile/gates.json` and no-op until commands are configured, so installation never disrupts an unconfigured repo. The same gates belong in CI — Claude Code's GitHub Actions integration can run them (and `/security-review`) on every PR, so the gate holds whether a human, an agent, or nobody is watching the terminal.
 
 Getting started:
 

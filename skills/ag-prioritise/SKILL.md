@@ -87,7 +87,7 @@ For a directory spec, rename the **directory** (`git mv <specs>/0003-<slug>/ <sp
 
 To avoid intermediate filename collisions (e.g. renaming `0002-b.md` → `0001-b.md` while
 `0001-a.md` → `0002-a.md`), first move all affected files to unique temporary names
-(such as `tmp-<slug>.md` or a high reserved prefix), then move them to their final
+(such as `tmp-<slug>.md` — or `tmp-<slug>/` for a directory spec — or a high reserved prefix), then move them to their final
 `NNNN-<slug>.md` names.
 
 **Never rename in-progress specs.** Their filenames are fixed references that may be

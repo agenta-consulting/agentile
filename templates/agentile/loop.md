@@ -10,8 +10,10 @@ watch: self-paced          # how to wait when idle: self-paced | a fixed interva
 
 # Loop policy
 
-How this project wants `/ag-loop` to behave. The runner also honours every
-per-stage `human_checkpoint: true` regardless of these settings.
+How this project wants `/ag-loop` to behave. There are two pause knobs —
+`pause_at_plan` (steering, before code) and `pause_before_ship` (the final
+gate) — and the runner also honours every per-stage `human_checkpoint: true`
+regardless of these settings.
 
 - `/ag-loop` alone drains the ready backlog then stops.
 - `/loop /ag-loop` drains and then watches — waiting for new ready work and

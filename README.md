@@ -96,7 +96,7 @@ never shipped.
 
 There are **two ways** to run it, and the difference is the thing people trip on:
 
-- **`/ag-loop`** — runs **one pass**. It loops through the *currently ready* backlog (claim → build → verify → pause for your sign-off before ship → repeat, up to `max_iterations`), then **stops**. If nothing is ready, it stops straight away. Use it to clear a queue in one go.
+- **`/ag-loop`** — runs **one pass**. It loops through the *currently ready* backlog (claim → plan [pauses for `foreground`/`spike` specs] → build → verify → pause for your sign-off before ship → repeat, up to `max_iterations`), then **stops**. If nothing is ready, it stops straight away. Use it to clear a queue in one go.
 - **`/loop /ag-loop`** — runs **continuously**. It keeps going, **waits** when the backlog is empty, and starts on new work the moment it's shaped and prioritised. This is the "standing worker" you probably picture when you hear "loop".
 
 **Why two commands, and why doesn't `/ag-loop` just keep running?** Claude Code is turn-based — there is no always-on process, so a single command can't sit idle waiting for new work; when it runs out of things to do, the turn ends. `/loop` is Claude Code's built-in "keep re-running this" primitive, so wrapping `/ag-loop` in it is what makes a loop that never stops. In short:
