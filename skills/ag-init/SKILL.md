@@ -20,9 +20,8 @@ The files to copy live in this plugin's `templates/` directory, one level up fro
 
 Use `AskUserQuestion` to gather (one compact round):
 
-- **Gate commands** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands (any may be left blank). These populate `.agentile/gates.json`.
+- **Gate commands** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands (any may be left blank). These populate `.agentile/gates.json`. There is no separate "enable hooks?" step: the plugin's hooks are active whenever the plugin is enabled; they simply no-op until these commands are filled in. So this question *is* how you enable the gates.
 - **Protected branches** — branches agents must not commit to directly (default `main`, `master`).
-- **Configure gate commands now?** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands for `.agentile/gates.json` (any may be left blank). The plugin's hooks are active whenever the plugin is enabled; they simply no-op until these commands are filled in. So this is about *enabling the gates*, not the hooks themselves.
 
 If the user is mid-flow and does not want questions, accept defaults and leave `gates.json` blank — they can fill it in later.
 
