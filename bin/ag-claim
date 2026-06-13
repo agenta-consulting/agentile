@@ -12,6 +12,7 @@ require "date" # spec frontmatter has `created: YYYY-MM-DD`, which YAML loads as
 
 specs_dir, session, label, wip = ARGV
 abort "usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]" if specs_dir.nil? || session.to_s.empty?
+abort "ag-claim: no such specs dir: #{specs_dir}" unless File.directory?(specs_dir)
 wip = (wip.to_s.empty? ? 0 : wip.to_i) # 0 => unlimited
 
 RESERVED = %w[done abandoned].freeze
@@ -80,12 +81,22 @@ File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
 
   chosen = eligible.min_by { |s| [s[:prefix], s[:slug]] }
 
-  fm = chosen[:fm]
-  fm["status"]     = "in_progress"
-  fm["claimed_by"] = session
-  fm["label"]      = label.to_s
-  fm["claimed_at"] = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-  body = chosen[:raw].sub(/\A---\n.*?\n---\n/m, "---\n#{fm.to_yaml.sub(/\A---\n/, "")}---\n")
+  stamp = {
+    "status"     => "in_progress",
+    "claimed_by" => session,
+    "label"      => label.to_s,
+    "claimed_at" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+  }
+  fm_text = chosen[:raw][/\A---\n(.*?)\n---/m, 1]
+  new_fm = fm_text.dup
+  stamp.each do |key, val|
+    if new_fm =~ /^#{Regexp.escape(key)}:.*$/
+      new_fm = new_fm.sub(/^#{Regexp.escape(key)}:.*$/, "#{key}: #{val}")
+    else
+      new_fm = "#{new_fm}\n#{key}: #{val}"
+    end
+  end
+  body = chosen[:raw].sub(/\A---\n.*?\n---/m, "---\n#{new_fm}\n---")
   if body == chosen[:raw]
     warn "ag-claim: could not rewrite frontmatter for #{chosen[:path]}"
     exit 1

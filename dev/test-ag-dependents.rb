@@ -80,4 +80,12 @@ Dir.mktmpdir do |d|
   raise "plan ignored: #{got.inspect}" unless got == ["b"]
 end
 
+# friendly error on a missing specs dir
+Dir.mktmpdir do |d|
+  missing = File.join(d, "nope")
+  out, err, st = Open3.capture3("ruby", HELP, missing, "x")
+  raise "should fail cleanly: #{st.exitstatus} #{err.inspect}" if st.success?
+  raise "want friendly message, got: #{err.inspect}" unless err.include?("no such specs dir")
+end
+
 puts "ALL PASS"

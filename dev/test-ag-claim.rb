@@ -141,4 +141,22 @@ Dir.mktmpdir do |d|
   raise "dupe slug: #{out.inspect} #{err.inspect}" if st.success? || !err.include?("duplicate slug")
 end
 
+# 14. claiming preserves frontmatter comments and key order (no full re-serialise)
+Dir.mktmpdir do |d|
+  File.write(File.join(d, "0001-x.md"),
+    "---\n# a leading comment\nstatus: ready\ncreated: 2026-06-10\n# claim fields below\nclaimed_by:\nlabel:\nclaimed_at:\ndepends_on: []\n---\n# body\n")
+  path = claim(d)
+  body = File.read(path)
+  raise "comment lost" unless body.include?("# a leading comment") && body.include?("# claim fields below")
+  raise "not stamped" unless body.include?("status: in_progress") && body.include?("claimed_by: s")
+end
+
+# 15. friendly error on a missing specs dir (no raw stack trace)
+Dir.mktmpdir do |d|
+  missing = File.join(d, "nope")
+  out, err, st = Open3.capture3("ruby", HELP, missing, "s", "", "0")
+  raise "should fail cleanly: #{st.exitstatus} #{err.inspect}" if st.success?
+  raise "want friendly message, got: #{err.inspect}" unless err.include?("no such specs dir") && !err.include?("(irb)") && !err.downcase.include?("errno")
+end
+
 puts "ALL PASS"

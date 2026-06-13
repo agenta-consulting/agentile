@@ -13,6 +13,7 @@ require "date" # spec frontmatter has `created: YYYY-MM-DD`, which YAML loads as
 
 specs_dir, target = ARGV
 abort "usage: ag-dependents <specs-dir> <slug>" if specs_dir.nil? || target.to_s.empty?
+abort "ag-dependents: no such specs dir: #{specs_dir}" unless File.directory?(specs_dir)
 
 def each_active_spec(specs_dir)
   Dir.glob(File.join(specs_dir, "*.md")).each do |path|
