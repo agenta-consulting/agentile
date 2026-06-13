@@ -2,6 +2,8 @@
 
 *Agile, with agency. A methodology for small teams who direct AI agents as their primary way of building software — applicable with any tool. Distilled from the Lean Agentic Loop synthesis of ten sources (see [docs/sources.md](docs/sources.md)); a Claude Code implementation ships as the Agentile plugin (see the binding section).*
 
+When we automated the building, review became the bottleneck. Then review could be automated too. What's left — the thing that is now hardest and matters most — is describing what we actually want. **As the building becomes automatic, what you ask for becomes the most important.** Agentile is the methodology for that world: it puts the weight where the weight now is.
+
 ## Cross-cutting themes
 
 Everything below follows from seven findings that recur across the sources:
@@ -132,7 +134,7 @@ watches).
 
 ### What you deliberately drop
 
-Story-point poker, status-meeting standups, fixed two-week sprints as the planning atom, and exhaustive wikis nobody reads. Replace standups with the LEARN digest, replace sprint planning with continuous two-axis triage, replace the wiki with versioned context the agents consume.
+Story-point poker, status-meeting standups, fixed two-week sprints as the planning atom, and exhaustive wikis nobody reads. Replace standups with the LEARN digest, replace sprint planning with continuous two-axis triage, replace the wiki with versioned context the agents consume. And estimates: **we don't estimate, we just do it** — when the doing is this cheap, estimating it can take longer than the doing.
 
 ### Why it fits small teams
 
