@@ -1,6 +1,6 @@
 # Agentile — Spec Dependencies & Prefix-Based Prioritisation
 
-Design spec. Status: implemented 2026-06-10 — historical snapshot; the README and `methodology.md` are normative. `specs/done/` was later renamed `specs/done/` (see agentile-backlog-layout-and-abandon.md); specs may now be directories (`NNNN-<slug>/SPEC.md`).
+Design spec. Status: implemented 2026-06-10 — historical snapshot; the README and `methodology.md` are normative. `specs/archive/` was later renamed `specs/done/` (see agentile-backlog-layout-and-abandon.md); specs may now be directories (`NNNN-<slug>/SPEC.md`).
 
 ## Context
 
