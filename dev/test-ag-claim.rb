@@ -159,4 +159,15 @@ Dir.mktmpdir do |d|
   raise "want friendly message, got: #{err.inspect}" unless err.include?("no such specs dir") && !err.include?("(irb)") && !err.downcase.include?("errno")
 end
 
+# 16. a label with regex-replacement metachars is stamped verbatim (sub block form,
+#     not string form which would interpret \& / \1 / \\)
+Dir.mktmpdir do |d|
+  spec(d, "0001-x.md", status: "ready")
+  tricky = 'foo \& bar \1 \\\\ baz'
+  path, _e, st = Open3.capture3("ruby", HELP, d, "s", tricky, "0")
+  raise "claim failed: #{st.exitstatus}" unless st.success?
+  body = File.read(path.strip)
+  raise "label not verbatim: #{body[/^label:.*$/].inspect}" unless body.include?("label: #{tricky}")
+end
+
 puts "ALL PASS"

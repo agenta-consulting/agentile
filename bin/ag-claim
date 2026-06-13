@@ -89,14 +89,16 @@ File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
   }
   fm_text = chosen[:raw][/\A---\n(.*?)\n---/m, 1]
   new_fm = fm_text.dup
+  # Block form on both subs: label is arbitrary user text ($ARGUMENTS), and the
+  # string form of sub would interpret \&, \1, \\ etc. in the replacement.
   stamp.each do |key, val|
     if new_fm =~ /^#{Regexp.escape(key)}:.*$/
-      new_fm = new_fm.sub(/^#{Regexp.escape(key)}:.*$/, "#{key}: #{val}")
+      new_fm = new_fm.sub(/^#{Regexp.escape(key)}:.*$/) { "#{key}: #{val}" }
     else
       new_fm = "#{new_fm}\n#{key}: #{val}"
     end
   end
-  body = chosen[:raw].sub(/\A---\n.*?\n---/m, "---\n#{new_fm}\n---")
+  body = chosen[:raw].sub(/\A---\n.*?\n---/m) { "---\n#{new_fm}\n---" }
   if body == chosen[:raw]
     warn "ag-claim: could not rewrite frontmatter for #{chosen[:path]}"
     exit 1
