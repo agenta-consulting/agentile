@@ -78,6 +78,13 @@ The session id is a resume handle, so a loop that was interrupted mid-cycle can 
 
 The claim lock is a **per-machine** file lock: it serialises concurrent loops on one machine. Across machines, the repository is the sync point — commit and push claim stamps promptly, and treat a pushed claim as authoritative. Agentile is single-repo by design; cross-repo or cross-team coordination is out of scope.
 
+One sharp edge: the claim lock lives in the specs directory, so it only
+serialises loops that **share one checkout**. Two loops in two different git
+worktrees each have their own copy of the backlog and can claim the same spec.
+Keep the **backlog in the main checkout** — claim and prioritise there; send
+*builders* to worktrees (the `ag-builder` agent already isolates itself). Don't
+run `/ag-next` or `/ag-loop` from inside a builder's worktree.
+
 ### Spec dependencies
 
 A spec can declare `depends_on: [slug, …]` in its frontmatter — a list of other specs (by slug) that must ship before this one can be claimed. Shaping asks about this by default, so dependencies are captured at the point of writing the spec rather than discovered mid-build. A spec isn't claimable until all its dependencies have shipped. When a spec ships it moves to `specs/done/`, keeping the active numbered list clean while remaining resolvable as a fulfilled dependency. (Abandoning a dependency, by contrast, leaves its dependents `BLOCKED` — `/ag-abandon` walks that chain so nothing is stranded silently.)
@@ -99,7 +106,7 @@ There are **two ways** to run it, and the difference is the thing people trip on
 - **`/ag-loop`** — runs **one pass**. It loops through the *currently ready* backlog (claim → plan [pauses for `foreground`/`spike` specs] → build → verify → pause for your sign-off before ship → repeat, up to `max_iterations`), then **stops**. If nothing is ready, it stops straight away. Use it to clear a queue in one go.
 - **`/loop /ag-loop`** — runs **continuously**. It keeps going, **waits** when the backlog is empty, and starts on new work the moment it's shaped and prioritised. This is the "standing worker" you probably picture when you hear "loop".
 
-**Why two commands, and why doesn't `/ag-loop` just keep running?** Claude Code is turn-based — there is no always-on process, so a single command can't sit idle waiting for new work; when it runs out of things to do, the turn ends. `/loop` is Claude Code's built-in "keep re-running this" primitive, so wrapping `/ag-loop` in it is what makes a loop that never stops. In short:
+**Why two commands, and why doesn't `/ag-loop` just keep running?** Claude Code's loop primitive re-runs a command rather than holding an always-on process, so a single command can't sit idle waiting for new work; when it runs out of things to do, the turn ends. `/loop` is Claude Code's built-in "keep re-running this" primitive, so wrapping `/ag-loop` in it is what makes a loop that never stops. In short:
 
 - `/ag-loop` → *work the queue now, then stop*
 - `/loop /ag-loop` → *keep working as items appear*
@@ -107,6 +114,13 @@ There are **two ways** to run it, and the difference is the thing people trip on
 Either way, **pause-before-ship is the default** (nothing merges without your approval), and the behaviour is configurable in `.agentile/loop.md`. Note the loop only has anything to do once there are **prioritised, dependency-satisfied** ready specs — so `/ag-shape` and `/ag-prioritise` something first.
 
 Steering happens at two points. **Plan** is the cheap one: with the default `pause_at_plan: route`, the loop pauses after writing `plan.md` for any spec routed `foreground` or `spike` — you review or amend the plan file, reply "approved", and code gets written to the amended plan. High-certainty `background` specs run through without the plan pause. **Ship** is the final gate: nothing merges without your sign-off unless you loosen `pause_before_ship` deliberately.
+
+Running watch mode unattended has caveats — a watch loop is tied to the session
+that started it and inherits that session's permission prompts, so it pauses at
+the first tool call it isn't pre-authorised for. For long unattended runs, seed
+`permissions.allow` (the `gates.json` commands are the obvious allowlist) and
+consult Claude Code's own loop/scheduling docs for current session-lifetime and
+expiry behaviour rather than assuming a loop runs forever.
 
 ## Glossary
 
@@ -148,7 +162,7 @@ Steering happens at two points. **Plan** is the cheap one: with the default `pau
    claude plugin marketplace add agenta-consulting/agentile
    claude plugin install agentile@agentile
    ```
-2. Restart the session, then in your target project run `/ag-init` to scaffold `docs/agentile/` (inbox + specs tree), `.agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section. On a project that used the old root-level layout (`inbox.md`, `specs/`, `specs/archive/`), `/ag-init` detects it and offers to migrate everything into `docs/agentile/` with `git mv`.
+2. Restart the session, then in your target project run `/ag-init` to scaffold `docs/agentile/` (inbox + specs tree), `.agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section. On a project that used the old root-level layout (`inbox.md`, `specs/`, `specs/archive/`), `/ag-init` detects it and offers to migrate everything into `docs/agentile/` with `git mv`. If you prefer to keep your root `CLAUDE.md` lean, the Agentile section can instead live in `.claude/rules/agentile.md` — `/ag-init` offers this; the content is identical, just independently updatable.
 3. Start the loop: `/ag-capture`, `/ag-inbox`, `/ag-shape`, …
 
 ## Skills
@@ -158,6 +172,13 @@ Steering happens at two points. **Plan** is the cheap one: with the default `pau
 ## Agents (the "hats")
 
 `ag-planner` (architecture & approach), `ag-builder` (implementation), `ag-reviewer` (verification & security). Each runs in its own context so the reviewer catches what the builder missed.
+
+The plugin ships these three at the lowest precedence, so you can **override any
+of them per project** without forking the plugin: create `.claude/agents/ag-builder.md`
+(or `ag-planner`/`ag-reviewer`) and Claude Code uses yours instead — change the
+model, tools, effort, or prompt. User-level `~/.claude/agents/` works the same
+across projects. The methodology core stays fixed; the agent definitions are
+yours to tune.
 
 ## Hooks
 

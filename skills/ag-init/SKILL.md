@@ -114,6 +114,8 @@ Append the contents of `templates/CLAUDE.agentile-section.md` to the project's r
 - If `CLAUDE.md` does not exist, suggest the user run `/init` first to bootstrap it from the codebase, then create `CLAUDE.md` containing just the Agentile section.
 - If the section is already present, leave it.
 
+Offer to write the section to `.claude/rules/agentile.md` instead of appending to `CLAUDE.md`, for users who keep `CLAUDE.md` short. Default remains appending to `CLAUDE.md`.
+
 Ensure the appended Agentile section imports the brief so it loads every session — the template ends with `@docs/agentile/brief.md` (rewrite this path to the configured Agentile directory if it differs from `docs/agentile/`).
 
 ## Step 6 — Hooks

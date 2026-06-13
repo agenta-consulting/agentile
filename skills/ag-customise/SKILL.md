@@ -21,6 +21,13 @@ If no stage was provided, ask the user which stage to customise and offer that l
 - If `.agentile/<stage>.md` already exists, read it so you can show the user what is currently set and offer to update rather than overwrite.
 - Read `.agentile/playbooks.md` to remind yourself of the directive vocabulary (`delegate_to`, `also_run`, `human_checkpoint`) and the prose convention.
 
+For the build and verify stages you can also **override the agent itself** —
+`/ag-customise` offers to scaffold `.claude/agents/ag-builder.md` (or
+`ag-reviewer.md`) seeded from the plugin's definition, which takes precedence
+over the bundled agent. Use this to change an agent's model, tools, or prompt;
+use a `.agentile/<stage>.md` playbook to change how the *stage* runs around the
+agent.
+
 ## Step 3 — Interview
 
 Briefly describe what the stage does by default (one or two sentences), then ask the user about each directive in turn. Ask **one or two questions at a time**; use `AskUserQuestion` where choices are discrete.
