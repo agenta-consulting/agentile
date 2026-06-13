@@ -87,7 +87,7 @@ Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/age
 Copy from `templates/` into the project, preserving structure:
 
 - `<dir>/inbox.md` (from `templates/inbox.md`)
-- `<dir>/brief.md` (from `templates/agentile/brief-template.md`) — only if it does not exist; populated by the interview in Step 2a below.
+- `<dir>/brief.md` (from `templates/agentile/brief-template.md`) — only if it does not exist; populated by the interview in Step 2a above.
 - `.agentile/config.md`
 - `.agentile/shape.md`
 - `.agentile/playbooks.md`
