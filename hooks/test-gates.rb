@@ -39,4 +39,27 @@ Dir.mktmpdir do |d|
   raise "format hook did not run from .agentile/gates.json" unless File.exist?(marker)
 end
 
+# 5. test-gate allows on a clean git working tree (nothing to test / idle tick)
+Dir.mktmpdir do |d|
+  Open3.capture3("git", "init", "-q", d)
+  FileUtils.mkdir_p(File.join(d, ".agentile"))
+  File.write(File.join(d, ".agentile", "gates.json"), JSON.generate("test" => "false"))
+  Open3.capture3("git", "-C", d, "add", "-A")
+  Open3.capture3("git", "-C", d, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "-qm", "x")
+  out, _e, _st = run(TESTG, "cwd" => d)
+  raise "clean tree should allow without running tests: #{out.inspect}" unless out.strip.empty?
+end
+
+# 6. after N consecutive blocks for the same session, the gate gives up (allows) rather than looping
+Dir.mktmpdir do |d|
+  Open3.capture3("git", "init", "-q", d)
+  FileUtils.mkdir_p(File.join(d, ".agentile"))
+  File.write(File.join(d, ".agentile", "gates.json"), JSON.generate("test" => "false"))
+  File.write(File.join(d, "dirty.txt"), "uncommitted\n") # dirty tree so the clean-tree skip doesn't fire
+  sid = "sess-guard-#{Process.pid}"
+  results = (1..6).map { run(TESTG, "cwd" => d, "session_id" => sid)[0] }
+  raise "first attempt should block: #{results.first.inspect}" unless results.first.include?('"decision":"block"')
+  raise "should eventually stop blocking: #{results.last.inspect}" unless results.last.strip.empty?
+end
+
 puts "ALL PASS"

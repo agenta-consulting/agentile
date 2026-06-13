@@ -18,7 +18,7 @@
           {
             "type": "command",
             "command": "ruby \"${CLAUDE_PLUGIN_ROOT}/hooks/test-gate.rb\"",
-            "timeout": 180
+            "timeout": 600
           }
         ]
       }
@@ -29,7 +29,7 @@
           {
             "type": "command",
             "command": "ruby \"${CLAUDE_PLUGIN_ROOT}/hooks/test-gate.rb\"",
-            "timeout": 180
+            "timeout": 600
           }
         ]
       }
