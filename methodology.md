@@ -4,6 +4,8 @@
 
 When we automated the building, review became the bottleneck. Then review could be automated too. What's left — the thing that is now hardest and matters most — is describing what we actually want. **As the building becomes automatic, what you ask for becomes the most important.** Agentile is the methodology for that world: it puts the weight where the weight now is.
 
+That weight lands before anything is built. Be careful what you wish for — a vague wish, faithfully built, is still the wrong thing — and careful not to wish for too little; when building is so cheap, asking for less than you want is the costly mistake. So Agentile makes the front of the loop — capture, shape, prioritise, plan — the real work: the craft of turning a rough wish into a precise, worthy ask, before anyone implements it. (And, as everywhere in Agentile, each step is human, agent, or both.)
+
 ## Cross-cutting themes
 
 Everything below follows from seven findings that recur across the sources:
@@ -22,13 +24,14 @@ A methodology for **1–5 developers** who direct AI agents as their primary mea
 
 ### Governing principles
 
-1. **One trunk, small batches.** Everyone (humans and agents) integrates to main continuously behind feature flags. Small diffs are reviewable; large ones aren't.
-2. **The spec is the unit of work — but capture is free.** Work *builds* from a written spec, not a prompt typed from memory. But ideas *enter* as one-line stubs in an Inbox with zero ceremony, then get shaped into specs through a conversation. Never lose an idea for lack of a place to put it; never build from an unshaped one.
-3. **Determinism over instruction.** Anything you'd repeat — build, test, lint, scan, deploy — is a script/command/gate, never a hopeful sentence in a prompt.
-4. **Context is infrastructure.** Architecture decisions, conventions, and domain rules live where the agent reads them every time, and are versioned with the code.
-5. **Trust but verify, automatically.** No agent output merges until it passes the same gates a senior reviewer would enforce: tests, static analysis, security scan, and a human skim.
-6. **Name the anchors.** Even at one person, the seven load-bearing responsibilities (outcome, discovery, work design, engineering coherence, verification, delivery/ops, learning) need an owner — a person wearing a hat, not a job title.
-7. **Measure flow, not output.** Track lead time and where work waits, not lines or "agent velocity." If lead time doesn't drop, your constraint is upstream.
+1. **Put care into the ask.** Saying exactly what you want is the hardest, most valuable act — and the one that decides everything downstream. Capture, shape, prioritise, and plan exist to get the ask right before anything is built: precise enough that a faithful build is the right thing, and ambitious enough that you haven't asked for too little.
+2. **Small asks, one trunk.** The unit of work is what you ask for; keep each ask small and specific, and integrate continuously to one mainline. Small asks make small diffs — reviewable by a person or an agent, and safe to land even when many work at once.
+3. **The spec is the unit of work — but capture is free.** Work *builds* from a written spec, not a prompt typed from memory. But ideas *enter* as one-line stubs in an Inbox with zero ceremony, then get shaped into specs through a conversation. Never lose an idea for lack of a place to put it; never build from an unshaped one.
+4. **Determinism over instruction.** Anything you'd repeat — build, test, lint, scan, deploy — is a script/command/gate, never a hopeful sentence in a prompt.
+5. **Context is infrastructure.** Architecture decisions, conventions, and domain rules live where the agent reads them every time, and are versioned with the code.
+6. **Trust but verify, automatically.** No agent output merges until it passes the same gates a senior reviewer would enforce: tests, static analysis, security scan, and a human skim.
+7. **Name the anchors.** Even at one person, the seven load-bearing responsibilities (outcome, discovery, work design, engineering coherence, verification, delivery/ops, learning) need an owner — a person wearing a hat, not a job title.
+8. **Measure flow, not output.** Track lead time and where work waits, not lines or "agent velocity." If lead time doesn't drop, your constraint is upstream.
 
 ### The two-axis triage (what to do with each piece of work)
 
