@@ -1,6 +1,6 @@
 # Agentile — `/ag-loop` Drain-Mode Runner
 
-Design spec. Status: implemented 2026-06-11 — historical snapshot; the README and `methodology.md` are normative. Amended since: plan checkpoints are route-aware (`pause_at_plan: route` — foreground/spike specs pause at plan), and ship keeps claim timestamps, stamping `shipped_at`.
+Design spec. Status: implemented 2026-06-11 — historical snapshot; the README and `methodology.md` are normative. Amended since: plan checkpoints are route-aware (`pause_at_plan: route` — foreground/spike specs pause at plan), and ship keeps claim timestamps, stamping `shipped_at`. Amended again 2026-09-06: `/ag-loop --once` plus the headless `bin/ag-run` driver, a durable run log (`docs/agentile/runs.md`), the runner-identity split (`AGENTILE_RUNNER_ID` vs `${CLAUDE_SESSION_ID}`), and an explicit thin-orchestrator contract (`BUILD:`/`VERDICT:` verdict lines, `/ag-plan` forced to the subagent when loop-driven) — see `docs/plans/2026-09-06-loop-context-management.md`. This addresses the "strains the context window and compaction across multiple full build cycles" risk flagged in `docs/reviews/plugin-review.md`.
 
 ## Context
 

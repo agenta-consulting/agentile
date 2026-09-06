@@ -14,14 +14,23 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
 2. List the specs at the top level of that directory — flat `*.md` files and `*/SPEC.md` directory specs (not the `done/` or `abandoned/` subdirectories) — whose frontmatter contains `status: in_progress`.
 
-3. For each in-progress spec, print:
+3. For each in-progress spec, check whether `claimed_by` looks like a Claude session id (a UUID) or a named runner (anything else, e.g. `ag-run@host/12345` — set via `AGENTILE_RUNNER_ID`, typically by the headless `bin/ag-run` driver). Print:
 
    ```
    <slug>  in_progress  <label if present, otherwise claimed_by>  (claimed <relative age>)
      → resume: claude --resume <claimed_by>
    ```
 
-   Compute the relative age from `claimed_at` (e.g. "2 h ago", "3 d ago").
+   for a session id, or:
+
+   ```
+   <slug>  in_progress  <label if present, otherwise claimed_by>  (claimed <relative age>)
+     → not a session — claimed by runner "<claimed_by>". Re-run its driver with the
+       same AGENTILE_RUNNER_ID to continue it, or export AGENTILE_RUNNER_ID=<claimed_by>
+       and run /ag-loop interactively to pick it up.
+   ```
+
+   for a named runner. Compute the relative age from `claimed_at` (e.g. "2 h ago", "3 d ago").
 
 4. Flag any spec whose `claimed_at` timestamp is older than approximately 24 hours with a warning:
 

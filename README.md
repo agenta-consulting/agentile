@@ -74,7 +74,7 @@ Two skills govern the transition from ready work to in-flight work, and they are
 - **`/ag-wip`** lists every in-progress claim and prints the resume command (`claude --resume <session-id>`) for each. Stale claims are surfaced for human judgement — Agentile flags them but does not auto-reclaim; **releasing** a claim (back to `ready`, claim fields cleared) is distinct from **abandoning** the spec (dropped for good).
 - **`/ag-abandon <slug>`** drops a spec that won't ship (failed review, withdrawn, not worth doing). It records the reason, walks the dependency chain with `bin/ag-dependents`, and offers — per dependent — to cascade the abandonment (with an auto-reason referencing the top-level one) or to keep it active and strip the now-dead link so it isn't silently `BLOCKED`. Abandoned specs move to `specs/abandoned/` with `status: abandoned`.
 
-The session id is a resume handle, so a loop that was interrupted mid-cycle can be picked back up exactly where it stopped.
+The session id is a resume handle, so a loop that was interrupted mid-cycle can be picked back up exactly where it stopped. That only holds for an interactive session, though: `claimed_by` is really a **claim identity**, resolved as `${AGENTILE_RUNNER_ID}` if set, else `${CLAUDE_SESSION_ID}`. The headless `bin/ag-run` driver (see "Running the loop" below) sets `AGENTILE_RUNNER_ID` to a stable name of its own, since it drains one item per fresh process and has no single session to resume. `/ag-wip` tells the two apart — a session id gets the `claude --resume` line, a named runner gets instructions for re-running it instead.
 
 The claim lock is a **per-machine** file lock: it serialises concurrent loops on one machine. Across machines, the repository is the sync point — commit and push claim stamps promptly, and treat a pushed claim as authoritative. Agentile is single-repo by design; cross-repo or cross-team coordination is out of scope.
 
@@ -101,12 +101,13 @@ never shipped.
 
 ### Running the loop
 
-There are **two ways** to run it, and the difference is the thing people trip on:
+There are **three ways** to run it:
 
 - **`/ag-loop`** — runs **one pass**. It loops through the *currently ready* backlog (claim → plan [pauses for `foreground`/`spike` specs] → build → verify → pause for your sign-off before ship → repeat, up to `max_iterations`), then **stops**. If nothing is ready, it stops straight away. Use it to clear a queue in one go.
-- **`/loop /ag-loop`** — runs **continuously**. It keeps going, **waits** when the backlog is empty, and starts on new work the moment it's shaped and prioritised. This is the "standing worker" you probably picture when you hear "loop".
+- **`/loop /ag-loop`** — runs **continuously**, all in one long-lived session. It keeps going, **waits** when the backlog is empty, and starts on new work the moment it's shaped and prioritised. This is the "standing worker" you probably picture when you hear "loop".
+- **`/ag-loop --once`** — processes **exactly one item**, then stops. Every stop or pause ends with a machine-readable `AG_LOOP: <shipped|paused|failed|idle> …` line. On its own it's a tighter version of a single pass; its main purpose is being driven from outside a session — see `bin/ag-run` below.
 
-**Why two commands, and why doesn't `/ag-loop` just keep running?** Claude Code's loop primitive re-runs a command rather than holding an always-on process, so a single command can't sit idle waiting for new work; when it runs out of things to do, the turn ends. `/loop` is Claude Code's built-in "keep re-running this" primitive, so wrapping `/ag-loop` in it is what makes a loop that never stops. In short:
+**Why the first two, and why doesn't `/ag-loop` just keep running?** Claude Code's loop primitive re-runs a command rather than holding an always-on process, so a single command can't sit idle waiting for new work; when it runs out of things to do, the turn ends. `/loop` is Claude Code's built-in "keep re-running this" primitive, so wrapping `/ag-loop` in it is what makes a loop that never stops. In short:
 
 - `/ag-loop` → *work the queue now, then stop*
 - `/loop /ag-loop` → *keep working as items appear*
@@ -114,6 +115,8 @@ There are **two ways** to run it, and the difference is the thing people trip on
 Either way, **pause-before-ship is the default** (nothing merges without your approval), and the behaviour is configurable in `.agentile/loop.md`. Note the loop only has anything to do once there are **prioritised, dependency-satisfied** ready specs — so `/ag-shape` and `/ag-prioritise` something first.
 
 Steering happens at two points. **Plan** is the cheap one: with the default `pause_at_plan: route`, the loop pauses after writing `plan.md` for any spec routed `foreground` or `spike` — you review or amend the plan file, reply "approved", and code gets written to the amended plan. High-certainty `background` specs run through without the plan pause. **Ship** is the final gate: nothing merges without your sign-off unless you loosen `pause_before_ship` deliberately.
+
+**Keeping the loop's own context from filling up.** `/ag-loop` is an orchestrator, not a reader — it dispatches `/ag-plan`, `ag-builder`, and `ag-reviewer` to do the actual reading (spec body, `plan.md`, the diff) in their own context, and reads back only a short verdict (`BUILD: done|blocked`, `VERDICT: pass|fail`) plus a terse summary. It also keeps a durable **run log** (`docs/agentile/runs.md` by default, alongside the specs) of every claim, ship, pause, and failure, so a long drain's progress survives a context compaction rather than depending on a counter held only in that turn. For a genuinely long unattended drain — more items than one session should sit through — reach for **`bin/ag-run`**: it repeatedly runs `/ag-loop --once` in a fresh `claude -p` process per item, so each item gets a clean context rather than one session's context growing across the whole run. It stops (without error) the moment a pause needs a human, and prints how to pick that item back up. It takes an optional `--limit N`, and forwards anything after `--` to `claude` (e.g. `bin/ag-run -- --permission-mode acceptEdits`) — a headless run needs *some* permission story, since nothing can answer a prompt.
 
 Running watch mode unattended has caveats — a watch loop is tied to the session
 that started it and inherits that session's permission prompts, so it pauses at
@@ -129,7 +132,8 @@ expiry behaviour rather than assuming a loop runs forever.
 - **Ready** — satisfies the Definition of Ready in `.agentile/shape.md`; `status: ready`.
 - **prioritised** — carries an `NNNN-` rank prefix; an unprefixed spec is Ready but not claimable.
 - **claimable** — prioritised, `status: ready`, unclaimed, all `depends_on` shipped, WIP limit not hit.
-- **claimed** — pulled by `/ag-next`: `status: in_progress` plus `claimed_by`/`claimed_at` (the resume handle).
+- **claimed** — pulled by `/ag-next`: `status: in_progress` plus `claimed_by`/`claimed_at`. `claimed_by` is a session id (a `claude --resume` handle) for an interactive claim, or a named runner (`AGENTILE_RUNNER_ID`) for a headless one.
+- **run log** — `docs/agentile/runs.md`: an append-only history of what `/ag-loop` claimed, shipped, paused, or failed on — durable across a compaction or a fresh process.
 - **release** — clear a claim and return the spec to `ready`; the spec stays live.
 - **abandon** — drop a spec for good (`/ag-abandon`); it moves to `specs/abandoned/` with the reason.
 - **shipped** — merged and stamped `shipped_at`; the spec moves to `specs/done/` and satisfies dependencies.

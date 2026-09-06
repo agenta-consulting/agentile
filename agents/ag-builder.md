@@ -34,7 +34,18 @@ If the file is absent, use the baseline below unchanged.
 
 ## What to return
 
-- A summary of what you changed and why, file by file.
+Your **first line**, verbatim, must be one of:
+
+```
+BUILD: done
+BUILD: blocked
+```
+
+`blocked` means you stopped because the spec was wrong or underspecified (see above) — say why in the report that follows. An orchestrating `/ag-loop` reads this line to decide what happens next; it does not otherwise inspect your diff.
+
+After that line, a terse report — bullets, not a walkthrough. The reviewer reads your actual diff, so this only needs to orient, not repeat it:
+
+- What changed and why, file by file (one line each).
 - The exact gate commands you ran and their results (passing, with evidence — do not claim green without running them).
 - Anything that surprised you, and any follow-up stubs worth capturing.
 

@@ -1,0 +1,102 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# ag-run — headless driver for /ag-loop. Runs `/ag-loop --once` in a fresh
+# `claude -p` process per item, so a long unattended drain never lets one
+# session's context fill up across many items. Stops cleanly at the first
+# pause a human needs to answer — a detached process can't answer a
+# checkpoint. See skills/ag-loop/SKILL.md ("Exit contract", "Watch mode").
+#
+# Usage: ag-run [--limit N] [-- <claude flags>]
+#   --limit N   stop after N items even if more are ready (default: unlimited —
+#               runs until idle, paused, or failed)
+#   -- ...      everything after -- is passed through to `claude` verbatim,
+#               e.g. `--permission-mode acceptEdits`. ag-run sets no
+#               permission mode itself; a headless run needs one from the
+#               project's own settings or a flag here, since nothing here can
+#               answer a permission prompt.
+#
+# AGENTILE_RUNNER_ID, if already set in the environment, names this driver's
+# claim identity (so a crashed run can be resumed by re-running with the same
+# id — see skills/ag-loop/SKILL.md, "Runner identity"). If unset, ag-run picks
+# one and prints it, stable for the life of this process across every item it
+# drains.
+require "open3"
+require "socket"
+
+args = ARGV.dup
+limit = nil
+claude_args = []
+if (i = args.index("--"))
+  claude_args = args[(i + 1)..] || []
+  args = args[0...i]
+end
+while (flag = args.shift)
+  case flag
+  when "--limit"
+    limit = args.shift.to_i
+  else
+    abort "ag-run: unknown argument #{flag.inspect} (usage: ag-run [--limit N] [-- <claude flags>])"
+  end
+end
+
+runner_id = ENV["AGENTILE_RUNNER_ID"]
+if runner_id.to_s.empty?
+  runner_id = "ag-run@#{Socket.gethostname}/#{Process.pid}"
+  ENV["AGENTILE_RUNNER_ID"] = runner_id
+end
+puts "[ag-run] runner id: #{runner_id}"
+
+STATUS_LINE = /^AG_LOOP:\s*(\S+)(?:\s+(\S+))?(?:\s+(.*))?$/
+
+def tail(text, n = 4000)
+  text.length > n ? text[-n..] : text
+end
+
+item = 0
+loop do
+  item += 1
+  if limit && item > limit
+    puts "[ag-run] reached --limit #{limit}, stopping."
+    exit 0
+  end
+
+  puts "[ag-run] item #{item}: running claude -p \"/ag-loop --once\"..."
+  out, err, status = Open3.capture3("claude", "-p", "/ag-loop --once", *claude_args)
+
+  unless status.success?
+    warn "[ag-run] claude exited #{status.exitstatus}"
+    warn err unless err.strip.empty?
+    warn tail(out)
+    exit 1
+  end
+
+  line = out.lines.map(&:strip).reverse.find { |l| l.start_with?("AG_LOOP:") }
+  unless line
+    warn "[ag-run] no AG_LOOP status line found in output — showing the tail:"
+    warn tail(out)
+    exit 1
+  end
+
+  m = STATUS_LINE.match(line)
+  outcome, arg2, arg3 = m[1], m[2], m[3]
+  puts "[ag-run] item #{item}: #{line}"
+
+  case outcome
+  when "shipped"
+    next
+  when "idle"
+    puts "[ag-run] backlog idle (#{arg2}) — nothing more to do. Stopping."
+    exit 0
+  when "paused"
+    puts "[ag-run] paused on #{arg2} (#{arg3}) — a human checkpoint needs an answer."
+    puts "[ag-run] to resume: export AGENTILE_RUNNER_ID=#{runner_id} and run /ag-loop interactively,"
+    puts "[ag-run] or review the spec, answer the checkpoint, then re-run ag-run with the same AGENTILE_RUNNER_ID."
+    exit 0
+  when "failed"
+    warn "[ag-run] failed on #{arg2} (#{arg3}). Stopping."
+    exit 1
+  else
+    warn "[ag-run] unrecognised AG_LOOP status: #{line.inspect}"
+    exit 1
+  end
+end
