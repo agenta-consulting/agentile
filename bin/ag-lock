@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# ag-lock — portable, dependency-free serialization wrapper for a gate command
+# that touches shared mutable state (a file-based test database like SQLite,
+# a fixed dev port, a single build cache). Two concurrent invocations against
+# the same lockfile queue instead of colliding: the second waits for the
+# first to finish rather than both erroring out. Same primitive ag-claim uses
+# for its atomic spec claim (File#flock) — works identically on Linux and
+# macOS, no dependency on the platform flock(1) CLI (which macOS lacks).
+#
+# This is opt-in, per-project: not every stack needs it (a real RDBMS with
+# per-worker test databases, or anything stateless, is already safe under
+# concurrent runs, and wrapping it here would only add pointless queueing).
+# /ag-init asks whether a project's test/build command needs this and wires
+# it into .agentile/gates.json when it does. It complements, not replaces,
+# the hook-level lock in hooks/test-gate.rb, which serializes only the
+# Stop/SubagentStop-triggered runs; this wraps the gate command itself, so it
+# also covers a human or ag-builder invoking it directly.
+#
+# Usage: ag-lock <lockfile> <command>
+#   ag-lock storage/.test.lock 'bin/rails test'
+#
+# <command> is one shell string (quote it) — it runs via the system shell,
+# same as the raw gate command would. <lockfile>'s parent directory is
+# created if missing. The lock file is runtime state, not source — gitignore
+# it (or point it at a tmp/ path already ignored).
+
+require "fileutils"
+
+lockfile, command = ARGV
+if lockfile.nil? || command.to_s.empty?
+  warn "usage: ag-lock <lockfile> <command>"
+  exit 64 # EX_USAGE
+end
+
+dir = File.dirname(lockfile)
+FileUtils.mkdir_p(dir) unless dir == "."
+
+File.open(lockfile, File::RDWR | File::CREAT, 0o644) do |lock|
+  lock.flock(File::LOCK_EX)
+  system(command)
+  exit(($? && $?.exitstatus) || 1)
+end

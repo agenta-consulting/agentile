@@ -189,7 +189,7 @@ yours to tune.
 Config-driven and **opt-in safe** — they read `.agentile/gates.json` and no-op when a command is blank, so installing the plugin never disrupts an unconfigured repo:
 
 - **format-on-edit** (`PostToolUse`) — runs your formatter after each edit. If the `format` command contains `{file}`, the edited path is substituted.
-- **test-gate** (`Stop` / `SubagentStop`) — blocks "done" until your `test` command passes.
+- **test-gate** (`Stop` / `SubagentStop`) — blocks "done" until your `test` command passes. Also serializes its own runs per project directory (`File#flock`, no config needed), since parallel subagents can each fire this hook around the same moment — the collision that matters for a stack with shared file-based test state, like SQLite. For a `test`/`build` command that also needs protecting when run directly (by a human or `ag-builder`, outside this hook), wrap it in `gates.json` with `bin/ag-lock` — the same portable `File#flock` primitive `ag-claim` uses for its spec-claim lock; `/ag-init` offers to wire it in.
 
 The hook scripts are Ruby (`hooks/*.rb`), so Ruby must be on `PATH`.
 

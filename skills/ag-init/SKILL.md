@@ -22,8 +22,13 @@ Use `AskUserQuestion` to gather (one compact round):
 
 - **Gate commands** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands (any may be left blank). These populate `.agentile/gates.json`. There is no separate "enable hooks?" step: the plugin's hooks are active whenever the plugin is enabled; they simply no-op until these commands are filled in. So this question *is* how you enable the gates.
 - **Protected branches** — branches agents must not commit to directly (default `main`, `master`).
+- **Concurrency safety** (only if `test` and/or `build` were filled in) — can two invocations of that command run safely at the same time? Ask plainly: "If two test runs happened at once, would they interfere with each other (a shared SQLite file, a fixed dev port, a single build cache), or are they already safe to overlap (Postgres/MySQL, per-worker test databases, stateless)?" Default the question itself toward "not sure" being treated as *unsafe* — false-positive serialization only costs a little queueing time; false-negative collisions produce the flaky, hard-to-diagnose failures this question exists to prevent. If unsafe, wrap the affected command(s) with the plugin's `ag-lock` (ships in `bin/`, on `PATH` while the plugin is enabled; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-lock"`):
+  ```
+  "test": "ag-lock storage/.test.lock 'bin/rails test'"
+  ```
+  Pick the lockfile path from the project's own ignored runtime-state directory (e.g. `storage/`, `tmp/`, tests' own scratch dir) — never a tracked path — and confirm the parent directory's `.gitignore` entry covers it (or add one). This is separate from, and lighter than, the hook-level protection: `hooks/test-gate.rb` already serializes its own Stop/SubagentStop-triggered runs per project directory unconditionally, with no config needed — `ag-lock` in `gates.json` additionally covers a human or `ag-builder` invoking the gate command directly.
 
-If the user is mid-flow and does not want questions, accept defaults and leave `gates.json` blank — they can fill it in later.
+If the user is mid-flow and does not want questions, accept defaults, leave `gates.json` blank, and skip the concurrency question (nothing to wrap yet) — they can fill it in later, including running `/ag-customise` or editing `gates.json` by hand to add `ag-lock` once a `test`/`build` command exists.
 
 ## Step 2a — Project brief (fresh projects)
 

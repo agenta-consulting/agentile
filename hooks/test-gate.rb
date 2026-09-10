@@ -15,6 +15,18 @@
 #     which is the real re-block guard ensuring a permanently-failing suite
 #     can never cause an infinite loop.
 # So installing the plugin never blocks an unconfigured repo.
+#
+# Stop and SubagentStop both wire to this hook, so parallel subagents finishing
+# around the same moment can each fire it concurrently for the same project. A
+# stack with shared file-based test state (SQLite being the sharpest case) then
+# sees two overlapping test runs collide (e.g. "database is locked") — a
+# structural side effect of Agentile encouraging parallel subagents, not a
+# per-project bug. So every run here is serialized per project directory (see
+# TEST_LOCK_PATH below) regardless of which session or subagent triggered it.
+# This is separate from, and stacks with, the opt-in `ag-lock` wrapper
+# /ag-init can add around gates.json's own `test` command: that one also
+# covers a human or ag-builder invoking the gate command directly, outside
+# this hook.
 
 require 'json'
 require 'open3'
@@ -77,7 +89,26 @@ end
 # Already given up for this session+dir (and tree still dirty): allow immediately.
 allow if File.exist?(counter) && File.read(counter).strip == 'capped'
 
-stdout, stderr, status = Open3.capture3(cmd, chdir: cwd)
+# Serialize concurrent hook-triggered test runs for this project directory (see
+# header comment) — same File#flock primitive ag-claim uses, portable and
+# dependency-free. A second overlapping invocation just waits its turn here
+# instead of racing the first against shared test state.
+test_lock_path = File.join(Dir.tmpdir, "agentile-testgate-lock-#{Digest::SHA1.hexdigest(cwd)}")
+# Interactive Bash tool calls get this plugin's bin/ (ag-claim, ag-lock, ...)
+# on PATH automatically; a hook subprocess spawned via Open3 does not inherit
+# that. A gates.json command may reference ag-lock as a bare command (the same
+# convention skills use for ag-claim), so guarantee it resolves here too by
+# prepending this plugin's own bin/ — derived from this file's own location,
+# not from CLAUDE_PLUGIN_ROOT, which is likewise not guaranteed to reach this
+# subprocess's environment.
+plugin_bin = File.expand_path('../bin', __dir__)
+run_env = { 'PATH' => "#{plugin_bin}#{File::PATH_SEPARATOR}#{ENV['PATH']}" }
+stdout = stderr = ''
+status = nil
+File.open(test_lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
+  lock.flock(File::LOCK_EX)
+  stdout, stderr, status = Open3.capture3(run_env, cmd, chdir: cwd)
+end
 if status.success?
   File.delete(counter) if File.exist?(counter)
   allow
