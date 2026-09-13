@@ -26,17 +26,17 @@ If the file is absent, use the baseline below unchanged.
 
 1. Resolve the claim identity: use `${AGENTILE_RUNNER_ID}` if it is set, otherwise `${CLAUDE_SESSION_ID}` — Claude Code substitutes the real session id here when the skill runs. `AGENTILE_RUNNER_ID` lets an unattended driver (e.g. `bin/ag-run`) claim under a stable name of its own rather than a session id, so a fresh headless process per item does not orphan the previous one's claim. Use whichever value resolves directly as the claim's `claimed_by` handle. When it came from `CLAUDE_SESSION_ID`, it is also a `claude --resume <id>` handle; when it came from `AGENTILE_RUNNER_ID`, it is not a session and does not resume that way — see `/ag-wip`. (If both are empty, fall back to `echo "$(whoami)@$(hostname -s)/$(date +%s)"` and note that this fallback is not a resume handle either.)
 
-2. Resolve the specs directory: read **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that path and note `/ag-init` can migrate.) Read `wip_limit` from `.agentile/prioritise.md` (default: unlimited if the file or field is absent).
+2. Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`). (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that path and note `/ag-init` can migrate.) Resolve which store answers this project: read `store:` from `.agentile/store.md` if it exists, default `local`. Read `wip_limit` from `.agentile/prioritise.md` (default: unlimited if the file or field is absent).
 
-3. The claim helper ships in this plugin's `bin/`, which is on your PATH while the plugin is enabled — call it as the bare command `ag-claim`. (Fallback only if it is not found: `"${CLAUDE_PLUGIN_ROOT}/bin/ag-claim"`.)
+3. `ag-store` ships in this plugin's `bin/`, which is on your PATH while the plugin is enabled — call it as the bare command `ag-store`. (Fallback only if it is not found: `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`.)
 
-4. Run the helper:
+4. Run it:
 
    ```
-   ag-claim "<specs-dir>" "<claim-identity from step 1>" "<optional label from $ARGUMENTS>" "<wip_limit>"
+   ag-store claim "<claim-identity from step 1>" "<optional label from $ARGUMENTS>" "<wip_limit>" --dir "<dir>" --store "<store>"
    ```
 
-5. Interpret the single line of output:
+5. Parse the JSON string result:
 
    - **A file path** — the claim succeeded. Report: claimed `<path>` as `<claim-identity>`. If the identity is `${CLAUDE_SESSION_ID}`, tell the user that to resume this loop later they can run `claude --resume <claim-identity>`; if it is `${AGENTILE_RUNNER_ID}`, say instead that it is a named runner, not a session, and point at `/ag-wip` for how to continue it. The path is the spec's `.md` file — for a directory spec, its `SPEC.md`; the spec's working set (`plan.md`, supporting files) lives in the same directory.
    - **`NONE`** — no ready work is available. Suggest running `/ag-shape` to shape inbox items or `/ag-prioritise` to rank the backlog.

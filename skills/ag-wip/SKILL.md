@@ -10,9 +10,9 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
 ## Steps
 
-1. Resolve the specs directory: read **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that path and note `/ag-init` can migrate.)
+1. Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`). (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that path and note `/ag-init` can migrate.) Resolve which store answers this project: read `store:` from `.agentile/store.md` if it exists, default `local`.
 
-2. List the specs at the top level of that directory — flat `*.md` files and `*/SPEC.md` directory specs (not the `done/` or `abandoned/` subdirectories) — whose frontmatter contains `status: in_progress`.
+2. Run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) and parse the JSON array.
 
 3. For each in-progress spec, check whether `claimed_by` looks like a Claude session id (a UUID) or a named runner (anything else, e.g. `ag-run@host/12345` — set via `AGENTILE_RUNNER_ID`, typically by the headless `bin/ag-run` driver). Print:
 
@@ -34,6 +34,6 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
 4. Flag any spec whose `claimed_at` timestamp is older than approximately 24 hours with a warning:
 
-   > Likely stale — **release the claim** (set `status: ready` and clear `claimed_by`, `claimed_at`, and `label`) to put it back in the queue, or resume it with the command above. Releasing a claim is not abandoning: the spec stays live.
+   > Likely stale — **release the claim** (`ag-store release <slug> --dir "<dir>" --store "<store>"`) to put it back in the queue, or resume it with the command above. Releasing a claim is not abandoning: the spec stays live.
 
 5. Make no changes to any file.

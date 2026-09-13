@@ -1,13 +1,13 @@
 ---
 name: ag-prioritise
 description: Interactively order the ready Agentile specs by assigning dense NNNN- filename prefixes that encode priority rank. Trigger phrases include "/ag-prioritise", "prioritise the backlog", "order the ready work", "re-rank specs".
-allowed-tools: AskUserQuestion, Bash, Read, Write, Edit
+allowed-tools: AskUserQuestion, Bash, Read
 disable-model-invocation: true
 ---
 
 # ag-prioritise
 
-Prioritisation encodes rank directly in the filename: `0001-<slug>.md` is first in the queue, `0002-<slug>.md` is second, and so on. The claim helper always picks the lowest-numbered ready spec whose dependencies are shipped, so the file order *is* the work order. This skill is a short interactive conversation that produces that ordering.
+Prioritisation encodes rank directly in the filename: `0001-<slug>.md` is first in the queue, `0002-<slug>.md` is second, and so on (an `airtable` store instead uses a `Rank` field with the same meaning — `ag-store rank` handles the difference). The claim helper always picks the lowest-numbered ready spec whose dependencies are shipped, so the order *is* the work order. This skill is a short interactive conversation that produces that ordering.
 
 ## Apply this project's playbook
 
@@ -27,23 +27,27 @@ If the file is absent, use the baseline below unchanged.
 
 ### Step 1 — Read the active set
 
-Resolve the specs directory: read **Agentile directory** from `.agentile/config.md`
-(default `docs/agentile/`); the specs dir is `<dir>/specs/`. (If the project still uses
-the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory`
-key, honour that path and note `/ag-init` can migrate.) Read `<dir>/brief.md` if present — rank Business Value against its prioritised outcomes rather than gut feel. List every spec at the top level of that directory — flat `*.md` files and `NNNN-<slug>/` directories containing a `SPEC.md` (skip `done/` and `abandoned/`) — do **not** descend into `specs/done/`, `specs/abandoned/`, or any other subdirectory looking for more.
+Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`).
+(If the project still uses the old `Specs directory:` key or a root-level `specs/` with
+no `Agentile directory` key, honour that path and note `/ag-init` can migrate.) Resolve
+which store answers this project: read `store:` from `.agentile/store.md` if it exists,
+default `local`. Read `<dir>/brief.md` if present — rank Business Value against its
+prioritised outcomes rather than gut feel.
 
-For each file, read its frontmatter and classify it into one of three groups:
+Run `ag-store spec_list --dir "<dir>" --store "<store>"` (bare command; fallback
+`"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) and parse the JSON array. Each entry already
+carries `slug`, `prefix` (null if unprioritised), `status`, `business_value`,
+`technical_certainty`, `depends_on`, and claim fields — classify into three groups from
+that, no file reading required:
 
-- **Prioritised** — filename begins with an `NNNN-` prefix (one or more digits followed
-  by a hyphen). Sort these ascending by their numeric prefix to produce the current
-  queue order.
-- **Unprioritised ready** — filename has no `NNNN-` prefix and `status: ready`.
-  These are shaped and buildable but have not yet been placed in the queue.
-- **In-progress** — `status: in_progress`, regardless of whether the filename is
-  prefixed. These are actively being worked and must never be renamed.
+- **Prioritised** — `prefix` is not null. Sort ascending by `prefix` to produce the
+  current queue order.
+- **Unprioritised ready** — `prefix` is null and `status` is `ready`. Shaped and
+  buildable but not yet placed in the queue.
+- **In-progress** — `status` is `in_progress`, regardless of `prefix`. Actively being
+  worked and must never be reordered.
 
-A spec's **slug** is its filename (flat form) or directory name (directory form) with any leading `NNNN-` prefix and the `.md` extension stripped. Read each spec's `business_value`, `technical_certainty`, and
-`depends_on` (default `[]`) fields. Treat missing numeric fields as `0`.
+Treat missing `business_value`/`technical_certainty` as `0`.
 
 ### Step 2 — Show the current state
 
@@ -78,21 +82,20 @@ make more changes?").
 
 ### Step 5 — Apply the order
 
-Once the user confirms, rename the **ready** specs only — both previously prioritised
-and unprioritised — using dense sequential prefixes: `0001-<slug>.md`,
-`0002-<slug>.md`, and so on. Strip any existing `NNNN-` prefix from the filename to
-obtain the bare `<slug>` before constructing the new name. Perform every rename with
-`git mv` so the history is preserved.
+Once the user confirms, apply it in one call:
 
-For a directory spec, rename the **directory** (`git mv <specs>/0003-<slug>/ <specs>/0001-<slug>/`) — never the `SPEC.md` inside it. The collision-safe two-step applies to directories exactly as to files.
+```
+ag-store rank <slug-1> <slug-2> ... --dir "<dir>" --store "<store>"
+```
 
-To avoid intermediate filename collisions (e.g. renaming `0002-b.md` → `0001-b.md` while
-`0001-a.md` → `0002-a.md`), first move all affected files to unique temporary names
-(such as `tmp-<slug>.md` — or `tmp-<slug>/` for a directory spec — or a high reserved prefix), then move them to their final
-`NNNN-<slug>.md` names.
-
-**Never rename in-progress specs.** Their filenames are fixed references that may be
-held by another active session's claim; leave them entirely untouched.
+passing every **ready** slug (previously prioritised and unprioritised alike) in the
+final confirmed order. `ag-store` assigns dense sequential ranks by position —
+`0001-<slug>.md`, `0002-<slug>.md`, and so on for the `local` store, or the `Rank`
+field for `airtable` — using `git mv`'s collision-safe two-step under the hood so an
+in-flight reorder (e.g. swapping `0001`↔`0002`) never collides. **Never pass an
+in-progress slug** — `ag-store rank` only reorders `status: ready` specs and leaves
+anything else untouched, but omit them from the list regardless so the intent is
+explicit in what you asked for.
 
 ### Step 6 — Report
 

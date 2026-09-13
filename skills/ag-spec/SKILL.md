@@ -1,7 +1,7 @@
 ---
 name: ag-spec
 description: Write a Ready spec for a trivial change straight from a one-line idea, skipping the full shaping interview. Use only for small, certain work; non-trivial items should go through /ag-shape. Trigger phrases include "/ag-spec", "spec this", "quick spec", "write a spec for".
-allowed-tools: Bash, Read, Write, Edit
+allowed-tools: Bash, Read
 arguments: [idea]
 ---
 
@@ -26,7 +26,7 @@ If the file is absent, use the baseline below unchanged.
 ## Steps
 
 1. The idea is `$idea` (or `$ARGUMENTS`). If empty, ask for it once.
-2. Read `.agentile/spec-template.md` (the output structure) and `.agentile/config.md` for the **Agentile directory** (default `docs/agentile/`); specs live in `<dir>/specs/`. (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that and note `/ag-init` can migrate.) Skim `CLAUDE.md` for standing context, and `<dir>/brief.md` if present (for the project's outcomes and constraints, so the triage self-check has a reference).
+2. Read `.agentile/spec-template.md` (the output structure) and `.agentile/config.md` for the **Agentile directory** (default `docs/agentile/`). (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that and note `/ag-init` can migrate.) Resolve which store answers this project: read `store:` from `.agentile/store.md` if it exists, default `local`. Skim `CLAUDE.md` for standing context, and `<dir>/brief.md` if present (for the project's outcomes and constraints, so the triage self-check has a reference).
 3. **Self-check the triage.** Estimate Business Value × Technical Certainty. If Technical Certainty is not High, or the work touches more than a small, well-understood area, tell the user this should be shaped, and offer to run `/ag-shape` instead. Only continue for genuinely trivial work.
-4. Write `<dir>/specs/<slug>.md` from the template, filling every field, including `outcome:` (the observable check that proves it worked). For a trivial spec, keep edge cases and scope tight and explicit. Set `route` (usually `foreground` or `background`), `business_value`, `technical_certainty`, and today's date.
-5. Report the path and the next step (`/ag-plan <dir>/specs/<slug>.md`). Do not start building.
+4. Build the spec markdown from the template, filling every field, including `outcome:` (the observable check that proves it worked). Keep every frontmatter value valid YAML — no unquoted colons in `title`, `outcome` or any other field (`title: Foo: bar` breaks the claim tooling); reword with a dash or comma, or quote the value. For a trivial spec, keep edge cases and scope tight and explicit. Set `route` (usually `foreground` or `background`), `business_value`, `technical_certainty`, and today's date. Write it with `ag-store spec_create <slug> --dir "<dir>" --store "<store>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`), piping the markdown on stdin.
+5. Report the path and the next step (`/ag-plan <path>`). Do not start building.
