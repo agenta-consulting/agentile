@@ -15,9 +15,10 @@ PLUGIN="agentile"
 
 CACHE="$HOME/.claude/plugins/cache/$MARKET/$PLUGIN"
 
-# With version omitted from plugin.json, the cache dir is named by git SHA (or
-# "latest") rather than a fixed version — link whichever version dir currently
-# exists; if the cache is empty (plugin not yet installed), use a "dev" dir.
+# The cache dir is named by whatever the install recorded — a git SHA for a
+# git/directory source, the pinned version for others — so don't guess at its
+# name: link whichever version dir currently exists; if the cache is empty
+# (plugin not yet installed), use a "dev" dir.
 TARGET="$(ls -d "$CACHE"/*/ 2>/dev/null | head -1)"
 TARGET="${TARGET%/}"
 if [ -z "$TARGET" ]; then

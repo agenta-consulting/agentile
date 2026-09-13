@@ -209,7 +209,7 @@ expiry behaviour rather than assuming a loop runs forever.
 
 ## Skills
 
-`/ag-new-project`, `/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-abandon`, `/ag-loop`, `/ag-customise`, `/ag-retro`.
+`/ag-new-project`, `/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-abandon`, `/ag-loop`, `/ag-customise`, `/ag-retro`, `/ag-version`.
 
 ## Agents (the "hats")
 
@@ -235,7 +235,23 @@ The hook scripts are Ruby (`hooks/*.rb`), so Ruby must be on `PATH`.
 
 Claude Code freezes an installed plugin as a snapshot, so source edits aren't seen until you reinstall. Two layered modes over this one repo:
 
-The plugin omits a pinned `version`, so git-distributed installs pick up every pushed commit as a new version — there is no field to bump during development. Tag a semver release when cutting a stable version.
+### Versioning
+
+The plugin carries a pinned semver `version` in
+[`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json), mirrored in the
+marketplace entry beside it — `claude plugin tag` refuses a release where the
+two disagree.
+
+**Every change to the plugin bumps it, in the same commit as the change.** Patch
+for a fix or a wording change, minor for a new skill, a new store field, or any
+change to what a skill instructs. The version is how anyone — you on another
+machine, a teammate, an agent reading a transcript — can tell which behaviour
+they are actually running, and a change that ships without a bump is invisible:
+two machines report the same version and behave differently.
+
+Run `/ag-version` to see the running version, the installed snapshot, and
+whether this repo is ahead of it.
+
 
 - **Live (your machine):** run [`dev/ag-dev-link`](./dev/ag-dev-link) once (after a first `dev/ag-sync`) to symlink the install location to this repo. Edits to skills/agents/hooks then apply on the next session reload — no reinstall.
 - **Snapshot (distribution / fresh machine / CI):** [`dev/ag-sync`](./dev/ag-sync) validates, registers the marketplace, and installs/updates. This is the path everyone else uses, so what you test equals what ships.

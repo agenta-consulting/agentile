@@ -11,6 +11,7 @@
   "plugins": [
     {
       "name": "agentile",
+      "version": "0.9.5",
       "source": "./",
       "description": "Agentile — capture, shape, spec, plan, build, verify, ship, learn — for small teams directing AI agents.",
       "author": { "name": "Keith Rowell" },
