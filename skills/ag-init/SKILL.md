@@ -20,14 +20,14 @@ The files to copy live in this plugin's `templates/` directory, one level up fro
 
 Use `AskUserQuestion` to gather (one compact round):
 
-- **Gate commands** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands (any may be left blank). These populate `.agentile/gates.json`. There is no separate "enable hooks?" step: the plugin's hooks are active whenever the plugin is enabled; they simply no-op until these commands are filled in. So this question *is* how you enable the gates.
+- **Gate commands** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands (any may be left blank). These populate `.agentile/gates.json`, which is what the loop stages run: `test`, `lint` and `build` at verify and ship, `deploy` at `/ag-deploy`. `format` is additionally run by the `format-on-edit` hook after each edit — the only hook wired to an event. Every gate no-ops while its command is blank, so this question *is* how you enable them.
 - **Protected branches** — branches agents must not commit to directly (default `main`, `master`).
 - **Backlog store** — **Solo** (default: the Inbox and specs are files in this repo, exactly today's behaviour) or **Team** (they live in a shared datastore — Airtable by default — so prioritising and claiming are visible live across machines instead of relying on "pull before you touch the queue"). Solo needs no follow-up. Team branches into Step 2b below.
 - **Concurrency safety** (only if `test` and/or `build` were filled in) — can two invocations of that command run safely at the same time? Ask plainly: "If two test runs happened at once, would they interfere with each other (a shared SQLite file, a fixed dev port, a single build cache), or are they already safe to overlap (Postgres/MySQL, per-worker test databases, stateless)?" Default the question itself toward "not sure" being treated as *unsafe* — false-positive serialization only costs a little queueing time; false-negative collisions produce the flaky, hard-to-diagnose failures this question exists to prevent. If unsafe, wrap the affected command(s) with the plugin's `ag-lock` (ships in `bin/`, on `PATH` while the plugin is enabled; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-lock"`):
   ```
   "test": "ag-lock storage/.test.lock 'bin/rails test'"
   ```
-  Pick the lockfile path from the project's own ignored runtime-state directory (e.g. `storage/`, `tmp/`, tests' own scratch dir) — never a tracked path — and confirm the parent directory's `.gitignore` entry covers it (or add one). This is separate from, and lighter than, the hook-level protection: `hooks/test-gate.rb` already serializes its own Stop/SubagentStop-triggered runs per project directory unconditionally, with no config needed — `ag-lock` in `gates.json` additionally covers a human or `ag-builder` invoking the gate command directly.
+  Pick the lockfile path from the project's own ignored runtime-state directory (e.g. `storage/`, `tmp/`, tests' own scratch dir) — never a tracked path — and confirm the parent directory's `.gitignore` entry covers it (or add one). Since 0.11.0 no hook runs the `test` command, so `ag-lock` in `gates.json` is the only protection against concurrent runs — it covers verify, ship, a human, and parallel `ag-builder` subagents alike.
 
 If the user is mid-flow and does not want questions, accept defaults, leave `gates.json` blank, and skip the concurrency question (nothing to wrap yet) — they can fill it in later, including running `/ag-customise` or editing `gates.json` by hand to add `ag-lock` once a `test`/`build` command exists.
 
@@ -172,8 +172,8 @@ trunk, gates, and tests. Check and report, without blocking:
 - **Trunk** — is there a default branch the team integrates to? Any long-lived divergent branches?
 - **Store** — Solo or Team? If Team, did `doctor` in Step 2b come back all-green?
 
-Phrase each as an observation ("No test command configured — the test-gate hook
-will no-op until one exists"), so an unhealthy loop is visible rather than
+Phrase each as an observation ("No test command configured — verify and ship
+will have nothing to run"), so an unhealthy loop is visible rather than
 silently amplified.
 
 ## Step 8 — Report

@@ -1,7 +1,15 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Agentile Stop/SubagentStop hook: hold "done" until the project's tests pass.
+# Agentile test gate: hold "done" until the project's tests pass.
+#
+# UNWIRED since 0.11.0 — no event in hooks.json invokes this. It ran on
+# Stop/SubagentStop, which fire at the end of every assistant turn rather than
+# when work completes, so the full suite ran on questions and status reports
+# too; the clean-tree escape below is defeated indefinitely by one untracked
+# file. Full tests are enforced at verify and ship instead. Kept for a redesign
+# around a cheap opt-in command and an edit-aware trigger; the notes below
+# describe how it behaved when wired.
 #
 # Reads the configured `test` command from the project's .agentile/gates.json and
 # runs it. If tests fail, it emits a block decision so Claude keeps working

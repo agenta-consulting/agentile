@@ -229,7 +229,11 @@ yours to tune.
 Config-driven and **opt-in safe** — they read `.agentile/gates.json` and no-op when a command is blank, so installing the plugin never disrupts an unconfigured repo:
 
 - **format-on-edit** (`PostToolUse`) — runs your formatter after each edit. If the `format` command contains `{file}`, the edited path is substituted.
-- **test-gate** (`Stop` / `SubagentStop`) — blocks "done" until your `test` command passes. Also serializes its own runs per project directory (`File#flock`, no config needed), since parallel subagents can each fire this hook around the same moment — the collision that matters for a stack with shared file-based test state, like SQLite. For a `test`/`build` command that also needs protecting when run directly (by a human or `ag-builder`, outside this hook), wrap it in `gates.json` with `bin/ag-lock` — the same portable `File#flock` primitive `ag-claim` uses for its spec-claim lock; `/ag-init` offers to wire it in.
+**test-gate** (`hooks/test-gate.rb`) is **not wired to any event** as of 0.11.0. It previously ran `gates.json`'s `test` command on `Stop`/`SubagentStop` — that is, at the end of every assistant turn, including turns that changed no code. `Stop` fires when the assistant stops talking, not when work completes, so the gate ran the full suite on questions and status reports alike; its only escape was a clean git working tree, which a single untracked file defeats indefinitely. On a slow or infrastructure-dependent suite that cost minutes per turn.
+
+The `test` gate belongs to **verify** and **ship**, which already run it — and run it against a spec that claims to be done, which is the right trigger. The script and its tests are kept for a redesign around a cheap, opt-in command and an edit-aware trigger.
+
+For a `test`/`build` command that needs protecting from concurrent runs (a human and `ag-builder`, or parallel subagents, against shared file-based test state like SQLite), wrap it in `gates.json` with `bin/ag-lock` — the same portable `File#flock` primitive `ag-claim` uses for its spec-claim lock; `/ag-init` offers to wire it in.
 
 The hook scripts are Ruby (`hooks/*.rb`), so Ruby must be on `PATH`.
 

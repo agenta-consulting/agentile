@@ -4,6 +4,27 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.11.0 — 2026-09-14
+
+- **The `Stop`/`SubagentStop` test gate is removed.** It ran `gates.json`'s
+  `test` command at the end of every assistant turn. `Stop` fires when the
+  assistant stops talking, not when work completes, so the full suite ran on
+  questions, status reports and refusals — anything that ended a turn. Its one
+  escape, a clean `git status --porcelain`, is defeated indefinitely by a single
+  untracked file, so in a repo with untracked scratch files the gate never
+  short-circuited. On a slow or infrastructure-dependent suite (minutes, Docker)
+  that cost minutes per turn and dominated the session.
+- **Full tests stay where they already were: `verify` and `ship`.** Both run the
+  same `gates.json` command against a spec that claims to be done — the trigger
+  that actually means something. The hook was a second, uncoordinated invocation
+  of an identical command on a meaningless trigger, and its
+  `MAX_CONSECUTIVE_BLOCKS` cap meant it stopped enforcing after five failures
+  anyway.
+- `hooks/test-gate.rb` and its tests are kept, unwired, for a redesign around a
+  separate cheap opt-in command (a `check`/`test_fast` key, defaulting off) and
+  an edit-aware trigger rather than the dirty-tree proxy.
+- `format-on-edit` (`PostToolUse`) is unchanged and remains the only wired hook.
+
 ## 0.10.0 — 2026-09-14
 
 - **Deploy is a stage.** `deploy` was declared in `gates.json`, documented in

@@ -182,7 +182,9 @@ Then run `/ag-init` in your project: it scaffolds the backlog and configuration 
 
 The "hats" are exactly three agents: `ag-planner` (architecture and approach), `ag-builder` (implementation), and `ag-reviewer` (verification and security). Each runs in its own context, which is the point — the reviewer catches what the builder missed because it never saw the builder's reasoning. Shaping is not an agent but a skill-run conversation with you; ship is not an agent but a skill-orchestrated step. The human stays the accountable anchor who approves plans and owns outcomes.
 
-Deterministic enforcement comes from two hooks: **format-on-edit** (`PostToolUse`) runs your formatter after every edit, and **test-gate** (`Stop`/`SubagentStop`) blocks "done" until your test command passes. Both read `.agentile/gates.json` and no-op until commands are configured, so installation never disrupts an unconfigured repo. The same gates belong in CI — Claude Code's GitHub Actions integration can run them (and `/security-review`) on every PR, so the gate holds whether a human, an agent, or nobody is watching the terminal.
+Deterministic enforcement comes from **format-on-edit** (`PostToolUse`), which runs your formatter after every edit. It reads `.agentile/gates.json` and no-ops until commands are configured, so installation never disrupts an unconfigured repo.
+
+The test command is enforced at **verify** and **ship**, not by a hook. A `Stop`-triggered test gate shipped through 0.10.0 and was removed in 0.11.0: `Stop` fires when the assistant stops talking, not when work completes, so it ran the full suite on every turn — questions included — and on a slow suite that dominated the session. Verify already runs the same command at the moment a spec claims to be done, which is the trigger that carries meaning. The same gates belong in CI — Claude Code's GitHub Actions integration can run them (and `/security-review`) on every PR, so the gate holds whether a human, an agent, or nobody is watching the terminal.
 
 Getting started:
 
