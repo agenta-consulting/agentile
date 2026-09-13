@@ -49,6 +49,7 @@ The plugin ships the **fixed implementation** — the skills, the agents, the ho
 | `.agentile/shape.md` | **What "Ready" means** — the questions a stub must answer before it's a spec. The prime tailoring surface. |
 | `.agentile/config.md` | The **Agentile directory** (where the backlog lives, default `docs/agentile/`) and the Business Value × Technical Certainty triage routes. |
 | `.agentile/gates.json` | The deterministic commands — format, lint, test, build, deploy — and protected branches. |
+| `.agentile/store.md` | Where the Inbox and specs live — `local` (default, files+git) or `team` (a shared datastore, `airtable` by default). See "Stores" below. |
 | `.agentile/spec-template.md` | The shape of a Ready spec. |
 | `.agentile/plan-template.md` | The shape of a plan (`plan.md` in the spec's directory). |
 | `.agentile/adr-template.md` | The shape of an ADR. |
@@ -84,6 +85,42 @@ worktrees each have their own copy of the backlog and can claim the same spec.
 Keep the **backlog in the main checkout** — claim and prioritise there; send
 *builders* to worktrees (the `ag-builder` agent already isolates itself). Don't
 run `/ag-next` or `/ag-loop` from inside a builder's worktree.
+
+### Stores
+
+The Inbox and every spec go through one **store**, selected by
+`.agentile/store.md`'s `store:` key — absent file, or `store: local`, means
+today's files+git behaviour, unchanged. Every skill that touches the backlog
+calls `bin/ag-store <op> --dir <agentile-dir> --store <local|airtable>`
+instead of reading/writing files directly, so the choice of backend is
+invisible to the skill's own instructions.
+
+- **`local`** (default) — files + git. Prioritising and claiming are
+  atomic within one checkout (a `flock`-based lock); across machines it's a
+  social contract (pull before you touch the queue, push right after), not
+  a guarantee.
+- **`airtable`** — the Inbox and every spec live in an Airtable base
+  instead, fully decomposed into real fields (one per frontmatter key and
+  one per spec-template body section — no blob field anywhere), so
+  prioritising and claiming are visible live to everyone with the base
+  open. `Rank` (a number field) replaces the `local` store's `NNNN-`
+  filename prefix; `Claimed By (Member)`/`Captured By`/`Shaped By` are
+  linked records into a `Members` table (attribution, not permissions —
+  `ag-store whoami` resolves the acting person from `git config
+  user.email`). Claim/rank are *not* atomic here (Airtable has no
+  server-side conditional write) — see `templates/stores/airtable/README.md`
+  for the honest concurrency notes and setup (a personal access token, a
+  base, `ag-store provision`).
+
+`/ag-init` asks Solo vs. Team once (Team walks through creating or attaching
+a base, provisioning, and verifying with `doctor`); `/ag-customise store`
+switches later, and offers to copy an existing local backlog into a
+freshly-configured store on confirmation (nothing is deleted locally).
+`plan.md`, supporting files, and ADRs stay in the repo in **both** modes —
+only the Inbox and spec content move to a shared store. Adding a future
+backend (Jira, Azure DevOps, …) is one new file under
+`bin/ag-store-adapters/` implementing the same op contract, plus a
+`templates/stores/<name>/` pack — no change to any skill.
 
 ### Spec dependencies
 
@@ -166,7 +203,7 @@ expiry behaviour rather than assuming a loop runs forever.
    claude plugin marketplace add agenta-consulting/agentile
    claude plugin install agentile@agentile
    ```
-2. Restart the session, then in your target project run `/ag-init` to scaffold `docs/agentile/` (inbox + specs tree), `.agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section. On a project that used the old root-level layout (`inbox.md`, `specs/`, `specs/archive/`), `/ag-init` detects it and offers to migrate everything into `docs/agentile/` with `git mv`. If you prefer to keep your root `CLAUDE.md` lean, the Agentile section can instead live in `.claude/rules/agentile.md` — `/ag-init` offers this; the content is identical, just independently updatable.
+2. Restart the session, then in your target project run `/ag-init` to scaffold `docs/agentile/` (inbox + specs tree), `.agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section. It also asks Solo (files+git, the default) or Team (a shared store, Airtable by default — see "Stores" below) for the backlog. On a project that used the old root-level layout (`inbox.md`, `specs/`, `specs/archive/`), `/ag-init` detects it and offers to migrate everything into `docs/agentile/` with `git mv`. If you prefer to keep your root `CLAUDE.md` lean, the Agentile section can instead live in `.claude/rules/agentile.md` — `/ag-init` offers this; the content is identical, just independently updatable.
    Starting from an empty directory? Run `/ag-new-project` instead — it interviews you for the brief and the stack, records the stack as an ADR, writes a starter `CLAUDE.md`, runs the same scaffold with the gates pre-filled from the stack, then offers stage customisations and the first inbox stubs.
 3. Start the loop: `/ag-capture`, `/ag-inbox`, `/ag-shape`, …
 
