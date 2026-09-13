@@ -167,11 +167,12 @@ expiry behaviour rather than assuming a loop runs forever.
    claude plugin install agentile@agentile
    ```
 2. Restart the session, then in your target project run `/ag-init` to scaffold `docs/agentile/` (inbox + specs tree), `.agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section. On a project that used the old root-level layout (`inbox.md`, `specs/`, `specs/archive/`), `/ag-init` detects it and offers to migrate everything into `docs/agentile/` with `git mv`. If you prefer to keep your root `CLAUDE.md` lean, the Agentile section can instead live in `.claude/rules/agentile.md` — `/ag-init` offers this; the content is identical, just independently updatable.
+   Starting from an empty directory? Run `/ag-new-project` instead — it interviews you for the brief and the stack, records the stack as an ADR, writes a starter `CLAUDE.md`, runs the same scaffold with the gates pre-filled from the stack, then offers stage customisations and the first inbox stubs.
 3. Start the loop: `/ag-capture`, `/ag-inbox`, `/ag-shape`, …
 
 ## Skills
 
-`/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-abandon`, `/ag-loop`, `/ag-customise`, `/ag-retro`.
+`/ag-new-project`, `/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-abandon`, `/ag-loop`, `/ag-customise`, `/ag-retro`.
 
 ## Agents (the "hats")
 

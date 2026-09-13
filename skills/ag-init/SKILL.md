@@ -37,7 +37,10 @@ section) AND a near-empty repo (no significant source tree). If it looks
 established, skip this step — the brief is optional for existing code, and
 `/ag-retro` can seed it later.
 
-For a fresh project, offer a short interview (decline-able — accept defaults and
+For a fresh project, first recommend `/ag-new-project`: it runs a fuller interview
+(brief *and* stack), records the stack as an ADR, writes a starter `CLAUDE.md`, and
+then runs this scaffold with the gates pre-filled. If the user would rather stay
+here, offer a short interview (decline-able — accept defaults and
 leave the brief a template to fill in later). Ask, a couple at a time
 (`AskUserQuestion` where the choices are discrete): who is this for; the one
 outcome that matters first; the next two or three outcomes; hard constraints
