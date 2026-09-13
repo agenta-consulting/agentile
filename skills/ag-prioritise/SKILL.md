@@ -64,7 +64,10 @@ reordering.
 ### Step 3 — Propose a starting order
 
 Combine the prioritised specs and the unprioritised ready specs into a single
-candidate list. Rank it by **Business Value × Technical Certainty** (descending),
+candidate list. Bugs arrive **unscored** (`/ag-shape` skips the two axes for
+them) — rank them on how much the defect actually hurts: a wrong-answer or
+data-integrity bug outranks most features, a cosmetic one usually does not.
+Rank the rest by **Business Value × Technical Certainty** (descending),
 breaking ties alphabetically by slug. Then enforce dependency ordering: if spec A
 declares `depends_on: [B]`, move A to a position *after* B in the list.
 

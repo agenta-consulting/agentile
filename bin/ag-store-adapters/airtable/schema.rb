@@ -74,6 +74,12 @@ module Airtable
     INBOX_BASE_FIELDS = [
       { name: "Title" }.merge(text),
       { name: "Text" }.merge(long_text),
+      # Same vocabulary as SPECS_BASE_FIELDS' Type so shaping carries it over
+      # as a copy, not a mapping. Derived at capture and defaulted to
+      # "feature": describing a change is not triaging it, so it costs the
+      # capture nothing. Its job is to route — /ag-shape gives a bug the short
+      # repro interview instead of the feature Definition of Ready.
+      { name: "Type" }.merge(select("feature", "bug", "chore", "spike")),
       { name: "Captured At" }.merge(date),
       { name: "Status" }.merge(select("Open", "Shaped", "Dropped")),
     ].freeze

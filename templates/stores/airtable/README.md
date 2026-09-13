@@ -38,6 +38,15 @@ frontmatter+body markdown every skill actually reads and writes (`ag-store
 spec_read`/`spec_create`/`spec_write` render/parse that mapping — no skill
 needs to know it's talking to Airtable underneath).
 
+The `Inbox` table carries a `Type` (`feature`/`bug`/`chore`/`spike`) using the
+same vocabulary as `Specs.Type`, so shaping carries it across as a copy rather
+than a mapping. `/ag-capture` derives it from the stub text and defaults to
+`feature`. It exists to *route*, not to label: `/ag-shape` gives a `bug` the
+short repro interview (repro, expected vs actual, the failing check, blast
+radius) and skips the Business Value × Technical Certainty scoring, which is
+theatre for a defect. Unscored bugs are still ranked by `/ag-prioritise` —
+unranked means unclaimable.
+
 The `Inbox` table's primary field is `Title` — a short label `/ag-capture`
 derives from the stub text when the human doesn't dictate one (`--title`).
 The stub itself lives in `Text` and is never truncated; the title exists
@@ -58,6 +67,38 @@ as the queue order. `Claimed By (Session)` is the resume handle (same
 meaning as `local`'s `claimed_by`); `Claimed By (Member)`, `Captured By`,
 and `Shaped By` are linked records into `Members` — attribution, not
 permissions.
+
+## Changing the schema
+
+A base is provisioned once, so a field added to
+`bin/ag-store-adapters/airtable/schema.rb` afterwards does **not** appear in
+bases that already exist. Until it does, every write silently drops that field:
+Airtable accepts the record and ignores the unknown key. Nothing errors, and
+the data is simply not there.
+
+So a schema change is always two steps:
+
+1. Edit the field list in `schema.rb` (and whatever reads it — the adapter's
+   `INBOX_FIELDS`/`SPECS_FIELDS` maps, the skills that parse the JSON).
+2. Run `ag-store provision --dir <agentile-dir> --store airtable
+   --airtable-base <base-id>` **against every live base**, including your own.
+   It is idempotent, and its `ensure_base_fields` pass adds exactly the fields
+   that are missing.
+
+`ag-store doctor` reports the gap between the two, so drift is visible rather
+than inferred:
+
+    "schema up to date": false,
+    "missing fields": ["Inbox.Type"]
+
+Run `doctor` after pulling a change that touches `schema.rb`, and after adding
+a field yourself. What provision **cannot** do is change an existing field:
+field *order*, field *type*, and which field is *primary* are all fixed at
+creation. Those stay manual, one-off edits in the Airtable UI (which does allow
+all three) — see the `Title` note above for a worked example. Provision only
+ever adds; it never reorders, retypes, renames, or deletes, so a field renamed
+in `schema.rb` lands as a **new, empty column** beside the old one, and moving
+the data across is on you.
 
 ## Known limitation: claim and rank are not atomic
 

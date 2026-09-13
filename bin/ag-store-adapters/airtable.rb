@@ -55,7 +55,8 @@ module Airtable
     }.freeze
     SPECS_LINK_FIELDS = { depends_on: "Depends On", claimed_by_member: "Claimed By (Member)",
                           captured_by: "Captured By", shaped_by: "Shaped By" }.freeze
-    INBOX_FIELDS = { title: "Title", text: "Text", captured_at: "Captured At", status: "Status" }.freeze
+    INBOX_FIELDS = { title: "Title", text: "Text", type: "Type", captured_at: "Captured At",
+                     status: "Status" }.freeze
 
     def initialize(base_id:, inbox_table: "Inbox", specs_table: "Specs", members_table: "Members",
                    token: ENV.fetch("AGENTILE_AIRTABLE_TOKEN", nil), client: nil)
@@ -127,17 +128,20 @@ module Airtable
           id: r["id"],
           title: r["fields"]["Title"],
           text: r["fields"]["Text"],
+          type: r["fields"]["Type"],
           captured_at: r["fields"]["Captured At"],
           captured_by: member_ids.map { |m| member_name_of(m) }.compact.first,
         }
       end
     end
 
-    # title is the short label /ag-capture derives from the text. Optional:
-    # a stub with no title is still a valid stub, it just reads badly in the UI.
-    def inbox_add(text, captured_by = nil, title = nil)
+    # title is the short label /ag-capture derives from the text, type its
+    # kind (feature/bug/chore/spike). Both optional: a stub with neither is
+    # still a valid stub, it just reads badly and routes as a feature.
+    def inbox_add(text, captured_by = nil, title = nil, type = nil)
       fields = { "Text" => text, "Captured At" => Time.now.strftime("%Y-%m-%d"), "Status" => "Open" }
       fields["Title"] = title unless title.to_s.strip.empty?
+      fields["Type"] = type unless type.to_s.strip.empty?
       fields["Captured By"] = [captured_by] if captured_by.to_s.start_with?("rec")
       @client.create_records(@base_id, @inbox_table, [fields])
       true
@@ -381,14 +385,43 @@ module Airtable
     def doctor
       tables = @client.list_tables(@base_id)
       names = tables.map { |t| t["name"] }
-      {
+      report = {
         "base reachable" => true,
         "Inbox table exists" => names.include?(@inbox_table),
         "Specs table exists" => names.include?(@specs_table),
         "Members table exists" => names.include?(@members_table),
       }
+
+      # Schema drift: a base provisioned before a field was added to the schema
+      # keeps working but silently drops that field on every write. Name the
+      # missing fields so the fix (`ag-store provision`) is obvious — a bare
+      # "false" would send someone reading the adapter source to find out why.
+      missing = schema_drift(tables)
+      report["schema up to date"] = missing.empty?
+      report["missing fields"] = missing unless missing.empty?
+      report
     rescue Airtable::ApiError => e
       { "base reachable" => false, "error" => e.message }
+    end
+
+    # Fields the schema defines that the live base does not have, as
+    # "<table>.<field>". Link fields are included: they are part of the schema
+    # too, and provision adds them in the same pass.
+    def schema_drift(tables)
+      expected = {
+        @specs_table => Schema::SPECS_BASE_FIELDS.map { |f| f[:name] } +
+                        Schema::LINK_FIELDS.fetch(:specs, []).map(&:first),
+        @inbox_table => Schema::INBOX_BASE_FIELDS.map { |f| f[:name] } +
+                        Schema::LINK_FIELDS.fetch(:inbox, []).map(&:first),
+        @members_table => Schema::MEMBERS_BASE_FIELDS.map { |f| f[:name] },
+      }
+      expected.flat_map do |table_name, field_names|
+        table = tables.find { |t| t["name"] == table_name }
+        next [] if table.nil?
+
+        present = (table["fields"] || []).map { |f| f["name"] }
+        (field_names - present).map { |f| "#{table_name}.#{f}" }
+      end
     end
 
     # Idempotently creates the three tables (base fields first, then the

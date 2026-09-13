@@ -46,14 +46,29 @@ If the file is absent, use the baseline below unchanged.
    would break the no-interruption rule above. If the user gave one explicitly
    (`--title "..."`, or an obvious "call it X"), use theirs verbatim instead.
 
-6. Add the stub:
+6. Pick a **type** — `feature`, `bug`, `chore`, or `spike` — from what the text
+   plainly says, defaulting to `feature` when it gives no signal. "This is a
+   bug", a broken behaviour described as wrong, or a repro ⇒ `bug`. Housekeeping
+   with no user-visible change (dependency bumps, renames, cleanup) ⇒ `chore`.
+   An open question to be explored rather than a change to be made ⇒ `spike`.
+
+   This is describing the stub, not triaging it: never ask the user to confirm
+   a type, and never infer urgency, value, or size — those belong to `/ag-shape`
+   and `/ag-prioritise`. Type earns its place by routing the shaping interview
+   (a `bug` gets the short repro interview), so when genuinely torn, `feature`
+   is the safe default because it gets the fuller interview.
+
+7. Add the stub (quote the text so the shell cannot eat an apostrophe or a
+   backtick — the stub must reach the store **verbatim**, never reworded to
+   make quoting easier):
 
    ```
-   ag-store inbox_add "<stub text>" --title "<title>" --by "<whoami output>" --dir "<Agentile directory>" --store "<store>"
+   ag-store inbox_add "<stub text>" --title "<title>" --type "<type>" --by "<whoami output>" --dir "<Agentile directory>" --store "<store>"
    ```
 
-   The `local` store accepts `--title` and ignores it (its inbox is a flat
-   markdown list); the `airtable` store stores it as the primary field.
+   The `local` store accepts `--title`/`--type` and ignores them (its inbox is
+   a flat markdown list); the `airtable` store stores the title as the primary
+   field and the type as a select.
 
    A non-zero exit means the inbox doesn't exist yet (project not initialised, or a path mismatch) — tell the user to run `/ag-init` first rather than working around it.
-7. Reply with one short line confirming the stub was captured (and by whom, if the store records it). Nothing more.
+8. Reply with one short line confirming the stub was captured (and by whom, if the store records it). Nothing more.

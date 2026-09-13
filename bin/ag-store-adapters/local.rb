@@ -216,8 +216,10 @@ module Local
   # title is accepted and dropped for the same reason: a markdown inbox is
   # already scannable, and a second field would mean changing STUB_RE and
   # every inbox.md already in the wild. It matters in Airtable, where the
-  # primary field is the record's name everywhere it is referenced.
-  def inbox_add(agentile_dir, text, _captured_by = nil, _title = nil)
+  # primary field is the record's name everywhere it is referenced. type is
+  # dropped too — /ag-shape re-derives it from the stub text when the store
+  # cannot carry it.
+  def inbox_add(agentile_dir, text, _captured_by = nil, _title = nil, _type = nil)
     path = inbox_path(agentile_dir)
     abort "ag-store: no such inbox: #{path} — run /ag-init first" unless File.exist?(path)
 

@@ -15,7 +15,7 @@
 # Ops (see bin/ag-store-adapters/local.rb for the local adapter's exact
 # semantics — this dispatcher does no business logic of its own):
 #   inbox_list                                        --dir <dir>
-#   inbox_add    <text> [--title "<short label>"]      --dir <dir>
+#   inbox_add    <text> [--title "<label>"] [--type feature|bug|chore|spike]  --dir <dir>
 #   inbox_drop   <id>                                 --dir <dir>
 #   spec_list    [--status s] [--pool active|done|abandoned] --dir <dir>
 #   spec_read    <id>                                 --dir <dir>
@@ -129,7 +129,7 @@ result =
   if store == "airtable"
     case op
     when "inbox_list" then adapter.inbox_list
-    when "inbox_add" then adapter.inbox_add(positional[0], flags["by"], flags["title"])
+    when "inbox_add" then adapter.inbox_add(positional[0], flags["by"], flags["title"], flags["type"])
     when "inbox_drop" then adapter.inbox_drop(positional[0])
     when "spec_list" then adapter.spec_list(status: flags["status"], pool: flags["pool"] || "active")
     when "spec_read" then adapter.spec_read(positional[0])
@@ -154,7 +154,7 @@ result =
   when "inbox_list"
     Local.inbox_list(agentile_dir).map { |s| s.reject { |k, _| k == :line_index } }
   when "inbox_add"
-    Local.inbox_add(agentile_dir, positional[0], flags["by"], flags["title"])
+    Local.inbox_add(agentile_dir, positional[0], flags["by"], flags["title"], flags["type"])
   when "inbox_drop"
     Local.inbox_drop(agentile_dir, positional[0])
   when "spec_list"
