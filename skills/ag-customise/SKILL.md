@@ -13,8 +13,11 @@ Customisation is how a project makes Agentile its own. Interview the user about 
 Read `$ARGUMENTS` for the stage name. Valid stages are:
 
 - `build`, `verify`, `prioritise`, `shape`, `plan`, `next`, `ship`, `learn`, `capture`, `spec`
+- `store` — not a loop stage in the `delegate_to`/`human_checkpoint` sense; see the branch below.
 
 If no stage was provided, ask the user which stage to customise and offer that list. Accept the answer before continuing.
+
+**If the stage is `store`**, skip Steps 2–4 below entirely — they're for the `delegate_to`/`also_run`/`human_checkpoint` playbook contract, which doesn't apply here. Instead run `skills/ag-init/SKILL.md`'s Step 2 (Solo/Team question) and, if Team is chosen, Step 2b (create-or-attach a base, provision, doctor, write `.agentile/store.md`) and Step 2c (offer the local→store migration) exactly as written there, then go straight to this skill's Step 5 to report.
 
 ## Step 2 — Load existing context
 

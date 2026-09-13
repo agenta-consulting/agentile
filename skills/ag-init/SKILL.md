@@ -22,6 +22,7 @@ Use `AskUserQuestion` to gather (one compact round):
 
 - **Gate commands** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands (any may be left blank). These populate `.agentile/gates.json`. There is no separate "enable hooks?" step: the plugin's hooks are active whenever the plugin is enabled; they simply no-op until these commands are filled in. So this question *is* how you enable the gates.
 - **Protected branches** — branches agents must not commit to directly (default `main`, `master`).
+- **Backlog store** — **Solo** (default: the Inbox and specs are files in this repo, exactly today's behaviour) or **Team** (they live in a shared datastore — Airtable by default — so prioritising and claiming are visible live across machines instead of relying on "pull before you touch the queue"). Solo needs no follow-up. Team branches into Step 2b below.
 - **Concurrency safety** (only if `test` and/or `build` were filled in) — can two invocations of that command run safely at the same time? Ask plainly: "If two test runs happened at once, would they interfere with each other (a shared SQLite file, a fixed dev port, a single build cache), or are they already safe to overlap (Postgres/MySQL, per-worker test databases, stateless)?" Default the question itself toward "not sure" being treated as *unsafe* — false-positive serialization only costs a little queueing time; false-negative collisions produce the flaky, hard-to-diagnose failures this question exists to prevent. If unsafe, wrap the affected command(s) with the plugin's `ag-lock` (ships in `bin/`, on `PATH` while the plugin is enabled; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-lock"`):
   ```
   "test": "ag-lock storage/.test.lock 'bin/rails test'"
@@ -52,6 +53,33 @@ it as `docs/adr/0001-…` from the ADR template.
 The brief is what makes triage real: without it, `/ag-shape` and `/ag-prioritise`
 score Business Value against nothing. With it, they score against the brief's
 prioritised outcomes.
+
+## Step 2b — Team store setup (only if Team was chosen in Step 2)
+
+1. Confirm `AGENTILE_AIRTABLE_TOKEN` is set (`[ -n "$AGENTILE_AIRTABLE_TOKEN" ]`). If not, stop here and point the user at `templates/stores/airtable/README.md` — a personal access token with `data.records:read/write` and `schema.bases:read/write` scopes, set as an environment variable, never written into a tracked file. Re-run this step once it's set.
+2. Ask (`AskUserQuestion`) whether to **create a new base** or **use an existing one**:
+   - **Create**: ask for the Airtable workspace id, then run `ag-store create_base "<project name>" --airtable-workspace <workspace-id>` (bare command `ag-store`, on `PATH` while the plugin is enabled; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`). It prints the new base's id — this also creates and fully provisions the `Inbox`/`Specs`/`Members` tables in one step, so Step 2's provisioning call below is redundant for a freshly created base but still safe (idempotent) to run.
+   - **Existing**: ask for the base id directly.
+3. Provision (idempotent — safe even on a base `create_base` just built): `ag-store provision --dir "<Agentile directory>" --store airtable --airtable-base "<base-id>"`.
+4. Verify: `ag-store doctor --dir "<Agentile directory>" --store airtable --airtable-base "<base-id>"` — all checks should be `true`. If not, stop and surface the failure rather than continuing.
+5. Write `.agentile/store.md` directly (not from the generic template — this project's real values):
+   ```yaml
+   ---
+   store: airtable
+   airtable_base: <base-id>
+   ---
+   ```
+   (omit the table-name keys entirely when they're the defaults `Inbox`/`Specs`/`Members`). Step 4 below skips re-copying the template over this file.
+6. Tell the user to add themselves (and any teammates) to the base's `Members` table now — `Name`, `Email`, `Git Email` — so `ag-store whoami` can attribute their captures/claims. This is attribution only, not a permission system; an unmatched email just means attribution is silently skipped, never a hard failure.
+
+## Step 2c — Migrate an existing local backlog into the new store (only if Step 2b just ran AND the Inbox or specs already have content)
+
+Ask for confirmation before moving anything (`AskUserQuestion`), showing counts (e.g. "3 inbox stubs and 5 specs will be copied into Airtable; nothing is deleted locally"). On confirmation:
+
+1. For each stub from `ag-store inbox_list --dir "<dir>" --store local`, run `ag-store inbox_add "<text>" --dir "<dir>" --store airtable --airtable-base "<base-id>"`.
+2. For each spec from `ag-store spec_list --dir "<dir>" --store local` (every pool: active, `--pool done`, `--pool abandoned`), read its markdown with `ag-store spec_read "<slug>" --dir "<dir>" --store local` and recreate it with `ag-store spec_create "<slug>" --dir "<dir>" --store airtable --airtable-base "<base-id>"` (piping the markdown on stdin) — then, for a spec that isn't `ready`/`in_progress`, immediately apply its real terminal state with `ag-store ship`/`ag-store abandon --reason "<reason>"` against the airtable store so shipped/abandoned history isn't lost.
+3. Once every **ready** spec has been recreated, restore the queue order with one `ag-store rank <slug-1> <slug-2> ... --dir "<dir>" --store airtable --airtable-base "<base-id>"` call, in the same order the local `NNNN-` prefixes encoded.
+4. Report what moved. The local files are left untouched (nothing is deleted) — once the user has confirmed the Airtable copy looks right, they can remove the local `inbox.md`/`specs/` content themselves; this skill does not do that automatically.
 
 ## Step 3 — Migrate a legacy layout (only if one is detected)
 
@@ -98,6 +126,7 @@ Copy from `templates/` into the project, preserving structure:
 - `<dir>/runs.md` (from `templates/agentile/runs.md`) — the durable run log `/ag-loop` appends to.
 - `<dir>/brief.md` (from `templates/agentile/brief-template.md`) — only if it does not exist; populated by the interview in Step 2a above.
 - `.agentile/config.md`
+- `.agentile/store.md` — **skip this copy if Step 2b already wrote a real one** (Team mode); for Solo, copy the template as-is (`store: local`, matching today's behaviour with nothing further to configure).
 - `.agentile/shape.md`
 - `.agentile/playbooks.md`
 - `.agentile/build.md`
@@ -139,6 +168,7 @@ trunk, gates, and tests. Check and report, without blocking:
 - **Tests** — does `gates.json` have a `test` command? Does the repo have a test directory/framework?
 - **CI** — is there a CI config (`.github/workflows/`, etc.)?
 - **Trunk** — is there a default branch the team integrates to? Any long-lived divergent branches?
+- **Store** — Solo or Team? If Team, did `doctor` in Step 2b come back all-green?
 
 Phrase each as an observation ("No test command configured — the test-gate hook
 will no-op until one exists"), so an unhealthy loop is visible rather than
@@ -148,4 +178,4 @@ silently amplified.
 
 Summarise what was created versus skipped, then point the user at the next move:
 
-> Agentile is initialised. Capture ideas with `/ag-capture`, review them with `/ag-inbox`, and shape one into a spec with `/ag-shape`. Tailor what "Ready" means by editing `.agentile/shape.md`. To configure how any loop stage runs in this project, use `/ag-customise <stage>`; see `.agentile/playbooks.md` for the full directive contract. Run the loop with `/ag-loop` (drains the backlog); `/loop /ag-loop` to also watch for new work.
+> Agentile is initialised (backlog store: **<Solo/local — or — Team/airtable>**). Capture ideas with `/ag-capture`, review them with `/ag-inbox`, and shape one into a spec with `/ag-shape`. Tailor what "Ready" means by editing `.agentile/shape.md`. To configure how any loop stage runs in this project, use `/ag-customise <stage>`; see `.agentile/playbooks.md` for the full directive contract. Switch the backlog store later with `/ag-customise store`. Run the loop with `/ag-loop` (drains the backlog); `/loop /ag-loop` to also watch for new work.
