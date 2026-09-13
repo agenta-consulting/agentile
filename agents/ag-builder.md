@@ -2,7 +2,7 @@
 name: ag-builder
 description: Implementer for Agentile. Takes an approved plan for a Ready spec and writes the code and tests on a short-lived branch or worktree, running the project's deterministic gates (build, test, lint from .agentile/gates.json) itself. Use to execute a planned spec; give it its own worktree when other agents work in parallel.
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: inherit
+model: sonnet
 isolation: worktree
 memory: project
 color: green
