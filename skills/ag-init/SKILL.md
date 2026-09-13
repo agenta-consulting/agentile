@@ -122,8 +122,8 @@ explicitly-confirmed action; a second `/ag-init` run is a no-op here.
 Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`).
 Copy from `templates/` into the project, preserving structure:
 
-- `<dir>/inbox.md` (from `templates/inbox.md`)
-- `<dir>/runs.md` (from `templates/agentile/runs.md`) — the durable run log `/ag-loop` appends to.
+- `<dir>/inbox.md` (from `templates/inbox.md`) — **Solo only.** In Team mode the Inbox lives in the store (Step 2b already provisioned it) — do not create this file at all; it would never be read.
+- `<dir>/runs.md` (from `templates/agentile/runs.md`) — the durable run log `/ag-loop` appends to. Created regardless of store mode — this is Agentile's own operational log, unrelated to the backlog store.
 - `<dir>/brief.md` (from `templates/agentile/brief-template.md`) — only if it does not exist; populated by the interview in Step 2a above.
 - `.agentile/config.md`
 - `.agentile/store.md` — **skip this copy if Step 2b already wrote a real one** (Team mode); for Solo, copy the template as-is (`store: local`, matching today's behaviour with nothing further to configure).
@@ -139,7 +139,7 @@ Copy from `templates/` into the project, preserving structure:
 - `.agentile/plan-template.md`
 - `.agentile/adr-template.md`
 - `docs/adr/0000-record-architecture-decisions.md` — replace `<YYYY-MM-DD>` with today's date (`date +%Y-%m-%d`).
-- Create the specs tree: `<dir>/specs/`, `<dir>/specs/done/`, and `<dir>/specs/abandoned/`, each with a `.gitkeep`.
+- Create the specs tree: **Solo** — `<dir>/specs/`, `<dir>/specs/done/`, and `<dir>/specs/abandoned/`, each with a `.gitkeep`. **Team** — just the bare `<dir>/specs/` directory, no `.gitkeep`, and no `done`/`abandoned` subdirectories — terminal states live in the store's `Status` field, nothing ever moves into a local subdirectory. The bare directory still matters: once a spec starts planning, its `plan.md` and supporting files live at `<dir>/specs/<slug>/` (created on demand by `ag-store promote`) even under Team mode.
 - Add `**/specs/.pull.lock` to the project's `.gitignore` (create `.gitignore` if absent; skip if the entry is already present) — the claim lock is a runtime file, not source.
 
 Note the source `templates/agentile/` maps to the project's `.agentile/` directory.
@@ -155,6 +155,8 @@ Append the contents of `templates/CLAUDE.agentile-section.md` to the project's r
 Offer to write the section to `.claude/rules/agentile.md` instead of appending to `CLAUDE.md`, for users who keep `CLAUDE.md` short. Default remains appending to `CLAUDE.md`.
 
 Ensure the appended Agentile section imports the brief so it loads every session — the template ends with `@docs/agentile/brief.md` (rewrite this path to the configured Agentile directory if it differs from `docs/agentile/`).
+
+**Team mode: do not copy the template verbatim.** It describes the `local` store's file layout (`docs/agentile/inbox.md`, specs renamed to `specs/NNNN-<slug>.md`, shipped/abandoned specs moved into `specs/done/`/`specs/abandoned/`) — every one of those sentences is wrong for a project whose Inbox and specs live in Airtable. Adapt the "Where things live" bullets and the prioritise/ship/abandon lines in "How to work" to describe the actual store instead: the Inbox and Specs tables it's in, that rank is a field (not a filename prefix) and shipped/abandoned are status values (not directory moves), and that `plan.md`/supporting files still live at `<dir>/specs/<slug>/` in this repo either way. Keep the rest of the template (capture, shape, plan, loop, gates, rules) unchanged — it's already store-agnostic.
 
 ## Step 6 — Hooks
 

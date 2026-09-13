@@ -50,9 +50,13 @@ Regardless of the above settings, always honour `human_checkpoint: true` on any 
 
 Repeat the following steps up to `max_iterations` times (see `--once` above). Track a counter starting at `0`; increment it each time a full claim-to-ship cycle completes. Track a `completed` list of spec slugs for the final report. Both are cross-checked against `runs.md` — see **Run log** above — so a compaction cannot silently reset them.
 
+### Step 0 — Resolve the store
+
+Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`), and which store answers this project: read `store:` from `.agentile/store.md` if it exists, default `local`. Every `ag-store` call below uses `--dir "<dir>" --store "<store>"`.
+
 ### Step 1 — Resume check
 
-Before claiming anything new, scan the specs directory (resolve **Agentile directory** from `.agentile/config.md`, default `docs/agentile/`; the specs dir is `<dir>/specs/` — honour the old `Specs directory:` key or a root-level `specs/` if that is what the project still has, and note `/ag-init` can migrate) — both flat `*.md` files and `*/SPEC.md` directory specs at its top level — for any spec whose frontmatter has both `status: in_progress` and `claimed_by` equal to this run's identity (see **Runner identity** above). If such a spec exists, resume it — proceed to Step 4 with that spec path. Do NOT invoke `ag-next` for a spec that is already claimed by this run's identity.
+Before claiming anything new, run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"` and look for an entry whose `claimed_by` equals this run's identity (see **Runner identity** above). If one exists, resume it — proceed to Step 4 with that spec's slug. Do NOT invoke `ag-next` for a spec that is already claimed by this run's identity.
 
 If no in-progress spec is found for this identity, proceed to Step 2.
 
@@ -60,7 +64,7 @@ If no in-progress spec is found for this identity, proceed to Step 2.
 
 Invoke the `ag-next` skill to atomically claim the highest-priority ready spec. Interpret its output:
 
-- A file path → claim succeeded; append the `claimed` log line (see **Run log**); proceed to Step 4 with that path.
+- A spec identifier (a file path for the `local` store, a bare slug for `airtable` — treat it as opaque, it's exactly what every `ag-store` op's `<id>` expects) → claim succeeded; append the `claimed` log line (see **Run log**); proceed to Step 4 with it.
 - `NONE` → the backlog is drained. Append `event=idle detail=NONE`. Report what was completed this run and stop. If running under `/loop` and `on_empty` is `watch`, report "idle — nothing ready" so `/loop` can pace its next iteration cheaply. If `on_empty` is `stop`, signal that the loop is complete and exit.
 - `WIP_FULL` → the WIP limit is already reached. Append `event=idle detail=WIP_FULL`. Report that the WIP limit is held, suggest running `/ag-wip` to inspect what is in flight, and stop.
 - `BLOCKED` → all prioritised specs are waiting on unshipped dependencies. Append `event=idle detail=BLOCKED`. In drain mode, stop and report that the backlog is blocked; suggest `/ag-prioritise` to inspect dependencies. Under `/loop`, report "idle — blocked on dependencies" and return so `/loop` can re-invoke later (a dependency may ship in another iteration).
@@ -78,7 +82,7 @@ If the counter has reached `max_iterations` before a new claim, report the limit
 
 ### Step 4 — Plan
 
-Invoke `/ag-plan <spec-path>`. Being invoked from `/ag-loop`, `/ag-plan` dispatches the `ag-planner` subagent itself rather than using Plan Mode — see its own Steps — so the spec body and standing context stay out of this skill's context. It writes the plan to `plan.md` inside the spec's directory (promoting a flat spec to its directory form first) and returns only a short confirmation.
+Invoke `/ag-plan <spec identifier>`. Being invoked from `/ag-loop`, `/ag-plan` dispatches the `ag-planner` subagent itself rather than using Plan Mode — see its own Steps — so the spec body and standing context stay out of this skill's context. It writes the plan to `plan.md` inside the spec's directory (promoting a flat spec to its directory form first) and returns only a short confirmation.
 
 Then decide whether to pause for plan review:
 
@@ -126,11 +130,9 @@ If `pause_before_ship` is `false` and no checkpoint requires a pause, continue d
 On approval (or when no pause applies):
 
 1. Ship or merge the work per the project's conventions (check `.agentile/ship.md` if present; otherwise follow repository conventions).
-2. Set `status: shipped` in the spec's frontmatter and add `shipped_at:` (ISO8601 — `date -u +%Y-%m-%dT%H:%M:%SZ`).
-3. **Keep** `claimed_by`, `claimed_at`, and `label` — the claim→ship interval is the cycle-time data `/ag-retro` mines; never erase it at the finish line.
-4. Move the spec into `<dir>/specs/done/` (create the directory if it does not exist) using `git mv` — the whole `NNNN-<slug>/` directory for a directory spec (plan and supporting files travel with it), or the `NNNN-<slug>.md` file for a flat spec. This removes it from the active numbered list while keeping it resolvable as a shipped dependency by `ag-claim`.
-5. Append `event=shipped` to the run log, add the spec slug to the `completed` list, and increment the counter. Commit `runs.md` alongside the ship, so the log's history travels with normal repository history rather than sitting as a perpetual uncommitted diff.
-6. If `--once` was passed, stop here regardless of `max_iterations` — emit the **Exit contract** line for this item and end the turn. Otherwise return to Step 1 for the next iteration.
+2. Run `ag-store ship "<slug>" --dir "<dir>" --store "<store>"` — this sets `status: shipped`, stamps `shipped_at`, **keeps** `claimed_by`/`claimed_at`/`label` (the claim→ship interval is the cycle-time data `/ag-retro` mines — never erased), and moves the spec out of the active pool (`git mv` into `specs/done/` for the `local` store; a status-field change only for `airtable`, which has no local file to move) so it stays resolvable as a shipped dependency but out of the claim pool.
+3. Append `event=shipped` to the run log, add the spec slug to the `completed` list, and increment the counter. Commit `runs.md` alongside the ship, so the log's history travels with normal repository history rather than sitting as a perpetual uncommitted diff.
+4. If `--once` was passed, stop here regardless of `max_iterations` — emit the **Exit contract** line for this item and end the turn. Otherwise return to Step 1 for the next iteration.
 
 ## Exit contract
 

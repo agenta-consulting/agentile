@@ -36,12 +36,12 @@ If the file is absent, use the baseline below unchanged.
    ag-store claim "<claim-identity from step 1>" "<optional label from $ARGUMENTS>" "<wip_limit>" --dir "<dir>" --store "<store>"
    ```
 
-5. Parse the JSON string result:
+5. Parse the JSON string result. On success it is a **spec identifier** — for the `local` store, the spec's `.md` file path (its `SPEC.md` for a directory spec); for `airtable`, a bare slug. Treat it as opaque either way: it's exactly what every other `ag-store` op's `<id>` argument expects, and what `/ag-plan` expects as `$spec`. Report: claimed `<id>` as `<claim-identity>`. If the identity is `${CLAUDE_SESSION_ID}`, tell the user that to resume this loop later they can run `claude --resume <claim-identity>`; if it is `${AGENTILE_RUNNER_ID}`, say instead that it is a named runner, not a session, and point at `/ag-wip` for how to continue it.
 
-   - **A file path** — the claim succeeded. Report: claimed `<path>` as `<claim-identity>`. If the identity is `${CLAUDE_SESSION_ID}`, tell the user that to resume this loop later they can run `claude --resume <claim-identity>`; if it is `${AGENTILE_RUNNER_ID}`, say instead that it is a named runner, not a session, and point at `/ag-wip` for how to continue it. The path is the spec's `.md` file — for a directory spec, its `SPEC.md`; the spec's working set (`plan.md`, supporting files) lives in the same directory.
+   Otherwise:
    - **`NONE`** — no ready work is available. Suggest running `/ag-shape` to shape inbox items or `/ag-prioritise` to rank the backlog.
    - **`WIP_FULL`** — the WIP limit (`<wip_limit>`) is already reached. Suggest shipping or releasing something first, then checking `/ag-wip` to see what is in flight.
    - **`BLOCKED`** — all prioritised ready specs are waiting on unshipped dependencies; no work can be claimed right now. Suggest running `/ag-prioritise` to see which items are blocked and what each is waiting on.
-   - **`UNPRIORITISED`** — there is shaped work in the backlog but none of it has been prioritised yet (no `NNNN-` filename prefix). Suggest running `/ag-prioritise` to rank and number the ready specs so they can be claimed.
+   - **`UNPRIORITISED`** — there is shaped work in the backlog but none of it has been prioritised yet (no rank set). Suggest running `/ag-prioritise` to rank the ready specs so they can be claimed.
 
-6. **v1 behaviour: claim and report only — do NOT auto-start the build cycle.** Tell the user they can now run `/ag-plan <path>` to begin planning the claimed spec.
+6. **v1 behaviour: claim and report only — do NOT auto-start the build cycle.** Tell the user they can now run `/ag-plan <id>` to begin planning the claimed spec.

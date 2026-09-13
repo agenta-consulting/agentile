@@ -12,7 +12,7 @@ You do not write or edit implementation code. You produce a plan.
 
 ## What to read first
 
-- The spec you were given (in `specs/`).
+- The spec you were given: `ag-store spec_read <id> --dir <dir> --store <store>` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`), using exactly the identifier, directory, and store passed in your prompt — never assume it's a local file under `specs/` to `Read` directly, a shared store (e.g. `airtable`) has no such file.
 - `CLAUDE.md` and any relevant ADRs in `docs/adr/` — honour the existing architecture and conventions.
 - `docs/agentile/brief.md` if present — the project's outcomes, constraints, and non-goals, so the plan serves the actual goal and respects the walls.
 - `.agentile/gates.json` — so your test strategy names the project's real commands.
