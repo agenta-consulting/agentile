@@ -25,6 +25,10 @@ This is the single most useful file to tailor. Add a question and every future s
 - Prefer concrete examples over abstractions ("show me what the user sees" beats "describe the feature").
 - It is cheaper to kill or reshape an idea here, in words, than after code exists. Splitting, merging, deferring, or dropping a stub are all good outcomes.
 
+## Frontmatter hygiene
+
+- **No unquoted colons in frontmatter values.** `title: Foo: bar` is invalid YAML; the claim tooling (`bin/ag-claim`) parses the frontmatter with a real YAML parser and fails, so the spec can never be pulled. Prefer rewording the title with a dash or comma ("Foo — bar"); quoting the value also works. The same applies to `outcome:` and every other field, and to ADR frontmatter.
+
 ## House additions
 
 Add project-specific requirements here. Examples a team might add:

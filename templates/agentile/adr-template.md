@@ -1,3 +1,4 @@
+<!-- Frontmatter hygiene: every value here must be valid YAML. No unquoted colons in `title`, `outcome` or any other field — `title: Foo: bar` fails to parse and the claim tooling (bin/ag-claim, a real YAML parser) cannot pull the spec. Prefer rewording with a dash or comma ("Foo — bar"); quoting the value also works. -->
 ---
 number: <NNNN>
 title: <short decision title>
