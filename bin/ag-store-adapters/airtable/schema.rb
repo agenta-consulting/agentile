@@ -67,8 +67,13 @@ module Airtable
       { name: "Abandoned At" }.merge(datetime),
     ].freeze
 
+    # Title is first so it becomes the primary field: a stub's Text is a
+    # paragraph, which makes a useless record name in the Airtable UI and in
+    # every linked-record chip. /ag-capture generates the title from the text
+    # when the human doesn't supply one; it is a label, never the stub itself.
     INBOX_BASE_FIELDS = [
-      { name: "Text" }.merge(text),
+      { name: "Title" }.merge(text),
+      { name: "Text" }.merge(long_text),
       { name: "Captured At" }.merge(date),
       { name: "Status" }.merge(select("Open", "Shaped", "Dropped")),
     ].freeze

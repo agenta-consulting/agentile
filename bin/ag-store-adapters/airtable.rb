@@ -55,7 +55,7 @@ module Airtable
     }.freeze
     SPECS_LINK_FIELDS = { depends_on: "Depends On", claimed_by_member: "Claimed By (Member)",
                           captured_by: "Captured By", shaped_by: "Shaped By" }.freeze
-    INBOX_FIELDS = { text: "Text", captured_at: "Captured At", status: "Status" }.freeze
+    INBOX_FIELDS = { title: "Title", text: "Text", captured_at: "Captured At", status: "Status" }.freeze
 
     def initialize(base_id:, inbox_table: "Inbox", specs_table: "Specs", members_table: "Members",
                    token: ENV.fetch("AGENTILE_AIRTABLE_TOKEN", nil), client: nil)
@@ -125,6 +125,7 @@ module Airtable
         member_ids = r["fields"]["Captured By"] || []
         {
           id: r["id"],
+          title: r["fields"]["Title"],
           text: r["fields"]["Text"],
           captured_at: r["fields"]["Captured At"],
           captured_by: member_ids.map { |m| member_name_of(m) }.compact.first,
@@ -132,8 +133,11 @@ module Airtable
       end
     end
 
-    def inbox_add(text, captured_by = nil)
+    # title is the short label /ag-capture derives from the text. Optional:
+    # a stub with no title is still a valid stub, it just reads badly in the UI.
+    def inbox_add(text, captured_by = nil, title = nil)
       fields = { "Text" => text, "Captured At" => Time.now.strftime("%Y-%m-%d"), "Status" => "Open" }
+      fields["Title"] = title unless title.to_s.strip.empty?
       fields["Captured By"] = [captured_by] if captured_by.to_s.start_with?("rec")
       @client.create_records(@base_id, @inbox_table, [fields])
       true
@@ -396,10 +400,30 @@ module Airtable
       inbox_id = ensure_table(existing, @inbox_table, Schema::INBOX_BASE_FIELDS)
       members_id = ensure_table(existing, @members_table, Schema::MEMBERS_BASE_FIELDS)
 
+      # A table that already existed keeps whatever fields it has, so a field
+      # added to the schema after a base was provisioned would never appear.
+      # Backfill them here — this is how a schema change reaches live bases.
+      ensure_base_fields(specs_id, Schema::SPECS_BASE_FIELDS)
+      ensure_base_fields(inbox_id, Schema::INBOX_BASE_FIELDS)
+      ensure_base_fields(members_id, Schema::MEMBERS_BASE_FIELDS)
+
       table_ids = { specs: specs_id, inbox: inbox_id, members: members_id }
       ensure_link_fields(specs_id, :specs, table_ids)
       ensure_link_fields(inbox_id, :inbox, table_ids)
       doctor
+    end
+
+    # Adds any schema field the table is missing. Never alters or removes an
+    # existing field — a rename in the schema lands as a new column, and the
+    # old one stays until a human deals with it.
+    def ensure_base_fields(table_id, base_fields)
+      current = @client.list_tables(@base_id).find { |t| t["id"] == table_id }
+      current_names = (current["fields"] || []).map { |f| f["name"] }
+      base_fields.each do |field|
+        next if current_names.include?(field[:name])
+
+        @client.create_field(@base_id, table_id, field)
+      end
     end
 
     def ensure_table(existing, name, base_fields)

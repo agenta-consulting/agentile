@@ -34,7 +34,7 @@ If the file is absent, use the baseline below unchanged.
 
 ## Step 2 — Pick the stub
 
-- Run `ag-store inbox_list ...` and parse the JSON array of `{id, text, captured_at, captured_by}`.
+- Run `ag-store inbox_list ...` and parse the JSON array of `{id, title, text, captured_at, captured_by}`.
 - The user may name the stub by id or text (`$ARGUMENTS`). If they did not, present the numbered list (by `id`) and ask which one to shape.
 
 ## Step 3 — Interview

@@ -34,11 +34,26 @@ If the file is absent, use the baseline below unchanged.
 2. Resolve the **Agentile directory** from `.agentile/config.md` under "## Paths" (default `docs/agentile/`). If the project still has the old `Inbox:` key or a root-level `inbox.md` and no `Agentile directory` key, honour that path for this run and tell the user `/ag-init` can migrate the layout.
 3. Resolve which store answers this project: read `store:` from `.agentile/store.md` if it exists, default `local` if it does not.
 4. Resolve who is capturing it: run `ag-store whoami` (bare command — it ships on `PATH` while the plugin is enabled; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store" whoami`). This is how a team-mode Inbox knows *who added it* — for the `local` store this is informational only (git blame already gives attribution for free); for a shared store it stamps the record.
-5. Add the stub:
+5. Write a **title** for the stub: a very short label (aim for 3-6 words, hard
+   cap ~60 characters) derived from the stub text — what it *is*, not a summary
+   of the whole thing. No trailing full stop. This is the record's name in the
+   Airtable UI and in every linked-record chip, so it has to read at a glance:
+
+   - "Register a core marker and make the conftest lazy…" → `Core marker + lazy conftest`
+   - "Cache renders and rasters by content hash…" → `Content-hash render cache`
+
+   Deriving it is not a question — never ask the user to confirm a title, that
+   would break the no-interruption rule above. If the user gave one explicitly
+   (`--title "..."`, or an obvious "call it X"), use theirs verbatim instead.
+
+6. Add the stub:
 
    ```
-   ag-store inbox_add "<stub text>" --by "<whoami output>" --dir "<Agentile directory>" --store "<store>"
+   ag-store inbox_add "<stub text>" --title "<title>" --by "<whoami output>" --dir "<Agentile directory>" --store "<store>"
    ```
+
+   The `local` store accepts `--title` and ignores it (its inbox is a flat
+   markdown list); the `airtable` store stores it as the primary field.
 
    A non-zero exit means the inbox doesn't exist yet (project not initialised, or a path mismatch) — tell the user to run `/ag-init` first rather than working around it.
-6. Reply with one short line confirming the stub was captured (and by whom, if the store records it). Nothing more.
+7. Reply with one short line confirming the stub was captured (and by whom, if the store records it). Nothing more.

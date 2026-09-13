@@ -213,7 +213,11 @@ module Local
   # captured_by is accepted for a uniform contract across adapters but not
   # written into the plain-text line — git blame already gives attribution
   # for free in solo mode (see the design note in the team-mode plan).
-  def inbox_add(agentile_dir, text, _captured_by = nil)
+  # title is accepted and dropped for the same reason: a markdown inbox is
+  # already scannable, and a second field would mean changing STUB_RE and
+  # every inbox.md already in the wild. It matters in Airtable, where the
+  # primary field is the record's name everywhere it is referenced.
+  def inbox_add(agentile_dir, text, _captured_by = nil, _title = nil)
     path = inbox_path(agentile_dir)
     abort "ag-store: no such inbox: #{path} — run /ag-init first" unless File.exist?(path)
 

@@ -38,6 +38,21 @@ frontmatter+body markdown every skill actually reads and writes (`ag-store
 spec_read`/`spec_create`/`spec_write` render/parse that mapping — no skill
 needs to know it's talking to Airtable underneath).
 
+The `Inbox` table's primary field is `Title` — a short label `/ag-capture`
+derives from the stub text when the human doesn't dictate one (`--title`).
+The stub itself lives in `Text` and is never truncated; the title exists
+because a paragraph makes a useless record name in the Airtable UI and in
+every linked-record chip. The `local` store accepts `--title` and drops it:
+its inbox is a flat markdown list that is already scannable. A base
+provisioned before this field existed gets it on the next `ag-store
+provision` — that pass now adds any schema field a pre-existing table is
+missing (it never alters or deletes one), which is how later schema
+additions reach live bases. It lands as an ordinary field there: field
+*order* is fixed at creation, so making it primary on an existing base is
+a one-off manual step in the Airtable UI (which does allow it), as is
+retyping `Text` to long text. Both are UI-only — the provision pass adds
+fields, it never reorders or retypes them.
+
 `Rank` (a number field) replaces the `local` store's `NNNN-` filename prefix
 as the queue order. `Claimed By (Session)` is the resume handle (same
 meaning as `local`'s `claimed_by`); `Claimed By (Member)`, `Captured By`,
