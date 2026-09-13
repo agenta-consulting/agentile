@@ -1,50 +1,17 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# Thin wrapper — the dependents logic lives in bin/ag-store-adapters/local.rb
+# (the `local` store adapter), shared with bin/ag-store. Kept as its own
+# script, with this exact CLI shape, for backward compatibility and for
+# dev/test-ag-dependents.rb, which exercises it directly.
+#
 # Print the transitive set of ACTIVE specs whose depends_on reaches <slug>.
 # Usage: ag-dependents <specs-dir> <slug>
-#
-# Active = specs directly under the specs root — flat `*.md` or `*/SPEC.md` directories.
-# Specs in done/ or abandoned/ are ignored — a shipped or already-abandoned spec is not
-# a cascade candidate when deciding what to abandon next.
 # Output: one dependent slug per line, nearest-first (BFS order); empty if none.
-# Cycle-safe. Used by /ag-abandon to walk the abandonment cascade.
-require "yaml"
-require "date" # spec frontmatter has `created: YYYY-MM-DD`, which YAML loads as a Date
+require_relative "ag-store-adapters/local"
 
 specs_dir, target = ARGV
 abort "usage: ag-dependents <specs-dir> <slug>" if specs_dir.nil? || target.to_s.empty?
-abort "ag-dependents: no such specs dir: #{specs_dir}" unless File.directory?(specs_dir)
 
-def each_active_spec(specs_dir)
-  Dir.glob(File.join(specs_dir, "*.md")).each do |path|
-    yield path, File.basename(path, ".md")
-  end
-  Dir.glob(File.join(specs_dir, "*", "SPEC.md")).each do |path|
-    dname = File.basename(File.dirname(path))
-    next if %w[done abandoned].include?(dname)
-    yield path, dname
-  end
-end
-
-reverse = Hash.new { |h, k| h[k] = [] } # dep slug -> [dependent slugs]
-each_active_spec(specs_dir) do |path, ident|
-  fm = (YAML.safe_load(File.read(path)[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
-  next unless %w[ready in_progress].include?(fm["status"])
-  m = ident.match(/\A(\d+)-(.+)\z/)
-  s = m ? m[2] : ident
-  Array(fm["depends_on"]).each { |dep| reverse[dep.to_s] << s }
-end
-
-# BFS out from the target, nearest first, cycle-safe.
-out = []
-seen = { target.to_s => true }
-queue = reverse[target.to_s].dup
-until queue.empty?
-  s = queue.shift
-  next if seen[s]
-  seen[s] = true
-  out << s
-  queue.concat(reverse[s])
-end
-
+out = Local.dependents(specs_dir, target)
 puts out.join("\n") unless out.empty?

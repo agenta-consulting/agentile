@@ -1,0 +1,142 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# ag-store — the backlog store dispatcher. Every skill that touches the Inbox
+# or a spec goes through here instead of reading/writing files (or an
+# Airtable base, etc.) itself; which backend answers is decided by --store,
+# so the skill's own instructions stay adapter-agnostic.
+#
+# Usage: ag-store <op> --dir <agentile-dir> [--store local|airtable] [args...]
+#   --dir   the resolved Agentile directory (default docs/agentile/), i.e.
+#           the value skills already read from .agentile/config.md.
+#   --store which adapter answers this call (default: local — today's file
+#           behaviour, unchanged). A project's actual choice lives in
+#           .agentile/store.md; the SKILL reads that and passes it here.
+#
+# Ops (see bin/ag-store-adapters/local.rb for the local adapter's exact
+# semantics — this dispatcher does no business logic of its own):
+#   inbox_list                                        --dir <dir>
+#   inbox_add    <text>                               --dir <dir>
+#   inbox_drop   <id>                                 --dir <dir>
+#   spec_list    [--status s] [--pool active|done|abandoned] --dir <dir>
+#   spec_read    <id>                                 --dir <dir>
+#   spec_create  <slug>            (markdown on stdin) --dir <dir>
+#   spec_write   <id> --set k=v [--set k=v ...]         --dir <dir>
+#   rank         <slug> [<slug>...]                    --dir <dir>
+#   claim        <identity> [label] [wip]              --dir <dir>
+#   release      <id>                                  --dir <dir>
+#   ship         <id>                                  --dir <dir>
+#   abandon      <id> --reason "<text>"                --dir <dir>
+#   promote      <id>            (flat spec -> directory form) --dir <dir>
+#   deps         <id>                                  --dir <dir>
+#   dependents   <slug>                                --dir <dir>
+#   attach       <id> <plan-path>                      --dir <dir>
+#   whoami
+#   doctor                                              --dir <dir>
+#
+# All output is one JSON value on stdout (a string, array, object, or bool) —
+# a skill reads it with a JSON parser, never by scraping stdout text. Errors
+# go to stderr with a non-zero exit, same convention as bin/ag-claim.
+
+require "json"
+
+require_relative "ag-store-adapters/local"
+
+def parse_flags(argv)
+  positional = []
+  flags = {}
+  i = 0
+  while i < argv.length
+    arg = argv[i]
+    if arg.start_with?("--")
+      key = arg[2..]
+      # A boolean-style flag has no following value (either end-of-args or the
+      # next token is itself a --flag); otherwise consume the next token as its value.
+      if i + 1 < argv.length && !argv[i + 1].start_with?("--")
+        flags[key] = argv[i + 1]
+        i += 2
+      else
+        flags[key] = true
+        i += 1
+      end
+    else
+      positional << arg
+      i += 1
+    end
+  end
+  [positional, flags]
+end
+
+# --set key=value may repeat (spec_write); pull every occurrence out before
+# the generic single-value flag parser runs.
+def extract_sets(argv)
+  sets = {}
+  rest = []
+  i = 0
+  while i < argv.length
+    if argv[i] == "--set" && argv[i + 1]
+      k, v = argv[i + 1].split("=", 2)
+      sets[k] = v
+      i += 2
+    else
+      rest << argv[i]
+      i += 1
+    end
+  end
+  [rest, sets]
+end
+
+op = ARGV[0]
+abort "usage: ag-store <op> --dir <agentile-dir> [--store local|airtable] [args...]" if op.nil?
+
+rest, sets = extract_sets(ARGV[1..])
+positional, flags = parse_flags(rest)
+store = flags["store"] || "local"
+agentile_dir = flags["dir"]
+specs_dir = agentile_dir && File.join(agentile_dir, "specs")
+
+abort "ag-store: adapter '#{store}' is not yet available (only 'local' ships so far)" unless store == "local"
+
+result =
+  case op
+  when "inbox_list"
+    Local.inbox_list(agentile_dir).map { |s| s.reject { |k, _| k == :line_index } }
+  when "inbox_add"
+    Local.inbox_add(agentile_dir, positional[0], flags["by"])
+  when "inbox_drop"
+    Local.inbox_drop(agentile_dir, positional[0])
+  when "spec_list"
+    Local.spec_list(specs_dir, status: flags["status"], pool: flags["pool"] || "active")
+  when "spec_read"
+    Local.spec_read(specs_dir, positional[0])
+  when "spec_write"
+    Local.spec_write(specs_dir, positional[0], sets)
+  when "spec_create"
+    markdown = $stdin.read
+    Local.spec_create(specs_dir, positional[0], markdown)
+  when "rank"
+    Local.rank(specs_dir, positional)
+  when "claim"
+    Local.claim(specs_dir, positional[0], positional[1], positional[2])
+  when "release"
+    Local.release(specs_dir, positional[0])
+  when "ship"
+    Local.ship(specs_dir, positional[0])
+  when "abandon"
+    Local.abandon(specs_dir, positional[0], reason: flags["reason"].to_s)
+  when "promote"
+    Local.promote(specs_dir, positional[0])
+  when "deps"
+    Local.deps(specs_dir, positional[0])
+  when "dependents"
+    Local.dependents(specs_dir, positional[0])
+  when "attach"
+    Local.attach(specs_dir, positional[0], positional[1])
+  when "whoami"
+    Local.whoami
+  when "doctor"
+    Local.doctor(agentile_dir)
+  else
+    abort "ag-store: unknown op '#{op}'"
+  end
+
+puts JSON.generate(result)

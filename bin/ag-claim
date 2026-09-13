@@ -1,112 +1,17 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# Thin wrapper — the claim logic lives in bin/ag-store-adapters/local.rb (the
+# `local` store adapter), shared with bin/ag-store. Kept as its own script,
+# with this exact CLI shape, for backward compatibility and for
+# dev/test-ag-claim.rb, which exercises it directly.
+#
 # Atomically claim the lowest-prefix ready spec whose dependencies are all shipped.
 # Prints the spec's .md file — for a directory spec, its SPEC.md.
 # Usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]
 # Prints the claimed spec path, or one of: WIP_FULL | BLOCKED | UNPRIORITISED | NONE.
-#  - NONE          no ready specs at all
-#  - UNPRIORITISED ready specs exist but none have an NNNN- prefix
-#  - BLOCKED       prioritised ready specs exist but all have an unshipped dependency
-require "yaml"
-require "date" # spec frontmatter has `created: YYYY-MM-DD`, which YAML loads as a Date
+require_relative "ag-store-adapters/local"
 
 specs_dir, session, label, wip = ARGV
 abort "usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]" if specs_dir.nil? || session.to_s.empty?
-abort "ag-claim: no such specs dir: #{specs_dir}" unless File.directory?(specs_dir)
-wip = (wip.to_s.empty? ? 0 : wip.to_i) # 0 => unlimited
 
-RESERVED = %w[done abandoned].freeze
-
-# A spec is a flat file <root>/NNNN-<slug>.md (identity from the filename) or a
-# directory <root>/NNNN-<slug>/SPEC.md (identity from the directory name; plan.md
-# and supporting files beside SPEC.md are never specs).
-def load_spec(path, ident)
-  raw = File.read(path)
-  fm  = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
-  m   = ident.match(/\A(\d+)-(.+)\z/)
-  { path: path, raw: raw, fm: fm, prefix: (m ? m[1].to_i : nil), slug: (m ? m[2] : ident) }
-end
-
-# Enumerate the specs directly under one root: flat *.md files plus */SPEC.md dirs.
-def specs_in(root)
-  flat = Dir.glob(File.join(root, "*.md")).map { |p| load_spec(p, File.basename(p, ".md")) }
-  # The single-level glob means done/ and abandoned/ contents never match here;
-  # the RESERVED reject covers the degenerate case of a SPEC.md placed directly
-  # inside <root>/done/ or <root>/abandoned/.
-  dirs = Dir.glob(File.join(root, "*", "SPEC.md"))
-            .reject { |p| RESERVED.include?(File.basename(File.dirname(p))) }
-            .map { |p| load_spec(p, File.basename(File.dirname(p))) }
-  flat + dirs
-end
-
-lock_path = File.join(specs_dir, ".pull.lock")
-File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
-  lock.flock(File::LOCK_EX)
-
-  # Claim pool: specs directly under the specs root. done/ and abandoned/ hold
-  # specs one level deeper, so they fall outside these globs by construction.
-  pool = specs_in(specs_dir)
-
-  dupes = pool.group_by { |s| s[:slug] }.select { |_, v| v.size > 1 }.keys
-  abort "ag-claim: duplicate slug(s) in claim pool: #{dupes.join(', ')}" if dupes.any?
-
-  # Status map includes done/ and abandoned/ so shipped specs resolve deps.
-  # Abandoned specs keep status: abandoned, so they never count as shipped; a
-  # dependent of an abandoned spec therefore stays BLOCKED.
-  resolved = pool + specs_in(File.join(specs_dir, "done")) + specs_in(File.join(specs_dir, "abandoned"))
-  shipped = {}
-  resolved.each { |s| shipped[s[:slug]] = true if s[:fm]["status"] == "shipped" }
-
-  in_progress = pool.count { |s| s[:fm]["status"] == "in_progress" }
-  if wip.positive? && in_progress >= wip
-    puts "WIP_FULL"; next
-  end
-
-  ready = pool.select { |s| s[:fm]["status"] == "ready" && s[:fm]["claimed_by"].to_s.empty? }
-  if ready.empty?
-    puts "NONE"; next
-  end
-
-  prioritised = ready.select { |s| s[:prefix] }
-  if prioritised.empty?
-    puts "UNPRIORITISED"; next
-  end
-
-  eligible = prioritised.select do |s|
-    Array(s[:fm]["depends_on"]).all? { |dep| shipped[dep.to_s] }
-  end
-  if eligible.empty?
-    puts "BLOCKED"; next
-  end
-
-  chosen = eligible.min_by { |s| [s[:prefix], s[:slug]] }
-
-  stamp = {
-    "status"     => "in_progress",
-    "claimed_by" => session,
-    "label"      => label.to_s,
-    "claimed_at" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
-  }
-  fm_text = chosen[:raw][/\A---\n(.*?)\n---/m, 1]
-  if fm_text.nil?
-    warn "ag-claim: #{chosen[:path]} has no YAML frontmatter — cannot stamp"
-    exit 1
-  end
-  new_fm = fm_text.dup
-  # Block form on both subs: label is arbitrary user text ($ARGUMENTS), and the
-  # string form of sub would interpret \&, \1, \\ etc. in the replacement.
-  stamp.each do |key, val|
-    if new_fm =~ /^#{Regexp.escape(key)}:.*$/
-      new_fm = new_fm.sub(/^#{Regexp.escape(key)}:.*$/) { "#{key}: #{val}" }
-    else
-      new_fm = "#{new_fm}\n#{key}: #{val}"
-    end
-  end
-  body = chosen[:raw].sub(/\A---\n.*?\n---/m) { "---\n#{new_fm}\n---" }
-  if body == chosen[:raw]
-    warn "ag-claim: could not rewrite frontmatter for #{chosen[:path]}"
-    exit 1
-  end
-  File.write(chosen[:path], body)
-  puts chosen[:path]
-end
+puts Local.claim(specs_dir, session, label, wip)
