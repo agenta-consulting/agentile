@@ -33,6 +33,15 @@
 #   whoami
 #   doctor                                              --dir <dir>
 #
+# airtable-only:
+#   create_base  <name> --airtable-workspace <id>       (no --airtable-base yet — creates one)
+#   provision                                           --dir <dir> --store airtable --airtable-base <id>
+#
+# --store airtable also needs --airtable-base <id> (except create_base, which
+# makes one) and, on ENV, AGENTILE_AIRTABLE_TOKEN. Table names default to
+# Inbox/Specs/Members; override with --airtable-inbox-table / --airtable-specs-table
+# / --airtable-members-table if a project renamed them.
+#
 # All output is one JSON value on stdout (a string, array, object, or bool) —
 # a skill reads it with a JSON parser, never by scraping stdout text. Errors
 # go to stderr with a non-zero exit, same convention as bin/ag-claim.
@@ -40,6 +49,7 @@
 require "json"
 
 require_relative "ag-store-adapters/local"
+require_relative "ag-store-adapters/airtable"
 
 def parse_flags(argv)
   positional = []
@@ -94,9 +104,52 @@ store = flags["store"] || "local"
 agentile_dir = flags["dir"]
 specs_dir = agentile_dir && File.join(agentile_dir, "specs")
 
-abort "ag-store: adapter '#{store}' is not yet available (only 'local' ships so far)" unless store == "local"
+# create_base has no base yet, so it can't go through an Adapter instance
+# (every other airtable op needs an existing --airtable-base).
+if op == "create_base"
+  base_id = Airtable.create_base(
+    token: ENV.fetch("AGENTILE_AIRTABLE_TOKEN", nil), workspace_id: flags["airtable-workspace"],
+    name: positional[0], inbox_table: flags["airtable-inbox-table"] || "Inbox",
+    specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members"
+  )
+  puts JSON.generate(base_id)
+  exit 0
+end
+
+adapter = if store == "airtable"
+            Airtable::Adapter.new(
+              base_id: flags["airtable-base"], inbox_table: flags["airtable-inbox-table"] || "Inbox",
+              specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members"
+            )
+          elsif store != "local"
+            abort "ag-store: unknown adapter '#{store}'"
+          end
 
 result =
+  if store == "airtable"
+    case op
+    when "inbox_list" then adapter.inbox_list
+    when "inbox_add" then adapter.inbox_add(positional[0], flags["by"])
+    when "inbox_drop" then adapter.inbox_drop(positional[0])
+    when "spec_list" then adapter.spec_list(status: flags["status"], pool: flags["pool"] || "active")
+    when "spec_read" then adapter.spec_read(positional[0])
+    when "spec_create" then adapter.spec_create(positional[0], $stdin.read)
+    when "spec_write" then adapter.spec_write(positional[0], sets.transform_keys(&:to_sym))
+    when "rank" then adapter.rank(positional)
+    when "claim" then adapter.claim(positional[0], positional[1], positional[2])
+    when "release" then adapter.release(positional[0])
+    when "ship" then adapter.ship(positional[0])
+    when "abandon" then adapter.abandon(positional[0], reason: flags["reason"].to_s)
+    when "deps" then adapter.deps(positional[0])
+    when "dependents" then adapter.dependents(positional[0])
+    when "promote" then adapter.promote(positional[0], agentile_dir)
+    when "attach" then adapter.attach(positional[0], positional[1])
+    when "whoami" then adapter.whoami
+    when "doctor" then adapter.doctor
+    when "provision" then adapter.provision
+    else abort "ag-store: unknown op '#{op}'"
+    end
+  else
   case op
   when "inbox_list"
     Local.inbox_list(agentile_dir).map { |s| s.reject { |k, _| k == :line_index } }
@@ -137,6 +190,7 @@ result =
     Local.doctor(agentile_dir)
   else
     abort "ag-store: unknown op '#{op}'"
+  end
   end
 
 puts JSON.generate(result)
