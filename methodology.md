@@ -121,8 +121,17 @@ The agent writes code and tests on a short-lived branch/worktree, running your p
 **4. VERIFY — the gate (trust but verify).**
 Automated, non-negotiable: unit + **end-to-end** tests, static analysis/code-quality scan, security review, and a human read of the diff. A *separate* agent (a reviewer with fresh context) critiques the builder's output — agents are better at finding others' mistakes than their own. Failures bounce back to step 3. End-to-end coverage is part of the `test` gate's job — if your test command doesn't include it, that is a gap in the gate, not a different gate.
 
-**5. SHIP — merge to trunk, deploy behind a flag, observe.**
-Small, flagged, reversible. Watch the metric that proves the outcome from step 1. Shipping **records when the work shipped** and preserves the earlier claim times — the spec's own metadata is the flow record, so no external tracker is needed. Each spec names the **outcome** that proves it (one observable metric or check, written at shaping); watching that outcome is part of shipping, not a separate ceremony.
+**5. SHIP — merge to trunk. DEPLOY — release the batch that trunk has accumulated.**
+Two stages, not one, because they run at different cadences and deserve
+different gates. Ship is per spec: small, flagged, reversible, many times a day,
+gated by the fast checks (lint, test, a reviewer's read). Deploy is per release:
+it batches every spec shipped since the last one and puts them where users are,
+gated by the slow evidentiary checks — a full end-to-end campaign, a release
+sign-off, a security review — which are too expensive to run on every merge and
+too important to skip before a release. Conflating them means either deploying
+on checks that were never meant to clear a release, or paying release-grade
+checks on every merge until someone quietly disables them. Watch the metric that proves the outcome from step 1 — which is observable
+once the work is *deployed*, not merely merged. Shipping **records when the work shipped** and preserves the earlier claim times — the spec's own metadata is the flow record, so no external tracker is needed. Each spec names the **outcome** that proves it (one observable metric or check, written at shaping); watching that outcome is part of shipping, not a separate ceremony.
 
 **6. LEARN — close the loop.**
 A non-coding agent compiles a data-driven mini-retro from PRs, ticket transitions, and incidents: where did work wait? Which area needed the most rework? Update the standing context and ADRs so the lesson is *encoded*, not just discussed. The system gets smarter; the next cycle is cheaper. Learning covers product as well as process: for each spec shipped since the last retro, was its outcome observed? Shipped-but-wrong work re-enters as a new stub referencing the original.

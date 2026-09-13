@@ -9,7 +9,7 @@
 ## The loop
 
 ```
-capture → shape → spec → (prioritise → next) → plan → build → verify → ship → learn
+capture → shape → spec → (prioritise → next) → plan → build → verify → ship → [deploy] → learn
 ```
 
 - **capture** — `/ag-capture <idea>` drops a one-line stub in `docs/agentile/inbox.md`. Instant, mid-build safe.
@@ -19,6 +19,7 @@ capture → shape → spec → (prioritise → next) → plan → build → veri
 - **build** — the `ag-builder` agent implements on a branch/worktree, running your gates.
 - **verify** — the `ag-reviewer` agent critiques the diff with fresh context; gates + `/security-review` + a human read.
 - **ship** — small, flagged, reversible merges to trunk. The spec keeps its claim timestamps and gains `shipped_at`, then moves — directory and all — to `specs/done/`.
+- **deploy** — `/ag-deploy` releases the batch of specs shipped since the last deploy, running the project's pre-deploy checklist (`.agentile/deploy.md`) and then the `deploy` gate. In brackets because it is **not part of the per-spec loop**: `/ag-loop` never calls it, since a deploy batches many ships and runs on its own cadence.
 - **learn** — `/ag-retro` compiles a flow digest and encodes lessons into `CLAUDE.md` and ADRs.
 
 `prioritise` and `next` are the queue segment between a Ready spec and the work starting — ordering is editorial and human, pulling is transactional and atomic. They are stages like any other (each has a playbook), shown in brackets because they manage the queue rather than transform the work.
@@ -177,7 +178,8 @@ expiry behaviour rather than assuming a loop runs forever.
 - **spike** — a spec whose deliverable is an answer (`findings.md` or an ADR), not shipping code.
 - **route** — the triage outcome (`foreground` / `background` / `spike`); decides pairing vs delegation and where the loop pauses.
 - **playbook** — `.agentile/<stage>.md`: frontmatter directives + prose policy that tailor a stage.
-- **gate** — a deterministic command in `.agentile/gates.json` (format, lint, test, build, deploy).
+- **gate** — a deterministic command in `.agentile/gates.json` (format, lint, test, build, deploy). The first four gate a *change*; `deploy` gates a *release* and is run only by `/ag-deploy`.
+- **ship vs deploy** — ship merges one spec to trunk; deploy releases every spec shipped since the last deploy. Different cadence, different gates, different blast radius.
 - **drain / watch** — the runner's two modes: work the current queue then stop (`/ag-loop`) vs keep waiting for new work (`/loop /ag-loop`).
 
 ## Who does what
@@ -209,7 +211,7 @@ expiry behaviour rather than assuming a loop runs forever.
 
 ## Skills
 
-`/ag-new-project`, `/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-abandon`, `/ag-loop`, `/ag-customise`, `/ag-retro`, `/ag-version`.
+`/ag-new-project`, `/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-abandon`, `/ag-loop`, `/ag-deploy`, `/ag-customise`, `/ag-retro`, `/ag-version`.
 
 ## Agents (the "hats")
 

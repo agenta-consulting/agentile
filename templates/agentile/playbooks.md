@@ -3,7 +3,7 @@
 Agentile reads a `.agentile/<stage>.md` "playbook" for each loop stage. Present →
 it customises that stage; absent → the built-in behaviour. The filename is the
 stage name: `shape.md`, `plan.md`, `prioritise.md`, `next.md`, `build.md`,
-`verify.md`, `ship.md`, `learn.md`, `capture.md`, `spec.md`.
+`verify.md`, `ship.md`, `deploy.md`, `learn.md`, `capture.md`, `spec.md`.
 
 Each playbook is optional YAML frontmatter + prose:
 

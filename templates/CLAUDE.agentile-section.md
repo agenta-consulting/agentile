@@ -1,6 +1,6 @@
 ## Agentile
 
-This project runs the **Agentile loop** (via Agentile for Claude): capture → shape → spec → plan → build → verify → ship → learn. Work builds from a written, shaped spec — never from a prompt typed from memory.
+This project runs the **Agentile loop** (via Agentile for Claude): capture → shape → spec → plan → build → verify → ship → deploy → learn. Work builds from a written, shaped spec — never from a prompt typed from memory.
 
 ### Where things live
 
@@ -13,7 +13,7 @@ The backlog lives under one configurable **Agentile directory** (`docs/agentile/
   - `specs/abandoned/` — specs that were dropped (via `/ag-abandon`), each with the reason recorded.
 - **Run log** (`docs/agentile/runs.md`) — append-only history `/ag-loop` writes as it claims, ships, pauses, or fails on each item; durable across a compaction or a fresh process.
 - **ADRs** (`docs/adr/`) — the *why* behind significant decisions.
-- **Config** (`.agentile/`) — this project's tailoring: `config.md` (paths + triage), `shape.md` (what Ready means), `gates.json` (deterministic build/test/lint/deploy commands), and the spec/ADR templates. Any loop stage can be further customised via `.agentile/<stage>.md` (playbook frontmatter: `delegate_to`, `also_run`, `human_checkpoint`).
+- **Config** (`.agentile/`) — this project's tailoring: `config.md` (paths + triage), `shape.md` (what Ready means), `gates.json` (deterministic build/test/lint/deploy commands; `deploy` is run only by `/ag-deploy`), and the spec/ADR templates. Any loop stage can be further customised via `.agentile/<stage>.md` (playbook frontmatter: `delegate_to`, `also_run`, `human_checkpoint`).
 
 ### How to work
 
