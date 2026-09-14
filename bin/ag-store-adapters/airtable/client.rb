@@ -79,15 +79,19 @@ module Airtable
     end
 
     # Airtable accepts at most 10 records per create/update call — chunk transparently.
-    def create_records(base_id, table, records_fields)
+    # typecast: true lets Airtable create a missing select option (used for Tags).
+    def create_records(base_id, table, records_fields, typecast: false)
       records_fields.each_slice(10).flat_map do |chunk|
         body = { records: chunk.map { |f| { fields: f } } }
+        body[:typecast] = true if typecast
         request(:post, "/v0/#{base_id}/#{URI.encode_www_form_component(table)}", body: body)["records"]
       end
     end
 
-    def update_record(base_id, table, record_id, fields)
-      request(:patch, "/v0/#{base_id}/#{URI.encode_www_form_component(table)}/#{record_id}", body: { fields: fields })
+    def update_record(base_id, table, record_id, fields, typecast: false)
+      body = { fields: fields }
+      body[:typecast] = true if typecast
+      request(:patch, "/v0/#{base_id}/#{URI.encode_www_form_component(table)}/#{record_id}", body: body)
     end
 
     def delete_record(base_id, table, record_id)

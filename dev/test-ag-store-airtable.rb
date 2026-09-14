@@ -187,4 +187,56 @@ adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
 checks = adapter.doctor
 raise "doctor: #{checks.inspect}" unless checks["Specs table exists"] == true && checks["Inbox table exists"] == false
 
+# 8. outcome markdown round-trips; spec markdown carries serves + tags
+omd = <<~MD
+  ---
+  title: Buyers cannot reject on identity grounds
+  slug: identity
+  status: open
+  rank: 1
+  created: 2026-09-14
+  ---
+
+  # Buyers cannot reject on identity grounds
+
+  ## Claim
+
+  Reviewers sign in through their own IdP.
+
+  ## Measure
+
+  A pilot against a real tenant.
+
+  ## Stop rule
+
+  Two buyers accept local accounts.
+
+  ## Notes
+
+  none yet
+MD
+ov = Airtable::Schema.parse_outcome_markdown(omd)
+raise "outcome parse claim: #{ov.inspect}" unless ov[:claim] == "Reviewers sign in through their own IdP."
+raise "outcome parse stop_rule: #{ov.inspect}" unless ov[:stop_rule] == "Two buyers accept local accounts."
+raise "outcome parse rank: #{ov.inspect}" unless ov[:rank] == "1"
+ore = Airtable::Schema.parse_outcome_markdown(Airtable::Schema.render_outcome_markdown(ov))
+raise "outcome round-trip" unless ore[:claim] == ov[:claim] && ore[:measure] == ov[:measure] && ore[:notes] == "none yet" && ore[:title] == ov[:title]
+
+smd = md.sub("outcome: no more", "serves: identity\ntags: [auth, testing]\noutcome: no more")
+sv = Airtable::Schema.parse_spec_markdown(smd)
+raise "spec serves: #{sv.inspect}" unless sv[:serves] == "identity"
+raise "spec tags: #{sv.inspect}" unless sv[:tags] == %w[auth testing]
+sre = Airtable::Schema.parse_spec_markdown(Airtable::Schema.render_spec_markdown(sv))
+raise "spec serves/tags round-trip" unless sre[:serves] == "identity" && sre[:tags] == %w[auth testing]
+
+# 9. Client sends typecast only when asked
+transport = FakeTransport.new
+transport.push(200, { "records" => [] })
+transport.push(200, {})
+client = Airtable::Client.new(token: "t", transport: transport)
+client.create_records("appTEST", "Specs", [{ "Tags" => ["auth"] }], typecast: true)
+client.update_record("appTEST", "Specs", "recA", { "Title" => "x" })
+raise "typecast on create: #{transport.calls[0][:body].inspect}" unless transport.calls[0][:body]["typecast"] == true
+raise "no typecast by default: #{transport.calls[1][:body].inspect}" if transport.calls[1][:body].key?("typecast")
+
 puts "ALL PASS"
