@@ -173,4 +173,72 @@ Dir.mktmpdir do |root|
   raise "doctor: #{checks.inspect}" unless checks.values.all?
 end
 
+OUTCOME_MD = <<~MD
+  ---
+  title: Buyers cannot reject on identity grounds
+  slug: identity
+  status: open
+  rank:
+  created: 2026-09-14
+  ---
+
+  # Buyers cannot reject on identity grounds
+
+  ## Claim
+
+  Reviewers sign in through their own IdP.
+
+  ## Measure
+
+  A pilot against a real tenant.
+
+  ## Stop rule
+
+  Two buyers accept local accounts.
+
+  ## Notes
+
+MD
+
+# 14. outcome_create / outcome_read / outcome_list round-trip; list sorts ranked before unranked
+Dir.mktmpdir do |root|
+  dir = scaffold(root)
+  path = store("outcome_create", "identity", dir: dir, stdin: OUTCOME_MD)
+  raise "outcome_create path: #{path}" unless path.end_with?("outcomes/identity.md")
+  raise "outcome_read round-trip" unless store("outcome_read", "identity", dir: dir) == OUTCOME_MD
+
+  store("outcome_create", "speed", dir: dir, stdin: OUTCOME_MD.sub("slug: identity", "slug: speed").sub("rank:\n", "rank: 1\n"))
+  listed = store("outcome_list", dir: dir)
+  raise "outcome_list order: #{listed.map { |o| o['slug'] }}" unless listed.map { |o| o["slug"] } == %w[speed identity]
+  raise "outcome_list shape: #{listed[0].inspect}" unless listed[0]["rank"] == 1 && listed[0]["status"] == "open" && listed[0]["title"] == "Buyers cannot reject on identity grounds"
+
+  begin
+    store("outcome_create", "identity", dir: dir, stdin: OUTCOME_MD)
+    raise "duplicate outcome_create should fail"
+  rescue RuntimeError => e
+    raise e unless e.message.include?("already exists")
+  end
+end
+
+# 15. outcome_rank stamps dense ranks on open outcomes only; achieve/abandon stamp status + timestamps
+Dir.mktmpdir do |root|
+  dir = scaffold(root)
+  %w[a b c].each { |s| store("outcome_create", s, dir: dir, stdin: OUTCOME_MD.sub("slug: identity", "slug: #{s}")) }
+  store("outcome_achieve", "c", dir: dir)
+  ranked = store("outcome_rank", "b", "c", "a", dir: dir)
+  raise "outcome_rank skips non-open: #{ranked.inspect}" unless ranked == %w[b a]
+  listed = store("outcome_list", "--status", "open", dir: dir)
+  raise "outcome_rank order: #{listed.map { |o| [o['slug'], o['rank']] }}" unless listed.map { |o| [o["slug"], o["rank"]] } == [["b", 1], ["a", 2]]
+
+  fm = frontmatter(File.join(dir, "outcomes", "c.md"))
+  raise "achieve status: #{fm.inspect}" unless fm["status"] == "achieved" && fm["achieved_at"].is_a?(Time) # ISO8601 stamp, parsed by YAML
+
+  store("outcome_abandon", "a", "--reason", "spike showed no buyer cares", dir: dir)
+  fm = frontmatter(File.join(dir, "outcomes", "a.md"))
+  raise "abandon: #{fm.inspect}" unless fm["status"] == "abandoned" && fm["abandoned_reason"] == "spike showed no buyer cares" && fm["abandoned_at"].is_a?(Time)
+
+  store("outcome_write", "b", "--set", "title=Renamed", dir: dir)
+  raise "outcome_write" unless frontmatter(File.join(dir, "outcomes", "b.md"))["title"] == "Renamed"
+end
+
 puts "ALL PASS"

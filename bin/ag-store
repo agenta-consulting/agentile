@@ -30,6 +30,15 @@
 #   deps         <id>                                  --dir <dir>
 #   dependents   <slug>                                --dir <dir>
 #   attach       <id> <plan-path>                      --dir <dir>
+#   outcome_list [--status open|achieved|abandoned]    --dir <dir>
+#   outcome_read <slug>                                --dir <dir>
+#   outcome_create <slug>          (markdown on stdin) --dir <dir>
+#   outcome_write <slug> --set k=v [--set k=v ...]     --dir <dir>
+#   outcome_rank <slug> [<slug>...]                    --dir <dir>
+#   outcome_achieve <slug>                             --dir <dir>
+#   outcome_abandon <slug> --reason "<text>"           --dir <dir>
+#   map                                                --dir <dir>
+#   brief_sync                                         --dir <dir>
 #   whoami
 #   doctor                                              --dir <dir>
 #
@@ -184,6 +193,20 @@ result =
     Local.dependents(specs_dir, positional[0])
   when "attach"
     Local.attach(specs_dir, positional[0], positional[1])
+  when "outcome_list"
+    Local.outcome_list(agentile_dir, status: flags["status"])
+  when "outcome_read"
+    Local.outcome_read(agentile_dir, positional[0])
+  when "outcome_create"
+    Local.outcome_create(agentile_dir, positional[0], $stdin.read)
+  when "outcome_write"
+    Local.outcome_write(agentile_dir, positional[0], sets)
+  when "outcome_rank"
+    Local.outcome_rank(agentile_dir, positional)
+  when "outcome_achieve"
+    Local.outcome_achieve(agentile_dir, positional[0])
+  when "outcome_abandon"
+    Local.outcome_abandon(agentile_dir, positional[0], reason: flags["reason"].to_s)
   when "whoami"
     Local.whoami
   when "doctor"

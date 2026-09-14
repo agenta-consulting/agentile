@@ -413,6 +413,106 @@ module Local
     plan_path
   end
 
+  # ---- outcomes (docs/agentile-outcomes.md §4.2) ----
+  # Flat files at <dir>/outcomes/<slug>.md. Status and rank live in
+  # frontmatter — no NNNN- prefix, no done/abandoned moves: there are few
+  # outcomes, nothing claims them, and a stable filename beats a visible sort.
+
+  def outcomes_dir(agentile_dir)
+    File.join(agentile_dir, "outcomes")
+  end
+
+  def load_outcome(path)
+    raw = File.read(path)
+    fm = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
+    { path: path, raw: raw, fm: fm, slug: File.basename(path, ".md") }
+  end
+
+  def outcomes_in(agentile_dir)
+    dir = outcomes_dir(agentile_dir)
+    return [] unless File.directory?(dir)
+
+    Dir.glob(File.join(dir, "*.md")).map { |p| load_outcome(p) }
+  end
+
+  def find_outcome(agentile_dir, slug)
+    outcomes_in(agentile_dir).find { |o| o[:slug] == slug.to_s }
+  end
+
+  def outcome_summary(o)
+    {
+      slug: o[:slug], title: o[:fm]["title"], status: o[:fm]["status"], rank: o[:fm]["rank"],
+      created: o[:fm]["created"], achieved_at: o[:fm]["achieved_at"], abandoned_at: o[:fm]["abandoned_at"],
+    }
+  end
+
+  # Ranked first (ascending), then unranked, then by slug — shared with the
+  # airtable adapter so both stores list outcomes in the same order.
+  def outcome_sort_key(summary)
+    rank = summary[:rank]
+    [rank.is_a?(Integer) ? rank : 1_000_000, summary[:slug].to_s]
+  end
+
+  def outcome_list(agentile_dir, status: nil)
+    outcomes_in(agentile_dir)
+      .map { |o| outcome_summary(o) }
+      .select { |o| status.nil? || o[:status] == status }
+      .sort_by { |o| outcome_sort_key(o) }
+  end
+
+  def outcome_read(agentile_dir, slug)
+    o = find_outcome(agentile_dir, slug)
+    abort "ag-store: no such outcome: #{slug}" unless o
+
+    o[:raw]
+  end
+
+  def outcome_create(agentile_dir, slug, markdown)
+    dir = outcomes_dir(agentile_dir)
+    FileUtils.mkdir_p(dir)
+    path = File.join(dir, "#{slug}.md")
+    abort "ag-store: an outcome already exists at #{path}" if File.exist?(path)
+
+    File.write(path, markdown)
+    path
+  end
+
+  def outcome_write(agentile_dir, slug, fields)
+    o = find_outcome(agentile_dir, slug)
+    abort "ag-store: no such outcome: #{slug}" unless o
+
+    stamp!(o, fields)
+    o[:path]
+  end
+
+  # Dense integer ranks by position, open outcomes only; anything else in the
+  # list is skipped — visible by its absence from the returned slugs.
+  def outcome_rank(agentile_dir, ordered_slugs)
+    open = ordered_slugs.select do |slug|
+      o = find_outcome(agentile_dir, slug)
+      o && o[:fm]["status"] == "open"
+    end
+    open.each_with_index { |slug, i| outcome_write(agentile_dir, slug, { "rank" => i + 1 }) }
+    open
+  end
+
+  def outcome_achieve(agentile_dir, slug, achieved_at: nil)
+    outcome_write(agentile_dir, slug, {
+      "status" => "achieved",
+      "achieved_at" => (achieved_at || Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")),
+    })
+    true
+  end
+
+  def outcome_abandon(agentile_dir, slug, reason:, abandoned_at: nil)
+    outcome_write(agentile_dir, slug, {
+      "status" => "abandoned",
+      "abandoned_at" => (abandoned_at || Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")),
+      "abandoned_reason" => reason,
+    })
+    true
+  end
+
   # ---- whoami / doctor ----
 
   def whoami
