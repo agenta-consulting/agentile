@@ -9,6 +9,7 @@
 # rank is a batch field update. Both leave a small race window, stated
 # honestly rather than papered over.
 require "set"
+require_relative "local" # build_map / outcome_sort_key are shared with the local adapter
 require_relative "airtable/client"
 require_relative "airtable/schema"
 
@@ -19,12 +20,14 @@ module Airtable
   # with — so this is a module-level entry point, used once by /ag-init's
   # "create a new base" team-mode flow. Attaching to an EXISTING base instead
   # goes through Adapter#provision.
-  def self.create_base(token:, workspace_id:, name:, inbox_table: "Inbox", specs_table: "Specs", members_table: "Members")
+  def self.create_base(token:, workspace_id:, name:, inbox_table: "Inbox", specs_table: "Specs", members_table: "Members",
+                       outcomes_table: "Outcomes")
     client = Client.new(token: token)
     tables_def = [
       { name: specs_table, fields: Schema::SPECS_BASE_FIELDS },
       { name: inbox_table, fields: Schema::INBOX_BASE_FIELDS },
       { name: members_table, fields: Schema::MEMBERS_BASE_FIELDS },
+      { name: outcomes_table, fields: Schema::OUTCOMES_BASE_FIELDS },
     ]
     created = client.create_base(workspace_id, name, tables_def)
     base_id = created["id"]
@@ -33,12 +36,14 @@ module Airtable
       table_ids[:specs] = t["id"] if t["name"] == specs_table
       table_ids[:inbox] = t["id"] if t["name"] == inbox_table
       table_ids[:members] = t["id"] if t["name"] == members_table
+      table_ids[:outcomes] = t["id"] if t["name"] == outcomes_table
     end
 
     adapter = Adapter.new(base_id: base_id, inbox_table: inbox_table, specs_table: specs_table,
-                           members_table: members_table, token: token, client: client)
+                           members_table: members_table, outcomes_table: outcomes_table, token: token, client: client)
     adapter.ensure_link_fields(table_ids[:specs], :specs, table_ids)
     adapter.ensure_link_fields(table_ids[:inbox], :inbox, table_ids)
+    adapter.ensure_link_fields(table_ids[:outcomes], :outcomes, table_ids)
     base_id
   end
 
@@ -57,9 +62,14 @@ module Airtable
                           captured_by: "Captured By", shaped_by: "Shaped By" }.freeze
     INBOX_FIELDS = { title: "Title", text: "Text", type: "Type", captured_at: "Captured At",
                      status: "Status" }.freeze
+    OUTCOMES_FIELDS = {
+      title: "Title", slug: "Slug", status: "Status", rank: "Rank", claim: "Claim", measure: "Measure",
+      stop_rule: "Stop Rule", notes: "Notes", created: "Created", achieved_at: "Achieved At",
+      abandoned_at: "Abandoned At", abandoned_reason: "Abandoned Reason",
+    }.freeze
 
     def initialize(base_id:, inbox_table: "Inbox", specs_table: "Specs", members_table: "Members",
-                   token: ENV.fetch("AGENTILE_AIRTABLE_TOKEN", nil), client: nil)
+                   outcomes_table: "Outcomes", token: ENV.fetch("AGENTILE_AIRTABLE_TOKEN", nil), client: nil)
       abort "ag-store: --airtable-base is required for the airtable store" if base_id.to_s.empty?
       abort "ag-store: AGENTILE_AIRTABLE_TOKEN is not set" if client.nil? && token.to_s.empty?
 
@@ -67,6 +77,7 @@ module Airtable
       @inbox_table = inbox_table
       @specs_table = specs_table
       @members_table = members_table
+      @outcomes_table = outcomes_table
       @client = client || Client.new(token: token)
     end
 
@@ -107,6 +118,24 @@ module Airtable
       members_records.find { |r| r["fields"]["Git Email"] == email || r["fields"]["Email"] == email }
     end
 
+    def outcomes_records
+      @outcomes_records ||= @client.list_records(@base_id, @outcomes_table)
+    end
+
+    def invalidate_outcomes_cache!
+      @outcomes_records = nil
+    end
+
+    def outcome_by_slug(slug)
+      outcomes_records.find { |r| r["fields"]["Slug"] == slug.to_s || r["id"] == slug }
+    end
+
+    def outcome_slug_of(record_id)
+      return nil if record_id.nil?
+
+      (outcomes_records.find { |r| r["id"] == record_id } || {}).dig("fields", "Slug")
+    end
+
     # ---- whoami ----
 
     def whoami
@@ -131,6 +160,7 @@ module Airtable
           type: r["fields"]["Type"],
           captured_at: r["fields"]["Captured At"],
           captured_by: member_ids.map { |m| member_name_of(m) }.compact.first,
+          serves: outcome_slug_of(Array(r["fields"]["Serves Outcome"]).first),
         }
       end
     end
@@ -138,10 +168,15 @@ module Airtable
     # title is the short label /ag-capture derives from the text, type its
     # kind (feature/bug/chore/spike). Both optional: a stub with neither is
     # still a valid stub, it just reads badly and routes as a feature.
-    def inbox_add(text, captured_by = nil, title = nil, type = nil)
+    # serves is the Outcome slug a stub was decomposed from (/ag-decompose) —
+    # linked so provenance survives to /ag-shape, which offers it as the default.
+    def inbox_add(text, captured_by = nil, title = nil, type = nil, serves = nil)
       fields = { "Text" => text, "Captured At" => Time.now.strftime("%Y-%m-%d"), "Status" => "Open" }
       fields["Title"] = title unless title.to_s.strip.empty?
       fields["Type"] = type unless type.to_s.strip.empty?
+      if !serves.to_s.strip.empty? && (o = outcome_by_slug(serves))
+        fields["Serves Outcome"] = [o["id"]]
+      end
       fields["Captured By"] = [captured_by] if captured_by.to_s.start_with?("rec")
       @client.create_records(@base_id, @inbox_table, [fields])
       true
@@ -171,6 +206,8 @@ module Airtable
         claimed_at: f["Claimed At"],
         label: f["Label"],
         shipped_at: f["Shipped At"],
+        serves: outcome_slug_of(Array(f["Serves Outcome"]).first),
+        tags: Array(f["Tags"]),
       }
     end
 
@@ -197,6 +234,8 @@ module Airtable
       v[:captured_by] = (f["Captured By"] || []).map { |id| member_name_of(id) }.compact
       v[:shaped_by] = (f["Shaped By"] || []).map { |id| member_name_of(id) }.compact
       v[:claimed_by_member] = member_name_of(Array(f["Claimed By (Member)"]).first)
+      v[:serves] = outcome_slug_of(Array(f["Serves Outcome"]).first)
+      v[:tags] = Array(f["Tags"])
       v
     end
 
@@ -217,6 +256,11 @@ module Airtable
       if v.key?(:depends_on)
         fields["Depends On"] = Array(v[:depends_on]).filter_map { |slug| spec_by_slug(slug)&.dig("id") }
       end
+      if v.key?(:serves)
+        o = v[:serves].to_s.empty? ? nil : outcome_by_slug(v[:serves])
+        fields["Serves Outcome"] = o ? [o["id"]] : []
+      end
+      fields["Tags"] = Array(v[:tags]).map(&:to_s) if v.key?(:tags)
       fields["Captured By"] = Array(v[:captured_by]) if v.key?(:captured_by)
       fields["Shaped By"] = Array(v[:shaped_by]) if v.key?(:shaped_by)
       fields["Claimed By (Member)"] = Array(v[:claimed_by_member]) if v.key?(:claimed_by_member)
@@ -227,7 +271,8 @@ module Airtable
       v = Schema.parse_spec_markdown(markdown)
       v[:slug] = slug
       v[:status] ||= "ready"
-      @client.create_records(@base_id, @specs_table, [build_fields(v)])
+      fields = build_fields(v)
+      @client.create_records(@base_id, @specs_table, [fields], typecast: fields.key?("Tags"))
       invalidate_specs_cache!
       slug
     end
@@ -236,7 +281,8 @@ module Airtable
       r = spec_by_slug(ident)
       abort "ag-store: no such spec: #{ident}" unless r
 
-      @client.update_record(@base_id, @specs_table, r["id"], build_fields(canonical_fields))
+      fields = build_fields(canonical_fields)
+      @client.update_record(@base_id, @specs_table, r["id"], fields, typecast: fields.key?("Tags"))
       invalidate_specs_cache!
       r["id"]
     end
@@ -380,6 +426,96 @@ module Airtable
       plan_path
     end
 
+    # ---- outcomes (docs/agentile-outcomes.md §4.3) ----
+
+    def project_outcome_summary(r)
+      f = r["fields"]
+      { slug: f["Slug"], title: f["Title"], status: f["Status"], rank: f["Rank"], created: f["Created"],
+        achieved_at: f["Achieved At"], abandoned_at: f["Abandoned At"] }
+    end
+
+    def outcome_list(status: nil)
+      recs = outcomes_records
+      recs = recs.select { |r| r["fields"]["Status"] == status } if status
+      recs.map { |r| project_outcome_summary(r) }.sort_by { |o| Local.outcome_sort_key(o) }
+    end
+
+    def outcome_read(ident)
+      r = outcome_by_slug(ident)
+      abort "ag-store: no such outcome: #{ident}" unless r
+
+      v = {}
+      OUTCOMES_FIELDS.each { |canon, name| v[canon] = r["fields"][name] }
+      v[:created_by] = member_name_of(Array(r["fields"]["Created By"]).first)
+      Schema.render_outcome_markdown(v)
+    end
+
+    # Rank arrives as a string from markdown/--set; Airtable wants a number
+    # (or nothing — an empty string is not a valid number value).
+    def build_outcome_fields(v)
+      fields = {}
+      OUTCOMES_FIELDS.each { |canon, name| fields[name] = v[canon] if v.key?(canon) }
+      if fields.key?("Rank")
+        fields["Rank"] = fields["Rank"].to_s.empty? ? nil : fields["Rank"].to_i
+        fields.delete("Rank") if fields["Rank"].nil?
+      end
+      fields
+    end
+
+    def outcome_create(slug, markdown, created_by = nil)
+      abort "ag-store: an outcome already exists with slug #{slug}" if outcome_by_slug(slug)
+
+      v = Schema.parse_outcome_markdown(markdown)
+      v[:slug] = slug
+      v[:status] = "open" if v[:status].to_s.empty?
+      fields = build_outcome_fields(v)
+      fields["Created By"] = [created_by] if created_by.to_s.start_with?("rec")
+      @client.create_records(@base_id, @outcomes_table, [fields])
+      invalidate_outcomes_cache!
+      slug
+    end
+
+    def outcome_write(ident, canonical_fields)
+      r = outcome_by_slug(ident)
+      abort "ag-store: no such outcome: #{ident}" unless r
+
+      @client.update_record(@base_id, @outcomes_table, r["id"], build_outcome_fields(canonical_fields))
+      invalidate_outcomes_cache!
+      r["id"]
+    end
+
+    def outcome_rank(ordered_slugs)
+      open = ordered_slugs.select { |s| (r = outcome_by_slug(s)) && r["fields"]["Status"] == "open" }
+      open.each_with_index { |s, i| outcome_write(s, { rank: i + 1 }) }
+      open
+    end
+
+    def outcome_achieve(ident)
+      outcome_write(ident, { status: "achieved", achieved_at: Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ") })
+      true
+    end
+
+    def outcome_abandon(ident, reason:)
+      outcome_write(ident, { status: "abandoned", abandoned_at: Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                             abandoned_reason: reason })
+      true
+    end
+
+    # The computed view (docs/agentile-outcomes.md §4.1) — every pool, so
+    # shipped/abandoned history groups under its Outcome too.
+    def map
+      shipped = specs_records.select { |r| r["fields"]["Status"] == "shipped" }.map { |r| r["fields"]["Slug"] }.to_set
+      entries = specs_records.map do |r|
+        f = r["fields"]
+        deps = (f["Depends On"] || []).map { |id| slug_of(id) }.compact
+        {
+          slug: f["Slug"], status: f["Status"], serves: outcome_slug_of(Array(f["Serves Outcome"]).first),
+          tags: Array(f["Tags"]), blocked: f["Status"] == "ready" && !deps.all? { |d| shipped.include?(d) },
+        }
+      end
+      Local.build_map(outcome_list, entries)
+    end
+
     # ---- doctor / provision ----
 
     def doctor
@@ -390,6 +526,7 @@ module Airtable
         "Inbox table exists" => names.include?(@inbox_table),
         "Specs table exists" => names.include?(@specs_table),
         "Members table exists" => names.include?(@members_table),
+        "Outcomes table exists" => names.include?(@outcomes_table),
       }
 
       # Schema drift: a base provisioned before a field was added to the schema
@@ -414,6 +551,8 @@ module Airtable
         @inbox_table => Schema::INBOX_BASE_FIELDS.map { |f| f[:name] } +
                         Schema::LINK_FIELDS.fetch(:inbox, []).map(&:first),
         @members_table => Schema::MEMBERS_BASE_FIELDS.map { |f| f[:name] },
+        @outcomes_table => Schema::OUTCOMES_BASE_FIELDS.map { |f| f[:name] } +
+                           Schema::LINK_FIELDS.fetch(:outcomes, []).map(&:first),
       }
       expected.flat_map do |table_name, field_names|
         table = tables.find { |t| t["name"] == table_name }
@@ -424,7 +563,7 @@ module Airtable
       end
     end
 
-    # Idempotently creates the three tables (base fields first, then the
+    # Idempotently creates the four tables (base fields first, then the
     # link fields once every table's id is known) — safe to re-run.
     def provision
       existing = @client.list_tables(@base_id).to_h { |t| [t["name"], t] }
@@ -432,6 +571,7 @@ module Airtable
       specs_id = ensure_table(existing, @specs_table, Schema::SPECS_BASE_FIELDS)
       inbox_id = ensure_table(existing, @inbox_table, Schema::INBOX_BASE_FIELDS)
       members_id = ensure_table(existing, @members_table, Schema::MEMBERS_BASE_FIELDS)
+      outcomes_id = ensure_table(existing, @outcomes_table, Schema::OUTCOMES_BASE_FIELDS)
 
       # A table that already existed keeps whatever fields it has, so a field
       # added to the schema after a base was provisioned would never appear.
@@ -439,10 +579,12 @@ module Airtable
       ensure_base_fields(specs_id, Schema::SPECS_BASE_FIELDS)
       ensure_base_fields(inbox_id, Schema::INBOX_BASE_FIELDS)
       ensure_base_fields(members_id, Schema::MEMBERS_BASE_FIELDS)
+      ensure_base_fields(outcomes_id, Schema::OUTCOMES_BASE_FIELDS)
 
-      table_ids = { specs: specs_id, inbox: inbox_id, members: members_id }
+      table_ids = { specs: specs_id, inbox: inbox_id, members: members_id, outcomes: outcomes_id }
       ensure_link_fields(specs_id, :specs, table_ids)
       ensure_link_fields(inbox_id, :inbox, table_ids)
+      ensure_link_fields(outcomes_id, :outcomes, table_ids)
       doctor
     end
 

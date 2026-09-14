@@ -239,4 +239,54 @@ client.update_record("appTEST", "Specs", "recA", { "Title" => "x" })
 raise "typecast on create: #{transport.calls[0][:body].inspect}" unless transport.calls[0][:body]["typecast"] == true
 raise "no typecast by default: #{transport.calls[1][:body].inspect}" if transport.calls[1][:body].key?("typecast")
 
+# 10. outcome_create sends per-field values to the Outcomes table; spec_create with tags sends typecast + Serves Outcome link
+transport = FakeTransport.new
+transport.push(200, records_page([])) # outcomes lookup (dup check)
+transport.push(200, { "records" => [{ "id" => "recO1" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.outcome_create("identity", omd, nil)
+oc = transport.calls.last
+raise "outcome path: #{oc[:path]}" unless oc[:path] == "/v0/appTEST/Outcomes"
+of = oc[:body]["records"][0]["fields"]
+raise "outcome fields: #{of.inspect}" unless of["Slug"] == "identity" && of["Claim"] == "Reviewers sign in through their own IdP." && of["Stop Rule"] == "Two buyers accept local accounts." && of["Rank"] == 1 && of["Status"] == "open"
+
+transport = FakeTransport.new
+transport.push(200, records_page([])) # specs (depends_on resolution)
+transport.push(200, records_page([rec("recO1", { "Slug" => "identity", "Status" => "open" })])) # outcomes (serves resolution)
+transport.push(200, { "records" => [{ "id" => "recS1" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_create("sso", smd)
+sc = transport.calls.last
+raise "spec typecast: #{sc[:body].inspect}" unless sc[:body]["typecast"] == true
+sf = sc[:body]["records"][0]["fields"]
+raise "spec serves link: #{sf.inspect}" unless sf["Serves Outcome"] == ["recO1"]
+raise "spec tags: #{sf.inspect}" unless sf["Tags"] == %w[auth testing]
+
+# 11. map: groups specs by Serves Outcome, computes blocked from Depends On, indexes tags
+transport = FakeTransport.new
+transport.push(200, records_page([
+                     rec("recA", { "Slug" => "oidc", "Status" => "ready", "Serves Outcome" => ["recO1"], "Tags" => ["auth"] }),
+                     rec("recB", { "Slug" => "scim", "Status" => "ready", "Serves Outcome" => ["recO1"], "Depends On" => ["recA"], "Tags" => %w[auth lifecycle] }),
+                     rec("recC", { "Slug" => "free", "Status" => "shipped" }),
+                   ]))
+transport.push(200, records_page([rec("recO1", { "Slug" => "identity", "Title" => "Identity", "Status" => "open", "Rank" => 1 })]))
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+m = adapter.map
+o = m[:outcomes][0]
+raise "map outcome: #{o.inspect}" unless o[:slug] == "identity" && o[:specs]["ready"] == %w[oidc scim] && o[:blocked] == %w[scim]
+raise "map unlinked: #{m[:unlinked].inspect}" unless m[:unlinked]["shipped"] == %w[free]
+raise "map tags: #{m[:tags].inspect}" unless m[:tags] == { "auth" => %w[oidc scim], "lifecycle" => %w[scim] }
+
+# 12. doctor reports a missing Outcomes table and the new Specs fields as drift
+transport = FakeTransport.new
+transport.push(200, { "tables" => [{ "name" => "Specs", "fields" => [{ "name" => "Slug" }] }, { "name" => "Inbox", "fields" => [] }, { "name" => "Members", "fields" => [] }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+checks = adapter.doctor
+raise "doctor outcomes table: #{checks.inspect}" unless checks["Outcomes table exists"] == false
+raise "doctor drift: #{checks.inspect}" unless checks["missing fields"].include?("Specs.Serves Outcome") && checks["missing fields"].include?("Specs.Tags")
+
 puts "ALL PASS"
