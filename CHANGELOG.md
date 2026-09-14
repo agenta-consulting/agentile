@@ -4,6 +4,16 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.12.0 — 2026-09-14
+
+- **`/ag-plan` writes a read-only `SPEC.md` snapshot** beside `plan.md` on
+  stores with no filesystem spec (`airtable`). The spec directory previously
+  held a plan for a spec that could not be read without a network call and a
+  token, so the builder, the reviewer and the pull request saw the approach but
+  not the acceptance criteria the diff has to satisfy. The store stays
+  canonical: the snapshot is stamped with the record id and read time, and
+  state (status, rank, claim) is never read from it.
+
 ## 0.11.0 — 2026-09-14
 
 - **The `Stop`/`SubagentStop` test gate is removed.** It ran `gates.json`'s
