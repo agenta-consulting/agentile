@@ -156,6 +156,7 @@ result =
     when "whoami" then adapter.whoami
     when "doctor" then adapter.doctor
     when "provision" then adapter.provision
+    when "brief_sync" then Local.brief_sync(agentile_dir, adapter.outcome_list)
     else abort "ag-store: unknown op '#{op}'"
     end
   else
@@ -209,6 +210,8 @@ result =
     Local.outcome_abandon(agentile_dir, positional[0], reason: flags["reason"].to_s)
   when "map"
     Local.map(agentile_dir)
+  when "brief_sync"
+    Local.brief_sync(agentile_dir, Local.outcome_list(agentile_dir))
   when "whoami"
     Local.whoami
   when "doctor"

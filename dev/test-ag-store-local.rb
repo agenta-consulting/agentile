@@ -278,4 +278,40 @@ Dir.mktmpdir do |root|
   raise "map tags: #{m['tags'].inspect}" unless m["tags"] == { "auth" => %w[oidc scim], "lifecycle" => %w[scim] }
 end
 
+# 18. brief_sync rewrites only the "Prioritised outcomes" section, open outcomes by rank, ranked before unranked
+Dir.mktmpdir do |root|
+  dir = scaffold(root)
+  File.write(File.join(dir, "brief.md"), <<~MD)
+    # Brief
+
+    ## Who it's for
+
+    Banks.
+
+    ## Prioritised outcomes
+
+    1. stale text
+
+    ## Constraints
+
+    Python.
+  MD
+  t = "title: Buyers cannot reject on identity grounds"
+  store("outcome_create", "second", dir: dir, stdin: OUTCOME_MD.sub("slug: identity", "slug: second").sub(t, "title: Second").sub("rank:\n", "rank: 2\n"))
+  store("outcome_create", "first", dir: dir, stdin: OUTCOME_MD.sub("slug: identity", "slug: first").sub(t, "title: First").sub("rank:\n", "rank: 1\n"))
+  store("outcome_create", "unranked", dir: dir, stdin: OUTCOME_MD.sub("slug: identity", "slug: unranked").sub(t, "title: Later"))
+  store("outcome_create", "gone", dir: dir, stdin: OUTCOME_MD.sub("slug: identity", "slug: gone"))
+  store("outcome_abandon", "gone", "--reason", "x", dir: dir)
+
+  raise "brief_sync returns true" unless store("brief_sync", dir: dir) == true
+  brief = File.read(File.join(dir, "brief.md"))
+  expected = "## Prioritised outcomes\n\n1. **First** (`first`)\n2. **Second** (`second`)\n3. **Later** (`unranked`)\n\n## Constraints"
+  raise "brief_sync section:\n#{brief}" unless brief.include?(expected)
+  raise "brief_sync touched other sections" unless brief.include?("## Who it's for\n\nBanks.") && brief.include?("## Constraints\n\nPython.")
+  raise "brief_sync leaked abandoned" if brief.include?("gone")
+
+  File.write(File.join(dir, "brief.md"), "# Brief\n\nno section here\n")
+  raise "brief_sync without heading returns false" unless store("brief_sync", dir: dir) == false
+end
+
 puts "ALL PASS"

@@ -573,6 +573,33 @@ module Local
     build_map(outcome_list(agentile_dir), entries)
   end
 
+  # ---- brief_sync (docs/agentile-outcomes.md §4.2) ----
+  # Rewrites the brief's "## Prioritised outcomes" section from the open
+  # outcomes, by rank, so the prose list and the store cannot drift. The
+  # brief is a repo file in both store modes; the caller passes whichever
+  # adapter's outcome_list applies.
+
+  BRIEF_HEADING = "## Prioritised outcomes"
+
+  def brief_sync(agentile_dir, outcomes)
+    path = File.join(agentile_dir, "brief.md")
+    abort "ag-store: no brief at #{path}" unless File.exist?(path)
+
+    raw = File.read(path)
+    unless raw.include?(BRIEF_HEADING)
+      warn "ag-store: #{path} has no '#{BRIEF_HEADING}' heading — nothing to sync"
+      return false
+    end
+
+    open = outcomes.select { |o| o[:status].to_s == "open" }
+    lines = open.each_with_index.map { |o, i| "#{i + 1}. **#{o[:title]}** (`#{o[:slug]}`)" }
+    body = lines.empty? ? "_No open outcomes yet — create one with `/ag-outcome`._" : lines.join("\n")
+    section = "#{BRIEF_HEADING}\n\n#{body}\n\n"
+    new_raw = raw.sub(/^#{Regexp.escape(BRIEF_HEADING)}\n.*?(?=^## |\z)/m) { section }
+    File.write(path, new_raw)
+    true
+  end
+
   # ---- whoami / doctor ----
 
   def whoami
