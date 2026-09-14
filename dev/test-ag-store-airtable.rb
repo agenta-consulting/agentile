@@ -289,4 +289,15 @@ checks = adapter.doctor
 raise "doctor outcomes table: #{checks.inspect}" unless checks["Outcomes table exists"] == false
 raise "doctor drift: #{checks.inspect}" unless checks["missing fields"].include?("Specs.Serves Outcome") && checks["missing fields"].include?("Specs.Tags")
 
+# 13. spec_write accepts bracketed list strings from --set for tags and depends_on (the CLI hands strings, not arrays)
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS1", { "Slug" => "sso", "Status" => "ready" }), rec("recD", { "Slug" => "dep", "Status" => "ready" })]))
+transport.push(200, {})
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_write("sso", { tags: "[testing, ui]", depends_on: "[dep]" })
+wc = transport.calls.last
+raise "spec_write tags from string: #{wc[:body].inspect}" unless wc[:body]["fields"]["Tags"] == %w[testing ui] && wc[:body]["typecast"] == true
+raise "spec_write depends_on from string: #{wc[:body].inspect}" unless wc[:body]["fields"]["Depends On"] == ["recD"]
+
 puts "ALL PASS"

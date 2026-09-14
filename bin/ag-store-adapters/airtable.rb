@@ -254,13 +254,13 @@ module Airtable
       fields = {}
       SPECS_FIELDS.each { |canon, name| fields[name] = v[canon] if v.key?(canon) }
       if v.key?(:depends_on)
-        fields["Depends On"] = Array(v[:depends_on]).filter_map { |slug| spec_by_slug(slug)&.dig("id") }
+        fields["Depends On"] = Schema.list_value(v[:depends_on]).filter_map { |slug| spec_by_slug(slug)&.dig("id") }
       end
       if v.key?(:serves)
         o = v[:serves].to_s.empty? ? nil : outcome_by_slug(v[:serves])
         fields["Serves Outcome"] = o ? [o["id"]] : []
       end
-      fields["Tags"] = Array(v[:tags]).map(&:to_s) if v.key?(:tags)
+      fields["Tags"] = Schema.list_value(v[:tags]) if v.key?(:tags)
       fields["Captured By"] = Array(v[:captured_by]) if v.key?(:captured_by)
       fields["Shaped By"] = Array(v[:shaped_by]) if v.key?(:shaped_by)
       fields["Claimed By (Member)"] = Array(v[:claimed_by_member]) if v.key?(:claimed_by_member)

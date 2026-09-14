@@ -158,6 +158,19 @@ module Airtable
       verification: "Verification",
     }.freeze
 
+    # A list value may arrive as an Array (parsed markdown) or as the string
+    # "[a, b]" (an ag-store --set flag hands the adapter raw text). The local
+    # store never sees the difference — YAML parses the string on read — so
+    # this is where the airtable adapter has to.
+    def self.list_value(val)
+      return [] if val.nil?
+      return val.map(&:to_s) if val.is_a?(Array)
+
+      s = val.to_s.strip
+      s = s[1..-2] if s.start_with?("[") && s.end_with?("]")
+      s.split(",").map(&:strip).reject(&:empty?)
+    end
+
     def self.yaml_scalar(val)
       return "[#{Array(val).join(', ')}]" if val.is_a?(Array)
 
