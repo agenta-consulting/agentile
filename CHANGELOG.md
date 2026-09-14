@@ -4,6 +4,24 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.12.0 — 2026-09-14
+
+- **Outcomes: the layer above specs.** A flat, ranked list of falsifiable bets
+  — claim, measure, stop rule — that specs may optionally `serve`. Nothing
+  derivable is stored on one; `ag-store map` computes the grouped view. New
+  skills `/ag-outcome` (shape a bet), `/ag-decompose` (propose the stubs that
+  would make it true), `/ag-map` (the world at Outcome level). Design, and the
+  Jira-epic model it deliberately rejects: `docs/agentile-outcomes.md`.
+- Specs gain optional `serves:` and `tags:`; stubs gain an optional `serves`
+  hint; `/ag-shape` asks, `/ag-prioritise` ranks Outcomes before specs,
+  `/ag-retro` reviews bets against their measures, `/ag-abandon` closes a bet
+  and cascades to the work serving it.
+- `ag-store brief_sync` regenerates the brief's "Prioritised outcomes" list
+  from the store so prose and table cannot drift.
+- Airtable: new `Outcomes` table, `Serves Outcome` links on Specs and Inbox,
+  `Tags` multiple-select written with `typecast`; `provision` backfills an
+  existing base and `doctor` reports the drift.
+
 ## 0.11.0 — 2026-09-14
 
 - **The `Stop`/`SubagentStop` test gate is removed.** It ran `gates.json`'s
