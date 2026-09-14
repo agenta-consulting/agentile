@@ -25,6 +25,16 @@ If the file is absent, use the baseline below unchanged.
 
 ## Baseline steps
 
+### Step 0 — Rank the Outcomes first
+
+Run `ag-store outcome_list --status open --dir "<dir>" --store "<store>"`. If there are none, skip to Step 1. If any open Outcome has a null `rank`, show the open Outcomes (slug, title, rank) and ask for their order (`AskUserQuestion`, or plain language), then apply it:
+
+```
+ag-store outcome_rank <slug-1> <slug-2> ... --dir "<dir>" --store "<store>"
+```
+
+Outcome rank is **authored**; spec rank below is **derived** from it and materialised — that is the one prioritisation authority, made practical. Run `ag-store brief_sync ...` after ranking so the brief's list matches.
+
 ### Step 1 — Read the active set
 
 Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`).
@@ -37,7 +47,7 @@ prioritised outcomes rather than gut feel.
 Run `ag-store spec_list --dir "<dir>" --store "<store>"` (bare command; fallback
 `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) and parse the JSON array. Each entry already
 carries `slug`, `prefix` (null if unprioritised), `status`, `business_value`,
-`technical_certainty`, `depends_on`, and claim fields — classify into three groups from
+`technical_certainty`, `depends_on`, `serves` (the Outcome slug, or null), and claim fields — classify into three groups from
 that, no file reading required:
 
 - **Prioritised** — `prefix` is not null. Sort ascending by `prefix` to produce the
@@ -67,9 +77,13 @@ Combine the prioritised specs and the unprioritised ready specs into a single
 candidate list. Bugs arrive **unscored** (`/ag-shape` skips the two axes for
 them) — rank them on how much the defect actually hurts: a wrong-answer or
 data-integrity bug outranks most features, a cosmetic one usually does not.
-Rank the rest by **Business Value × Technical Certainty** (descending),
-breaking ties alphabetically by slug. Then enforce dependency ordering: if spec A
-declares `depends_on: [B]`, move A to a position *after* B in the list.
+Rank the rest by the **rank of the Outcome each serves** first (specs serving the
+rank-1 Outcome before those serving rank-2, and so on), then within an Outcome by
+**Business Value × Technical Certainty** (descending), ties alphabetically by slug.
+Specs serving no Outcome form a final bucket in BV × TC order — promote one above
+the buckets only if its BV is high and you say why. Then enforce dependency
+ordering: if spec A declares `depends_on: [B]`, move A to a position *after* B in
+the list, even across Outcome buckets.
 
 Present this proposal as a clear numbered list. For each entry note the BV × TC
 score and any dependencies. Use `AskUserQuestion` to ask the user whether they want

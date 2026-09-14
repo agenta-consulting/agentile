@@ -7,6 +7,7 @@ This project runs the **Agentile loop** (via Agentile for Claude): capture → s
 The backlog lives under one configurable **Agentile directory** (`docs/agentile/` by default, set in `.agentile/config.md`); the layout under it is fixed:
 
 - **Brief** (`docs/agentile/brief.md`) — the living project context: who it's for, the prioritised outcomes, constraints, non-goals. Business Value in triage is scored against it. Imported below so it loads every session.
+- **Outcomes** (`docs/agentile/outcomes/`) — the falsifiable bets above specs: a claim, a measure, a stop rule, ranked and flat. A spec may `serve` one; none is required. Create with `/ag-outcome`, propose the work for one with `/ag-decompose <slug>`, see the whole picture with `/ag-map`.
 - **Inbox** (`docs/agentile/inbox.md`) — one-line stubs awaiting shaping. Capture freely with `/ag-capture`.
 - **Specs** (`docs/agentile/specs/`) — shaped, Ready-to-build specs (`ready` / `in_progress`). A spec is a flat `NNNN-<slug>.md` until planning, then a directory `NNNN-<slug>/` holding `SPEC.md`, `plan.md`, and supporting files. The Definition of Ready is `.agentile/shape.md`.
   - `specs/done/` — shipped specs.
@@ -18,6 +19,7 @@ The backlog lives under one configurable **Agentile directory** (`docs/agentile/
 ### How to work
 
 - An idea arrives → `/ag-capture <one line>`. Never lose an idea for lack of a place to put it.
+- Thinking above the spec level → `/ag-outcome` to state a bet, `/ag-decompose <slug>` to turn it into stubs, `/ag-map` to see what serves what. Outcomes are ranked by `/ag-prioritise` before specs are.
 - Ready to develop something → `/ag-shape` to interview it into a spec, then `/ag-plan` before any code — it writes `plan.md` beside the spec; review or amend that file, it is the approved plan. Shaping asks about `depends_on` by default — list any specs (by slug) that must ship before this one can be claimed.
 - Order the ready queue with `/ag-prioritise` — an interactive session that proposes a rank (Business Value × Technical Certainty, dependencies respected), you adjust it, and it renames ready specs to `specs/NNNN-<slug>.md`. An unprefixed spec is not claimable. Shipped specs move to `specs/done/`. Pull the top item with `/ag-next` — safe for concurrent loops; the claim is atomic and session-stamped so it can be resumed with `claude --resume <id>`. If the queue is blocked on dependencies or has no prefixed specs, `/ag-next` tells you which. Check what's in flight with `/ag-wip`.
 - Drop work that won't ship with `/ag-abandon <slug>` — it records why, walks the dependency chain, and offers to cascade-abandon (or unblock) anything that depended on it. Abandoned specs move to `specs/abandoned/`.

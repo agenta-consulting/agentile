@@ -7,6 +7,7 @@ This file tailors Agentile for **this project**. The methodology (the skills, th
 Where the loop keeps its backlog. Change **Agentile directory** if you want it somewhere other than `docs/agentile/` — the internal layout under it is fixed:
 
 - `inbox.md` — captured stubs awaiting shaping
+- `outcomes/` — the Outcomes (falsifiable bets) specs may serve; flat, status in frontmatter
 - `specs/` — active specs (`ready` / `in_progress`)
 - `specs/done/` — shipped specs
 - `specs/abandoned/` — abandoned specs

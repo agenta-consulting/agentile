@@ -16,6 +16,9 @@ yardstick for "high business value".>
 
 ## Prioritised outcomes
 
+<Once Outcomes exist, this list is regenerated from them by `ag-store brief_sync`
+(rank order, open only) — edit them with `/ag-outcome`, not here. Until then:>
+
 1. <outcome>
 2. <outcome>
 3. <outcome>

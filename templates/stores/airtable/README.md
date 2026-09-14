@@ -68,6 +68,16 @@ meaning as `local`'s `claimed_by`); `Claimed By (Member)`, `Captured By`,
 and `Shaped By` are linked records into `Members` — attribution, not
 permissions.
 
+The `Outcomes` table (since 0.12.0, `docs/agentile-outcomes.md`) holds the
+layer above specs: `Title` (primary), `Slug`, `Status` (`open`/`achieved`/
+`abandoned`), `Rank`, `Claim`, `Measure`, `Stop Rule`, `Notes`, `Created`,
+`Achieved At`, `Abandoned At`, `Abandoned Reason`, and a `Created By` link to
+`Members`. `Specs` and `Inbox` each gain a single-link `Serves Outcome`;
+`Specs` also gains `Tags`, a multiple-select written with `typecast: true`
+so a new tag creates its option without a schema call. Nothing derived
+(progress, counts) is stored on an Outcome — `ag-store map` computes it.
+`ag-store provision` backfills all of this on an existing base.
+
 ## Changing the schema
 
 A base is provisioned once, so a field added to

@@ -35,6 +35,14 @@ If the target is `in_progress`, note who holds it (`claimed_by`) — abandoning 
 that claim. If it is owned by another active session, surface that so the user is aware
 before proceeding.
 
+If the target is an **Outcome** (its slug appears in `ag-store outcome_list ...` and not in
+`spec_list`), the cascade candidates are the specs serving it — every `ready`/`in_progress`
+slug under that Outcome in `ag-store map ...` — plus *their* dependents from Step 3. Run
+Steps 4–6 for each of those specs as usual, then close the Outcome itself with
+`ag-store outcome_abandon <slug> --reason "<reason>" --dir "<dir>" --store "<store>"` and
+`ag-store brief_sync ...`. Shipped specs are untouched — the work happened; the bet is what
+is being closed.
+
 ## Step 3 — Find the dependent chain
 
 ```
