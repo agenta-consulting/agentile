@@ -163,7 +163,7 @@ result =
   when "inbox_list"
     Local.inbox_list(agentile_dir).map { |s| s.reject { |k, _| k == :line_index } }
   when "inbox_add"
-    Local.inbox_add(agentile_dir, positional[0], flags["by"], flags["title"], flags["type"])
+    Local.inbox_add(agentile_dir, positional[0], flags["by"], flags["title"], flags["type"], flags["serves"])
   when "inbox_drop"
     Local.inbox_drop(agentile_dir, positional[0])
   when "spec_list"
@@ -207,6 +207,8 @@ result =
     Local.outcome_achieve(agentile_dir, positional[0])
   when "outcome_abandon"
     Local.outcome_abandon(agentile_dir, positional[0], reason: flags["reason"].to_s)
+  when "map"
+    Local.map(agentile_dir)
   when "whoami"
     Local.whoami
   when "doctor"

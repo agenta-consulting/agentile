@@ -205,7 +205,7 @@ module Local
       m = STUB_RE.match(line)
       next unless m
 
-      stubs << { id: (stubs.size + 1).to_s, line_index: idx, text: m[1], captured_at: m[2], captured_by: nil }
+      stubs << { id: (stubs.size + 1).to_s, line_index: idx, text: m[1], captured_at: m[2], captured_by: nil, serves: nil }
     end
     stubs
   end
@@ -218,8 +218,10 @@ module Local
   # every inbox.md already in the wild. It matters in Airtable, where the
   # primary field is the record's name everywhere it is referenced. type is
   # dropped too — /ag-shape re-derives it from the stub text when the store
-  # cannot carry it.
-  def inbox_add(agentile_dir, text, _captured_by = nil, _title = nil, _type = nil)
+  # cannot carry it. serves (the Outcome a stub was decomposed from) is
+  # dropped for the same reason — a one-line inbox has nowhere to keep it,
+  # and /ag-shape asks.
+  def inbox_add(agentile_dir, text, _captured_by = nil, _title = nil, _type = nil, _serves = nil)
     path = inbox_path(agentile_dir)
     abort "ag-store: no such inbox: #{path} — run /ag-init first" unless File.exist?(path)
 
@@ -273,6 +275,8 @@ module Local
           claimed_at: s[:fm]["claimed_at"],
           label: s[:fm]["label"],
           shipped_at: s[:fm]["shipped_at"],
+          serves: (s[:fm]["serves"].to_s.empty? ? nil : s[:fm]["serves"].to_s),
+          tags: Array(s[:fm]["tags"]).map(&:to_s),
         }
       end
   end
@@ -511,6 +515,62 @@ module Local
       "abandoned_reason" => reason,
     })
     true
+  end
+
+  # ---- map (docs/agentile-outcomes.md §4.1) ----
+  # The one computed view. build_map is pure and shared with the airtable
+  # adapter; each adapter only has to produce the flat spec entries.
+
+  MAP_STATES = %w[ready in_progress shipped abandoned].freeze
+
+  def empty_buckets
+    MAP_STATES.to_h { |st| [st, []] }
+  end
+
+  # outcomes: outcome_list output. specs: [{slug:, status:, serves:, tags:, blocked:}].
+  def build_map(outcomes, specs)
+    known = outcomes.map { |o| o[:slug].to_s }
+    by_outcome = Hash.new { |h, k| h[k] = empty_buckets }
+    unlinked = empty_buckets
+    blocked = Hash.new { |h, k| h[k] = [] }
+    orphaned = Hash.new { |h, k| h[k] = [] }
+    tags = Hash.new { |h, k| h[k] = [] }
+
+    specs.sort_by { |s| s[:slug].to_s }.each do |s|
+      st = s[:status].to_s
+      next unless MAP_STATES.include?(st)
+
+      serves = s[:serves].to_s
+      if serves.empty?
+        unlinked[st] << s[:slug]
+      elsif known.include?(serves)
+        by_outcome[serves][st] << s[:slug]
+      else
+        orphaned[serves] << s[:slug]
+      end
+      blocked[serves] << s[:slug] if s[:blocked]
+      Array(s[:tags]).each { |t| tags[t.to_s] << s[:slug] }
+    end
+
+    {
+      outcomes: outcomes.map { |o| o.merge(specs: by_outcome[o[:slug].to_s], blocked: blocked[o[:slug].to_s]) },
+      unlinked: unlinked.merge(blocked: blocked[""]),
+      orphaned: orphaned.sort.to_h,
+      tags: tags.sort.to_h,
+    }
+  end
+
+  def map(agentile_dir)
+    specs_dir = File.join(agentile_dir, "specs")
+    shipped = shipped_map(specs_dir)
+    all = specs_in(specs_dir) + specs_in(File.join(specs_dir, "done")) + specs_in(File.join(specs_dir, "abandoned"))
+    entries = all.map do |s|
+      {
+        slug: s[:slug], status: s[:fm]["status"], serves: s[:fm]["serves"], tags: Array(s[:fm]["tags"]),
+        blocked: s[:fm]["status"] == "ready" && !Array(s[:fm]["depends_on"]).all? { |d| shipped[d.to_s] },
+      }
+    end
+    build_map(outcome_list(agentile_dir), entries)
   end
 
   # ---- whoami / doctor ----

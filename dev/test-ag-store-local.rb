@@ -241,4 +241,41 @@ Dir.mktmpdir do |root|
   raise "outcome_write" unless frontmatter(File.join(dir, "outcomes", "b.md"))["title"] == "Renamed"
 end
 
+# 16. spec_list exposes serves + tags; inbox_add accepts --serves (dropped by local)
+Dir.mktmpdir do |root|
+  dir = scaffold(root)
+  specs_dir = File.join(dir, "specs")
+  write_spec(specs_dir, "0001-sso.md", extra: { "serves" => "identity", "tags" => %w[auth testing] })
+  write_spec(specs_dir, "0002-free.md")
+  listed = store("spec_list", dir: dir)
+  sso = listed.find { |s| s["slug"] == "sso" }
+  raise "serves: #{sso.inspect}" unless sso["serves"] == "identity"
+  raise "tags: #{sso.inspect}" unless sso["tags"] == %w[auth testing]
+  free = listed.find { |s| s["slug"] == "free" }
+  raise "no serves: #{free.inspect}" unless free["serves"].nil? && free["tags"] == []
+
+  store("inbox_add", "Add SCIM", "--serves", "identity", dir: dir)
+  raise "inbox_add --serves accepted" unless store("inbox_list", dir: dir).size == 1
+end
+
+# 17. map groups specs by the outcome they serve, buckets by status, flags blocked + orphaned, indexes tags
+Dir.mktmpdir do |root|
+  dir = scaffold(root)
+  specs_dir = File.join(dir, "specs")
+  store("outcome_create", "identity", dir: dir, stdin: OUTCOME_MD)
+  write_spec(specs_dir, "0001-oidc.md", extra: { "serves" => "identity", "tags" => %w[auth] })
+  write_spec(specs_dir, "0002-scim.md", extra: { "serves" => "identity", "depends_on" => %w[oidc], "tags" => %w[auth lifecycle] })
+  write_spec(specs_dir, "0003-free.md")
+  write_spec(specs_dir, "0004-lost.md", extra: { "serves" => "nonexistent" })
+  write_spec(File.join(specs_dir, "done"), "0000-old.md", status: "shipped", extra: { "serves" => "identity" })
+
+  m = store("map", dir: dir)
+  o = m["outcomes"].find { |x| x["slug"] == "identity" }
+  raise "map outcome specs: #{o.inspect}" unless o["specs"]["ready"] == %w[oidc scim] && o["specs"]["shipped"] == %w[old]
+  raise "map blocked: #{o.inspect}" unless o["blocked"] == %w[scim]
+  raise "map unlinked: #{m['unlinked'].inspect}" unless m["unlinked"]["ready"] == %w[free]
+  raise "map orphaned: #{m['orphaned'].inspect}" unless m["orphaned"] == { "nonexistent" => %w[lost] }
+  raise "map tags: #{m['tags'].inspect}" unless m["tags"] == { "auth" => %w[oidc scim], "lifecycle" => %w[scim] }
+end
+
 puts "ALL PASS"
