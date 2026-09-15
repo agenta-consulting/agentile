@@ -8,7 +8,7 @@ human_checkpoint: true   # set false ONLY for a deploy you trust unattended
 stops on the first failure. Then it runs the `deploy` command from
 `.agentile/gates.json`.
 
-Deploy is not ship. `/ag-loop` ships specs one at a time (merge to trunk,
+Deploy is not ship. `/ag-build` ships specs one at a time (merge to trunk,
 `shipped_at` stamped); this stage batches everything shipped since the last
 recorded deploy and puts it somewhere a user can reach. So the checks here are
 the **slow, evidentiary** ones — the kind you would never run on every merge,

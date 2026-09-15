@@ -166,10 +166,11 @@ question.
 1. **Ask one question: how much should the loop pause for a human?**
    (`AskUserQuestion`): *no human gates at all* / *only before ship* /
    *baseline* (pause at plan for foreground and spike specs, and before ship).
-   Write the answer into `.agentile/loop.md` (`pause_at_plan`,
-   `pause_before_ship`; with no gates, raise `verify_retry_limit` to 2 and add
-   a prose section saying what replaces the human read). This is the one
-   customisation every project needs decided.
+   Write the answer into the stage playbooks (`human_checkpoint` on
+   `.agentile/plan.md` and on `.agentile/ship.md`; with no gates, raise
+   `retry_limit` to 2 in `.agentile/verify.md` and add a prose section saying
+   what replaces the human read). This is the one customisation every project
+   needs decided.
 2. **Derive the playbooks** from the answers so far and write them directly:
    - `build.md` — the conventions the stack implies (where logic versus UI
      lives, test-per-module, vendoring/dependency rules, how to run the gates,

@@ -125,7 +125,7 @@ Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/age
 Copy from `templates/` into the project, preserving structure:
 
 - `<dir>/inbox.md` (from `templates/inbox.md`) — **Solo only.** In Team mode the Inbox lives in the store (Step 2b already provisioned it) — do not create this file at all; it would never be read.
-- `<dir>/runs.md` (from `templates/agentile/runs.md`) — the durable run log `/ag-loop` appends to. Created regardless of store mode — this is Agentile's own operational log, unrelated to the backlog store.
+- `<dir>/runs.md` (from `templates/agentile/runs.md`) — the durable run log `/ag-build` appends to. Created regardless of store mode — this is Agentile's own operational log, unrelated to the backlog store.
 - `<dir>/brief.md` (from `templates/agentile/brief-template.md`) — only if it does not exist; populated by the interview in Step 2a above.
 - `.agentile/config.md`
 - `.agentile/store.md` — **skip this copy if Step 2b already wrote a real one** (Team mode); for Solo, copy the template as-is (`store: local`, matching today's behaviour with nothing further to configure).
@@ -135,7 +135,8 @@ Copy from `templates/` into the project, preserving structure:
 - `.agentile/verify.md`
 - `.agentile/prioritise.md`
 - `.agentile/next.md`
-- `.agentile/loop.md`
+- `.agentile/plan.md`
+- `.agentile/ship.md`
 - `.agentile/gates.json` — then fill in the commands and protected branches gathered in Step 2.
 - `.agentile/spec-template.md`
 - `.agentile/outcome-template.md`
@@ -183,4 +184,4 @@ silently amplified.
 
 Summarise what was created versus skipped, then point the user at the next move:
 
-> Agentile is initialised (backlog store: **<Solo/local — or — Team/airtable>**). Capture ideas with `/ag-capture`, review them with `/ag-inbox`, and shape one into a spec with `/ag-shape`. Tailor what "Ready" means by editing `.agentile/shape.md`. To configure how any loop stage runs in this project, use `/ag-customise <stage>`; see `.agentile/playbooks.md` for the full directive contract. Switch the backlog store later with `/ag-customise store`. Run the loop with `/ag-loop` (drains the backlog); `/loop /ag-loop` to also watch for new work.
+> Agentile is initialised (backlog store: **<Solo/local — or — Team/airtable>**). Capture ideas with `/ag-capture`, review them with `/ag-inbox`, and shape one into a spec with `/ag-shape`. Tailor what "Ready" means by editing `.agentile/shape.md`. To configure how any loop stage runs in this project, use `/ag-customise <stage>`; see `.agentile/playbooks.md` for the full directive contract. Switch the backlog store later with `/ag-customise store`. Build the next ready spec with `/ag-build` (or a named one with `/ag-build <slug>`); for an unattended machine, see the Agentile Factory (`docs/agentile-factory.md`) or the `bin/ag-run` fallback.
