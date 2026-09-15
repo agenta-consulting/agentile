@@ -1,0 +1,126 @@
+---
+name: ag-build
+description: Take one Agentile spec from claim to shipped — claim the top prioritised ready spec (or a named one), plan it, implement it, verify it, ship it, and stop. Every pause is a checkpoint file in the spec's directory, so a factory worker and a person at a terminal run the same skill. Trigger phrases include "/ag-build", "build the next spec", "build <slug>", "work the next item".
+allowed-tools: AskUserQuestion, Bash, Read, Edit, Skill, Agent
+arguments: [slug]
+---
+
+# ag-build
+
+Take **one** spec through plan → implement → verify → ship, then stop. There is no iteration here: several specs at once means several sessions or several factory workers, each running this skill on its own spec.
+
+**Stay thin.** This skill is an orchestrator, not a reader. Never `Read` a spec body, `plan.md`, a diff, or gate output yourself: `/ag-plan`, `ag-builder` and `ag-reviewer` read those in their own context and hand back a one-line verdict plus a terse summary. If you are about to `Read` a spec or plan file "just to check", stop — that check belongs in the subagent.
+
+## Identity
+
+Resolve the claim identity once: `${AGENTILE_RUNNER_ID}` if set, otherwise `${CLAUDE_SESSION_ID}`. A factory worker arrives with `AGENTILE_RUNNER_ID=factory/<project>/<NNNN-slug>` and a claim already stamped with it; an interactive session claims for itself under its session id.
+
+## Run log
+
+Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`); the run log is `<dir>/runs.md` (create it from `templates/agentile/runs.md` if missing). Append one line per event, format `- <ISO8601 from `date -u +%Y-%m-%dT%H:%M:%SZ`> runner=<id> event=<started|claimed|shipped|paused|failed|idle> spec=<slug|-> detail=<free text>`.
+
+## Policy
+
+Read the frontmatter of these playbooks (absent file or key means the default):
+
+- `.agentile/plan.md` — `human_checkpoint`: `true` | `false` | `route` (default `route`).
+- `.agentile/build.md` — `delegate_to`, `human_checkpoint` (default `false`).
+- `.agentile/verify.md` — `human_checkpoint` (default `false`), `retry_limit` (default `1`), `stop_on_gate_failure` (default `true`).
+- `.agentile/ship.md` — `human_checkpoint` (default `true`).
+
+If a project still has the retired `.agentile/loop.md`, ignore it and say once that `/ag-version` explains where its keys went.
+
+## Tools
+
+`ag-store` and `ag-checkpoint` ship in this plugin's `bin/`, on `PATH` while the plugin is enabled (fallback `"${CLAUDE_PLUGIN_ROOT}/bin/<tool>"`). Every `ag-store` call takes `--dir "<dir>" --store "<store>"`, with `store:` from `.agentile/store.md` (default `local`).
+
+The **spec directory** for checkpoints is the directory holding `plan.md`: for the `local` store the directory of the claimed `SPEC.md`; for `airtable`, `<dir>/specs/<slug>/`. It exists once `/ag-plan` has run (it promotes a flat spec); every pause in this skill happens after that.
+
+## Steps
+
+### Step 0 — Resume check
+
+Run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"`. If an entry's `claimed_by` equals this identity, that is your spec: skip Step 1. Then run `ag-checkpoint list "<spec-dir>"`:
+
+- If the newest checkpoint is `answered`, continue from the step after the one that wrote it (a `plan_review` answer resumes at Step 3; `build_checkpoint` or `build_blocked` at Step 4; `gate_failure`, `verify_checkpoint` or `question` at the step that asked; `ship_approval` at Step 5). Read its `answer` field from the `list` output — that is the human's decision; act on it. For a `question`, pass the answer to the subagent you re-dispatch.
+- If the newest checkpoint is still `open`, do not re-ask: report that it is waiting, and end with `AG_BUILD: paused <slug> <reason> <path>`.
+
+Append `event=started` on a fresh (non-resumed) invocation.
+
+### Step 1 — Claim
+
+Read `wip_limit` from `.agentile/prioritise.md` (default unlimited). Run:
+
+```
+ag-store claim "<identity>" "" "<wip_limit>" [--spec "<slug from $ARGUMENTS>"] --dir "<dir>" --store "<store>"
+```
+
+- A spec identifier → append `event=claimed`, continue.
+- `NONE`, `WIP_FULL`, `BLOCKED`, `UNPRIORITISED` → append `event=idle detail=<code>`, explain in one line (`/ag-prioritise` for `UNPRIORITISED` or `BLOCKED`, `/ag-wip` for `WIP_FULL`, `/ag-shape` for `NONE`), and end with `AG_BUILD: idle <code>`.
+- `NOT_FOUND` or `TAKEN` (targeted claim only) → append `event=failed detail=<code>`, say which slug, and end with `AG_BUILD: failed <slug> <code>`.
+
+### Step 2 — Plan
+
+Invoke `/ag-plan <spec identifier>`. Invoked from `/ag-build`, it dispatches the `ag-planner` subagent, writes `plan.md` into the spec directory, and returns a short confirmation.
+
+Pause for plan review when `plan.md`'s `human_checkpoint` is `true`, or is `route` and the spec's `route` (from the `spec_list` entry) is `foreground` or `spike`. To pause: write the checkpoint with the plan summary `/ag-plan` returned as the ask,
+
+```
+printf '%s' "<summary>. Review or amend plan.md in place, then answer this checkpoint." | ag-checkpoint open "<spec-dir>" plan_review --session "${CLAUDE_SESSION_ID}"
+```
+
+append `event=paused detail=plan_review`, and end the turn: one paragraph, the line "Plan written to `<spec-dir>/plan.md` — review or amend it, then reply 'approved'.", and the status line `AG_BUILD: paused <slug> plan_review <checkpoint-path>`. An amended `plan.md` is the approved plan.
+
+### Step 3 — Implement
+
+Read `.agentile/build.md`'s frontmatter. If `delegate_to: <skill>` is set, invoke that skill; otherwise dispatch the `ag-builder` agent with the spec identifier, its `plan.md` path, the build playbook path, and, when resuming from an answered `question` checkpoint, the answer text. The builder's first line is one of:
+
+- `BUILD: done` → continue.
+- `BUILD: blocked` → checkpoint `build_blocked` with the builder's reason as the ask; `event=paused detail=build_blocked`; end with `AG_BUILD: paused <slug> build_blocked <path>`.
+- `BUILD: question` → checkpoint `question` with the builder's question block (question, options, recommendation) as the ask; `event=paused detail=question`; end with `AG_BUILD: paused <slug> question <path>`.
+
+If `build.md` sets `human_checkpoint: true`: checkpoint `build_checkpoint` with the builder's summary; `event=paused detail=build_checkpoint`; end with the status line.
+
+### Step 4 — Verify
+
+Dispatch the `ag-reviewer` agent. Its first line is one of:
+
+- `VERDICT: pass` → continue.
+- `VERDICT: question` → checkpoint `question` exactly as in Step 3.
+- `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` with the findings as the ask, `event=paused detail=gate_failure`, and end with `AG_BUILD: paused <slug> gate_failure <path>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, `event=failed detail=gate_failure` and end with `AG_BUILD: failed <slug> gate_failure`.
+
+If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` with the reviewer's findings summary; `event=paused detail=verify_checkpoint`; end with the status line.
+
+### Step 5 — Ship approval
+
+If `ship.md`'s `human_checkpoint` is `true` (default): checkpoint `ship_approval` whose ask has three lines — the spec slug and title, what was built (one sentence from the builder's report), and the verify outcome (one sentence from the reviewer's) — then `event=paused detail=ship_approval`, end the turn with those three lines, "Approve to ship `<slug>`?", and `AG_BUILD: paused <slug> ship_approval <path>`.
+
+An answered `ship_approval` whose answer says anything other than approval (a note, "send back") is a bounce: go to Step 3 with the answer as the builder's instruction.
+
+### Step 6 — Ship
+
+1. Merge per `.agentile/ship.md`'s prose (or repository convention), never onto a `protected_branches` entry from a builder branch without the merge step itself.
+2. `ag-store ship "<id>" --dir "<dir>" --store "<store>"` — sets `status: shipped`, stamps `shipped_at`, keeps the claim fields, moves the spec to `specs/done/` (local).
+3. Append `event=shipped` and commit `runs.md` (and, for the local store, the spec move and its `checkpoints/`) with the ship.
+4. End with `AG_BUILD: shipped <slug>`.
+
+## Exit contract
+
+The **very last line** of every turn this skill ends is exactly one of:
+
+```
+AG_BUILD: shipped <slug>
+AG_BUILD: paused <slug> <reason> <checkpoint-path>
+AG_BUILD: failed <slug-or-'-'> <reason>
+AG_BUILD: idle <NONE|WIP_FULL|BLOCKED|UNPRIORITISED>
+```
+
+`<reason>` is the checkpoint reason or the failure code. A plain single line, no markdown, so the factory daemon and `bin/ag-run` can match it.
+
+## Questions instead of guesses
+
+A worker cannot prompt. When the builder or reviewer needs a human decision the spec, plan, `CLAUDE.md` and ADRs cannot settle, it returns `question` and this skill writes the checkpoint. Prefer a recorded assumption in `plan.md` when the stakes are low; ask once, with options and a recommendation, when they are not. In an interactive session you may also relay the question with `AskUserQuestion` — but still write the checkpoint first, so the item shows on the factory console.
+
+## Interactive use beside the factory
+
+`/ag-build <slug>` claims a specific spec and leaves the top of the queue to the workers. The builder already works in its own worktree; the ship step merges to trunk in the main checkout, which is where the backlog lives — never run `/ag-build` from inside a builder's worktree.
