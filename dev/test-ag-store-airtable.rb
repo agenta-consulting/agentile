@@ -300,4 +300,24 @@ wc = transport.calls.last
 raise "spec_write tags from string: #{wc[:body].inspect}" unless wc[:body]["fields"]["Tags"] == %w[testing ui] && wc[:body]["typecast"] == true
 raise "spec_write depends_on from string: #{wc[:body].inspect}" unless wc[:body]["fields"]["Depends On"] == ["recD"]
 
+# 14. blank frontmatter values: date/number fields are dropped on create and sent as null on write (Airtable rejects "")
+bmd = md.sub("created: 2026-06-10\n", "created: 2026-06-10\nrank:\nclaimed_by:\nlabel:\nclaimed_at:\n")
+transport = FakeTransport.new
+transport.push(200, records_page([]))
+transport.push(200, { "records" => [{ "id" => "recB" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_create("blank", bmd)
+bf = transport.calls.last[:body]["records"][0]["fields"]
+raise "blank date/number sent on create: #{bf.inspect}" if bf.key?("Claimed At") || bf.key?("Rank")
+raise "blank text dropped on create: #{bf.inspect}" unless bf["Label"] == "" && bf["Claimed By (Session)"] == ""
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recB", { "Slug" => "blank", "Status" => "ready" })]))
+transport.push(200, {})
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_write("blank", { claimed_at: "", shipped_at: "" })
+wf = transport.calls.last[:body]["fields"]
+raise "blank date on write should be null: #{wf.inspect}" unless wf.key?("Claimed At") && wf["Claimed At"].nil? && wf["Shipped At"].nil?
+
 puts "ALL PASS"

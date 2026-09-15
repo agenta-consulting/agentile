@@ -62,6 +62,11 @@ module Airtable
                           captured_by: "Captured By", shaped_by: "Shaped By" }.freeze
     INBOX_FIELDS = { title: "Title", text: "Text", type: "Type", captured_at: "Captured At",
                      status: "Status" }.freeze
+    # A blank frontmatter value ("claimed_at:" with nothing after it) arrives
+    # as "". Airtable accepts that for text but rejects it for date, datetime
+    # and number fields — the "blank frontmatter breaks spec_create" bug. Send
+    # null instead (which clears the field on write) and drop it on create.
+    NON_TEXT_SPEC_FIELDS = ["Rank", "Created", "Claimed At", "Shipped At", "Abandoned At"].freeze
     OUTCOMES_FIELDS = {
       title: "Title", slug: "Slug", status: "Status", rank: "Rank", claim: "Claim", measure: "Measure",
       stop_rule: "Stop Rule", notes: "Notes", created: "Created", achieved_at: "Achieved At",
@@ -253,6 +258,7 @@ module Airtable
     def build_fields(v)
       fields = {}
       SPECS_FIELDS.each { |canon, name| fields[name] = v[canon] if v.key?(canon) }
+      NON_TEXT_SPEC_FIELDS.each { |name| fields[name] = nil if fields.key?(name) && fields[name].to_s.empty? }
       if v.key?(:depends_on)
         fields["Depends On"] = Schema.list_value(v[:depends_on]).filter_map { |slug| spec_by_slug(slug)&.dig("id") }
       end
@@ -271,7 +277,7 @@ module Airtable
       v = Schema.parse_spec_markdown(markdown)
       v[:slug] = slug
       v[:status] ||= "ready"
-      fields = build_fields(v)
+      fields = build_fields(v).reject { |_, val| val.nil? } # a null on create is an error; absent is fine
       @client.create_records(@base_id, @specs_table, [fields], typecast: fields.key?("Tags"))
       invalidate_specs_cache!
       slug
