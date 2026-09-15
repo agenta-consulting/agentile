@@ -227,7 +227,7 @@ The console runs on the factory machine and is reached over the LAN or Tailscale
 - No `ANTHROPIC_API_KEY` in the daemon's environment, ever; the daemon refuses to start if one is set.
 - Never `--bare`.
 - Every worker is confined to its worktree; trunk is touched only by the ship step under `bin/ag-lock`, and `gates.json` protected branches still apply.
-- `--permission-prompts none`: an unauthorised action is denied, not waited on. Default posture is `acceptEdits` plus an allowlist built from the project's `gates.json` commands and `git`. `bypassPermissions` is a per-project opt-in and the Projects page labels it.
+- `--permission-prompts none`: an unauthorised action is denied, not waited on. Default posture is `acceptEdits` plus an allowlist built from the project's `gates.json` commands, `git`, and the plugin's own tools (`ag-store`, `ag-checkpoint`, `ag-lock`). `bypassPermissions` is a per-project opt-in and the Projects page labels it.
 - `--max-turns` and a wall-clock limit end runaway workers as `failed timeout` with the worktree intact.
 - Review credentials come from the environment through the console; the model never sees or writes them.
 

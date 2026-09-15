@@ -748,7 +748,7 @@ Take **one** spec through plan → implement → verify → ship, then stop. The
 
 ## Identity
 
-Resolve the claim identity once: `${AGENTILE_RUNNER_ID}` if set, otherwise `${CLAUDE_SESSION_ID}`. A factory worker arrives with `AGENTILE_RUNNER_ID=factory/<project>/<NNNN-slug>` and a claim already stamped with it; an interactive session claims for itself under its session id.
+Resolve the claim identity once: `${AGENTILE_RUNNER_ID}` if set, otherwise `${CLAUDE_SESSION_ID}`. A factory worker arrives with `AGENTILE_RUNNER_ID=factory/<project>/<NNNN-slug>` and a claim already stamped with it; an interactive session claims for itself under its session id. A fresh process meant to resume a paused item must carry the same `AGENTILE_RUNNER_ID` the claim was made under; a session resumes itself with `claude --resume <session-id>`.
 
 ## Run log
 
@@ -769,6 +769,8 @@ If a project still has the retired `.agentile/loop.md`, ignore it and say once t
 
 `ag-store` and `ag-checkpoint` ship in this plugin's `bin/`, on `PATH` while the plugin is enabled (fallback `"${CLAUDE_PLUGIN_ROOT}/bin/<tool>"`). Every `ag-store` call takes `--dir "<dir>" --store "<store>"`, with `store:` from `.agentile/store.md` (default `local`).
 
+A headless run must pre-authorise these tools and the gates: `--permission-prompts none` denies anything not on the allowlist rather than asking, so pass e.g. `--allowedTools "Bash(ag-store:*)" "Bash(ag-checkpoint:*)" "Bash(git:*)"` plus each command in `.agentile/gates.json`.
+
 The **spec directory** for checkpoints is the directory holding `plan.md`: for the `local` store the directory of the claimed `SPEC.md`; for `airtable`, `<dir>/specs/<slug>/`. It exists once `/ag-plan` has run (it promotes a flat spec); every pause in this skill happens after that.
 
 ## Steps
@@ -777,7 +779,14 @@ The **spec directory** for checkpoints is the directory holding `plan.md`: for t
 
 Run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"`. If an entry's `claimed_by` equals this identity, that is your spec: skip Step 1. Then run `ag-checkpoint list "<spec-dir>"`:
 
-- If the newest checkpoint is `answered`, continue from the step after the one that wrote it (a `plan_review` answer resumes at Step 3; `build_checkpoint` or `build_blocked` at Step 4; `gate_failure`, `verify_checkpoint` or `question` at the step that asked; `ship_approval` at Step 5). Read its `answer` field from the `list` output — that is the human's decision; act on it. For a `question`, pass the answer to the subagent you re-dispatch.
+- If the newest checkpoint is `answered`, read its `answer` field from the `list` output — that is the human's decision — and resume by the checkpoint's reason, which is the only rule for where to go:
+  - `plan_review` → Step 3.
+  - `build_blocked` → Step 3, re-dispatching the builder with the answer as its instruction.
+  - `build_checkpoint` → Step 3, re-dispatching the builder with the answer as its instruction; if the answer is a bare approval, go to Step 4 instead of rebuilding.
+  - `question` → the step that asked (Step 3 if the builder asked, Step 4 if the reviewer asked), passing the answer to the agent you re-dispatch.
+  - `gate_failure` → Step 3 with the answer as the builder's instruction — unless the answer says to release or abandon the spec, in which case run `ag-store release "<id>" --dir "<dir>" --store "<store>"` or point at `/ag-abandon <slug>`, append `event=failed detail=gate_failure`, and end with `AG_BUILD: failed <slug> gate_failure`.
+  - `verify_checkpoint` → Step 5 on approval; otherwise Step 3 with the answer as the builder's instruction.
+  - `ship_approval` → Step 6 on approval; otherwise Step 3 with the answer as the builder's instruction.
 - If the newest checkpoint is still `open`, do not re-ask: report that it is waiting, and end with `AG_BUILD: paused <slug> <reason> <path>`.
 
 Append `event=started` on a fresh (non-resumed) invocation.
@@ -814,7 +823,7 @@ Read `.agentile/build.md`'s frontmatter. If `delegate_to: <skill>` is set, invok
 - `BUILD: blocked` → checkpoint `build_blocked` with the builder's reason as the ask; `event=paused detail=build_blocked`; end with `AG_BUILD: paused <slug> build_blocked <path>`.
 - `BUILD: question` → checkpoint `question` with the builder's question block (question, options, recommendation) as the ask; `event=paused detail=question`; end with `AG_BUILD: paused <slug> question <path>`.
 
-If `build.md` sets `human_checkpoint: true`: checkpoint `build_checkpoint` with the builder's summary; `event=paused detail=build_checkpoint`; end with the status line.
+If `build.md` sets `human_checkpoint: true`: checkpoint `build_checkpoint` with the builder's summary; `event=paused detail=build_checkpoint`; end with `AG_BUILD: paused <slug> build_checkpoint <path>`.
 
 ### Step 4 — Verify
 
@@ -824,7 +833,7 @@ Dispatch the `ag-reviewer` agent. Its first line is one of:
 - `VERDICT: question` → checkpoint `question` exactly as in Step 3.
 - `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` with the findings as the ask, `event=paused detail=gate_failure`, and end with `AG_BUILD: paused <slug> gate_failure <path>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, `event=failed detail=gate_failure` and end with `AG_BUILD: failed <slug> gate_failure`.
 
-If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` with the reviewer's findings summary; `event=paused detail=verify_checkpoint`; end with the status line.
+If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` with the reviewer's findings summary; `event=paused detail=verify_checkpoint`; end with `AG_BUILD: paused <slug> verify_checkpoint <path>`.
 
 ### Step 5 — Ship approval
 
@@ -895,7 +904,7 @@ cd "$(mktemp -d)" && git init -q . && mkdir -p .agentile docs/agentile/specs/don
 cp ~/projects/agentile/templates/agentile/{config.md,plan.md,ship.md,verify.md,build.md,prioritise.md,gates.json,runs.md} .agentile/ 2>/dev/null; mv .agentile/runs.md docs/agentile/
 printf -- '---\ntitle: Hello\nslug: hello\nstatus: ready\nroute: foreground\ndepends_on: []\ncreated: 2026-09-16\nclaimed_by:\nlabel:\nclaimed_at:\n---\n# Hello\n\n## Acceptance criteria\n\n- [ ] prints hello\n' > docs/agentile/specs/0001-hello.md
 git add -A && git commit -qm init
-claude -p "/ag-build hello" --permission-mode acceptEdits --permission-prompts none --max-turns 40 | tail -5
+AGENTILE_RUNNER_ID=dryrun claude -p "/ag-build hello" --model sonnet --permission-mode acceptEdits --permission-prompts none --allowedTools "Bash(ag-store:*)" "Bash(ag-checkpoint:*)" "Bash(git:*)" "Bash(printf:*)" "Bash(ls:*)" "Bash(tail:*)" "Bash(cat:*)" "Bash(date:*)" "Bash(mkdir:*)" --max-turns 40 | tail -5
 ls docs/agentile/specs/0001-hello/checkpoints/ && tail -3 docs/agentile/runs.md
 ```
 
@@ -903,7 +912,7 @@ Expected: the last line printed is `AG_BUILD: paused hello plan_review docs/agen
 
 ```bash
 printf '' | ~/projects/agentile/bin/ag-checkpoint answer docs/agentile/specs/0001-hello/checkpoints/001-plan_review.md --by keith
-claude -p "/ag-build" --permission-mode acceptEdits --permission-prompts none --max-turns 60 | tail -3
+AGENTILE_RUNNER_ID=dryrun claude -p "/ag-build" --model sonnet --permission-mode acceptEdits --permission-prompts none --allowedTools "Bash(ag-store:*)" "Bash(ag-checkpoint:*)" "Bash(git:*)" "Bash(printf:*)" "Bash(ls:*)" "Bash(tail:*)" "Bash(cat:*)" "Bash(date:*)" "Bash(mkdir:*)" --max-turns 60 | tail -3
 ```
 
 Expected: the run resumes without re-claiming (no second `claimed` line in `runs.md`) and ends with `AG_BUILD: paused hello ship_approval …` because `ship.md` defaults to a checkpoint. Delete the scratch directory afterwards.
