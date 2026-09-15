@@ -32,7 +32,7 @@ If a project still has the retired `.agentile/loop.md`, ignore it and say once t
 
 ## Tools
 
-`ag-store` and `ag-checkpoint` ship in this plugin's `bin/`, on `PATH` while the plugin is enabled (fallback `"${CLAUDE_PLUGIN_ROOT}/bin/<tool>"`). Every `ag-store` call takes `--dir "<dir>" --store "<store>"`, with `store:` from `.agentile/store.md` (default `local`).
+`ag-store` and `ag-checkpoint` ship in this plugin's `bin/`, on `PATH` while the plugin is enabled (fallback `"${CLAUDE_PLUGIN_ROOT}/bin/<tool>"`). Every `ag-store` call takes `--dir "<dir>" --store "<store>"`, with `store:` from `.agentile/store.md` (default `local`). Every `ag-checkpoint open` call passes `--session "${CLAUDE_SESSION_ID}"`, so the factory console can tie a pause back to the session that wrote it; it prints the checkpoint file it wrote, and that path is the `<checkpoint-path>` in the status line.
 
 A headless run must pre-authorise these tools and the gates: `--permission-prompts none` denies anything not on the allowlist rather than asking, so pass e.g. `--allowedTools "Bash(ag-store:*)" "Bash(ag-checkpoint:*)" "Bash(git:*)"` plus each command in `.agentile/gates.json`.
 
@@ -42,8 +42,10 @@ The **spec directory** for checkpoints is the directory holding `plan.md`: for t
 
 ### Step 0 — Resume check
 
-Run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"`. If an entry's `claimed_by` equals this identity, that is your spec: skip Step 1. Then run `ag-checkpoint list "<spec-dir>"`:
+Run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"`. If no entry's `claimed_by` equals this identity, nothing of yours is in flight: append `event=started` and go to Step 1. Otherwise that entry is your spec and you claim nothing this run — take its `slug` (the `<slug>` every run-log line and status line uses) and its `route` from the listing, and derive `<spec-dir>` from its identifier (see **Tools**). Then:
 
+- If `<spec-dir>/plan.md` does not exist, go to Step 2.
+- Otherwise run `ag-checkpoint list "<spec-dir>"`. If it lists no checkpoints, go to Step 3.
 - If the newest checkpoint is `answered`, read its `answer` field from the `list` output — that is the human's decision — and resume by the checkpoint's reason, which is the only rule for where to go:
   - `plan_review` → Step 3.
   - `build_blocked` → Step 3, re-dispatching the builder with the answer as its instruction.
@@ -54,8 +56,6 @@ Run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"`. I
   - `ship_approval` → Step 6 on approval; otherwise Step 3 with the answer as the builder's instruction.
 - If the newest checkpoint is still `open`, do not re-ask: report that it is waiting, and end with `AG_BUILD: paused <slug> <reason> <path>`.
 
-Append `event=started` on a fresh (non-resumed) invocation.
-
 ### Step 1 — Claim
 
 Read `wip_limit` from `.agentile/prioritise.md` (default unlimited). Run:
@@ -64,15 +64,15 @@ Read `wip_limit` from `.agentile/prioritise.md` (default unlimited). Run:
 ag-store claim "<identity>" "" "<wip_limit>" [--spec "<slug from $ARGUMENTS>"] --dir "<dir>" --store "<store>"
 ```
 
-- A spec identifier → append `event=claimed`, continue.
+- A spec identifier → the claim succeeded. What comes back is an **identifier** (a path to the spec's `SPEC.md` under the `local` store, a bare slug under `airtable`): use it verbatim as `<id>` for other `ag-store` calls and as the argument to `/ag-plan`, never in a run-log line or a status line. Establish the spec's own fields now — run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"` and take the entry whose `claimed_by` is this identity: its `slug` is the `<slug>` every run-log line and status line uses, its `route` is what Step 2 reads, and `<spec-dir>` is derived from its identifier (see **Tools**). Append `event=claimed`, continue.
 - `NONE`, `WIP_FULL`, `BLOCKED`, `UNPRIORITISED` → append `event=idle detail=<code>`, explain in one line (`/ag-prioritise` for `UNPRIORITISED` or `BLOCKED`, `/ag-wip` for `WIP_FULL`, `/ag-shape` for `NONE`), and end with `AG_BUILD: idle <code>`.
 - `NOT_FOUND` or `TAKEN` (targeted claim only) → append `event=failed detail=<code>`, say which slug, and end with `AG_BUILD: failed <slug> <code>`.
 
 ### Step 2 — Plan
 
-Invoke `/ag-plan <spec identifier>`. Invoked from `/ag-build`, it dispatches the `ag-planner` subagent, writes `plan.md` into the spec directory, and returns a short confirmation.
+Invoke `/ag-plan <id>`. Invoked from `/ag-build`, it dispatches the `ag-planner` subagent, writes `<spec-dir>/plan.md`, and returns a short confirmation. Under the `local` store this is where a flat spec becomes a directory, so re-read the entry for this identity from `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"` afterwards: `<spec-dir>` and the `<id>` used from here on come from that refreshed listing.
 
-Pause for plan review when `plan.md`'s `human_checkpoint` is `true`, or is `route` and the spec's `route` (from the `spec_list` entry) is `foreground` or `spike`. To pause: write the checkpoint with the plan summary `/ag-plan` returned as the ask,
+Pause for plan review when the stage playbook `.agentile/plan.md`'s `human_checkpoint` is `true`, or is `route` and the spec's `route` (from the Step 1 listing, or the Step 0 listing on a resumed run) is `foreground` or `spike`. To pause: write the checkpoint with the plan summary `/ag-plan` returned as the ask,
 
 ```
 printf '%s' "<summary>. Review or amend plan.md in place, then answer this checkpoint." | ag-checkpoint open "<spec-dir>" plan_review --session "${CLAUDE_SESSION_ID}"
@@ -112,6 +112,10 @@ An answered `ship_approval` whose answer says anything other than approval (a no
 2. `ag-store ship "<id>" --dir "<dir>" --store "<store>"` — sets `status: shipped`, stamps `shipped_at`, keeps the claim fields, moves the spec to `specs/done/` (local).
 3. Append `event=shipped` and commit `runs.md` (and, for the local store, the spec move and its `checkpoints/`) with the ship.
 4. End with `AG_BUILD: shipped <slug>`.
+
+## Unrecoverable errors
+
+Any error you cannot recover from — a required file missing, an agent that returns no verdict line, a tool that fails repeatedly, a denied permission you cannot work around — ends the run: append `event=failed detail=<short-code>` and end with `AG_BUILD: failed <slug-or-'-'> <short-code>`. The code is one lowercase snake_case word or short phrase naming the cause (`no_verdict_line`, `checkpoint_write_denied`); use `-` for the slug when no spec was claimed. Do not invent new checkpoint reasons for these — the seven reasons are fixed, and an error is a failure, not a pause.
 
 ## Exit contract
 

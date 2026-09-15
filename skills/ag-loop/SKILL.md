@@ -1,7 +1,7 @@
 ---
 name: ag-loop
 description: Retired alias for /ag-build (since 0.13.0). Runs /ag-build once and points at the replacement. Trigger phrases include "/ag-loop", "run the loop".
-allowed-tools: Skill
+allowed-tools: AskUserQuestion, Bash, Read, Edit, Skill, Agent
 arguments: [--once]
 ---
 
