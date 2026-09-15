@@ -43,7 +43,7 @@ VERDICT: fail
 VERDICT: question
 ```
 
-`question` is for the rare case where pass or fail turns on a human decision (an acceptance criterion that can be read two ways, a behaviour change that may or may not be intended): follow the line with a `## Question` block — the question in one sentence, two to four numbered options, and `Recommendation: <n>`. An orchestrating `/ag-build` reads the first line to decide whether to ship, bounce back to the builder, or write a checkpoint for the human; it does not otherwise inspect the diff itself.
+`question` is for the rare case where pass or fail turns on a human decision (an acceptance criterion that can be read two ways, a behaviour change that may or may not be intended): follow the line with a `## Question` block — the question in one sentence, two to four numbered options with a one-line consequence each, and `Recommendation: <n>` on its own line. An orchestrating `/ag-build` reads the first line to decide whether to ship, bounce back to the builder, or write a checkpoint for the human; it does not otherwise inspect the diff itself.
 
 After that line, a specific, prioritised list of findings (file:line where possible), each marked must-fix or nice-to-have — terse bullets, not prose paragraphs; a human reads this to decide on the ship approval, not to relive the diff. If you run the gates, show the evidence. If you pass it, say what you verified, not just "looks good".
 
