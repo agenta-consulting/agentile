@@ -87,10 +87,15 @@ module Local
 
   # ---- claim (bin/ag-claim's exact behaviour) ----
 
-  # Prints/returns the claimed spec path, or one of: WIP_FULL | BLOCKED | UNPRIORITISED | NONE.
-  def claim(specs_dir, session, label, wip)
+  # Prints/returns the claimed spec path, or one of:
+  #   WIP_FULL | BLOCKED | UNPRIORITISED | NONE          (queue claim)
+  #   WIP_FULL | BLOCKED | NOT_FOUND | TAKEN            (targeted claim, `target` = slug)
+  # A targeted claim ignores rank — the caller chose the spec — but still
+  # respects the WIP limit and unshipped dependencies.
+  def claim(specs_dir, session, label, wip, target = nil)
     abort "ag-store: no such specs dir: #{specs_dir}" unless File.directory?(specs_dir)
     wip = (wip.to_s.empty? ? 0 : wip.to_i)
+    target = nil if target.to_s.empty?
 
     result = nil
     lock_path = File.join(specs_dir, ".pull.lock")
@@ -109,25 +114,43 @@ module Local
         next
       end
 
-      ready = pool.select { |s| s[:fm]["status"] == "ready" && s[:fm]["claimed_by"].to_s.empty? }
-      if ready.empty?
-        result = "NONE"
-        next
+      chosen = nil
+      if target
+        chosen = pool.find { |s| s[:slug] == target }
+        if chosen.nil?
+          result = "NOT_FOUND"
+          next
+        end
+        unless chosen[:fm]["status"] == "ready" && chosen[:fm]["claimed_by"].to_s.empty?
+          result = "TAKEN"
+          next
+        end
+        unless Array(chosen[:fm]["depends_on"]).all? { |dep| shipped[dep.to_s] }
+          result = "BLOCKED"
+          next
+        end
+      else
+        ready = pool.select { |s| s[:fm]["status"] == "ready" && s[:fm]["claimed_by"].to_s.empty? }
+        if ready.empty?
+          result = "NONE"
+          next
+        end
+
+        prioritised = ready.select { |s| s[:prefix] }
+        if prioritised.empty?
+          result = "UNPRIORITISED"
+          next
+        end
+
+        eligible = prioritised.select { |s| Array(s[:fm]["depends_on"]).all? { |dep| shipped[dep.to_s] } }
+        if eligible.empty?
+          result = "BLOCKED"
+          next
+        end
+
+        chosen = eligible.min_by { |s| [s[:prefix], s[:slug]] }
       end
 
-      prioritised = ready.select { |s| s[:prefix] }
-      if prioritised.empty?
-        result = "UNPRIORITISED"
-        next
-      end
-
-      eligible = prioritised.select { |s| Array(s[:fm]["depends_on"]).all? { |dep| shipped[dep.to_s] } }
-      if eligible.empty?
-        result = "BLOCKED"
-        next
-      end
-
-      chosen = eligible.min_by { |s| [s[:prefix], s[:slug]] }
       stamp!(chosen, {
         "status" => "in_progress",
         "claimed_by" => session,

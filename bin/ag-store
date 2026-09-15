@@ -22,7 +22,7 @@
 #   spec_create  <slug>            (markdown on stdin) --dir <dir>
 #   spec_write   <id> --set k=v [--set k=v ...]         --dir <dir>
 #   rank         <slug> [<slug>...]                    --dir <dir>
-#   claim        <identity> [label] [wip]              --dir <dir>
+#   claim        <identity> [label] [wip] [--spec <slug>]  --dir <dir>
 #   release      <id>                                  --dir <dir>
 #   ship         <id>                                  --dir <dir>
 #   abandon      <id> --reason "<text>"                --dir <dir>
@@ -147,7 +147,7 @@ result =
     when "spec_create" then adapter.spec_create(positional[0], $stdin.read)
     when "spec_write" then adapter.spec_write(positional[0], sets.transform_keys(&:to_sym))
     when "rank" then adapter.rank(positional)
-    when "claim" then adapter.claim(positional[0], positional[1], positional[2])
+    when "claim" then adapter.claim(positional[0], positional[1], positional[2], flags["spec"])
     when "release" then adapter.release(positional[0])
     when "ship" then adapter.ship(positional[0])
     when "abandon" then adapter.abandon(positional[0], reason: flags["reason"].to_s)
@@ -189,7 +189,7 @@ result =
   when "rank"
     Local.rank(specs_dir, positional)
   when "claim"
-    Local.claim(specs_dir, positional[0], positional[1], positional[2])
+    Local.claim(specs_dir, positional[0], positional[1], positional[2], flags["spec"])
   when "release"
     Local.release(specs_dir, positional[0])
   when "ship"

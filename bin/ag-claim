@@ -7,11 +7,20 @@
 #
 # Atomically claim the lowest-prefix ready spec whose dependencies are all shipped.
 # Prints the spec's .md file — for a directory spec, its SPEC.md.
-# Usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]
-# Prints the claimed spec path, or one of: WIP_FULL | BLOCKED | UNPRIORITISED | NONE.
+# Usage: ag-claim <specs-dir> <session-id> [label] [wip-limit] [--spec <slug>]
+# Prints the claimed spec path, or one of: WIP_FULL | BLOCKED | UNPRIORITISED | NONE,
+# or for --spec: WIP_FULL | BLOCKED | NOT_FOUND | TAKEN.
 require_relative "ag-store-adapters/local"
 
-specs_dir, session, label, wip = ARGV
-abort "usage: ag-claim <specs-dir> <session-id> [label] [wip-limit]" if specs_dir.nil? || session.to_s.empty?
+args = ARGV.dup
+target = nil
+if (i = args.index("--spec"))
+  target = args[i + 1]
+  abort "usage: ag-claim <specs-dir> <session-id> [label] [wip-limit] [--spec <slug>]" if target.to_s.empty?
+  args.slice!(i, 2)
+end
 
-puts Local.claim(specs_dir, session, label, wip)
+specs_dir, session, label, wip = args
+abort "usage: ag-claim <specs-dir> <session-id> [label] [wip-limit] [--spec <slug>]" if specs_dir.nil? || session.to_s.empty?
+
+puts Local.claim(specs_dir, session, label, wip, target)
