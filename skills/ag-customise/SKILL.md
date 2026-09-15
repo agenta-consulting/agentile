@@ -49,7 +49,7 @@ Cover these in order:
 
 Write `.agentile/<stage>.md`, creating the file if it does not exist. Structure it as:
 
-- A YAML frontmatter block (between `---` markers) containing only the directives that were set — omit any key that was left blank or defaulted to no.
+- A YAML frontmatter block (between `---` markers) containing only the directives that were set — omit any key that was left blank or defaulted to no. The policy keys `/ag-build` reads are the exception: always write `human_checkpoint` for the `plan` stage (`route` when the default is taken) and for the `ship` stage (`true` when the default is taken), and always write both `retry_limit` and `stop_on_gate_failure` for the `verify` stage — never omit them, or the scaffolded playbook loses the key `/ag-build` reads.
 - Followed by the prose body (if any).
 
 If frontmatter would be empty, omit it entirely and write only prose (or a brief note that defaults apply).
