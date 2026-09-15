@@ -6,7 +6,7 @@ RUNNER = File.expand_path("../bin/ag-run", __dir__)
 # tracking invocation count via a counter file (state can't live in the stub
 # process itself — ag-run spawns a fresh one per call, same as the real
 # claude -p would). A plan line starting "CRASH:" simulates claude exiting
-# non-zero instead of printing an AG_LOOP line. Every invocation also logs the
+# non-zero instead of printing an AG_BUILD line. Every invocation also logs the
 # AGENTILE_RUNNER_ID it saw, so tests can check identity stays stable across
 # calls within one ag-run run, and is respected when the caller sets it.
 STUB = <<~'RUBY'
@@ -102,14 +102,14 @@ with_stub_claude do |bindir|
   raise "missing failure report: #{err.inspect}" unless err.include?("failed on 0004-d")
 end
 
-# 6. claude itself crashing (no AG_LOOP line, non-zero exit) is reported and exits 1
+# 6. claude itself crashing (no AG_BUILD line, non-zero exit) is reported and exits 1
 with_stub_claude do |bindir|
   _out, err, status, _log = run_ag_run(bindir, ["CRASH: boom"])
   raise "crash should exit non-zero" if status.success?
   raise "missing crash report: #{err.inspect}" unless err.include?("claude exited")
 end
 
-# 7. claude exiting 0 with no AG_LOOP line anywhere is reported and exits 1
+# 7. claude exiting 0 with no AG_BUILD line anywhere is reported and exits 1
 with_stub_claude do |bindir|
   _out, err, status, _log = run_ag_run(bindir, ["nothing useful printed here"])
   raise "missing status line should exit non-zero" if status.success?

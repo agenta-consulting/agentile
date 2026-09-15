@@ -208,8 +208,8 @@ playbooks, stubs) and what was skipped and why, then the readiness
 observations from init, then the next move:
 
 > The project is set up. Shape a stub into a spec with `/ag-shape`, order the
-> queue with `/ag-prioritise`, and run the loop with `/ag-loop`
-> (`/loop /ag-loop` to keep it running). Scaffold the codebase with your
+> queue with `/ag-prioritise`, and build the next spec with `/ag-build`
+> (one spec, claim to shipped). Scaffold the codebase with your
 > stack's generator whenever you like — the gates will start enforcing as
 > soon as the commands in `.agentile/gates.json` can run.
 

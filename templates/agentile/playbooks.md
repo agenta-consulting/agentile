@@ -16,10 +16,11 @@ Each playbook is optional YAML frontmatter + prose:
 
 Build one out conversationally with `/ag-customise <stage>`.
 
-Three playbooks also carry machine keys beyond the common three: `plan.md`
-(`human_checkpoint: route`), `ship.md` (`human_checkpoint`) and `verify.md`
-(`retry_limit`, `stop_on_gate_failure`). Together they are the whole of a
-project's build policy; there is no separate loop config.
+Three playbooks also carry policy beyond `delegate_to` and `also_run`:
+`plan.md` accepts `route` as a `human_checkpoint` value, `ship.md`'s
+`human_checkpoint` defaults to true, and `verify.md` adds `retry_limit` and
+`stop_on_gate_failure`. Together they are the whole of a project's build
+policy; there is no separate loop config.
 
 Design rule for any future config surface: **frontmatter keys are for the
 machine** (deterministic, forward-compatible — unknown keys are ignored);

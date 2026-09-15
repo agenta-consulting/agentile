@@ -1,6 +1,6 @@
 # Agentile Factory — one fresh process per spec, and a console for what needs you
 
-Design spec. Status: proposed 2026-09-16, revised the same day after discussion, not yet built. Supersedes `/ag-loop` and the single-machine `bin/ag-run` driver as the way to run Agentile unattended; `bin/ag-run` stays as the zero-infrastructure fallback. Builds on `docs/agentile-loop-runner.md` (the runner and its exit contract) and `docs/plans/2026-09-06-loop-context-management.md` (fresh context per item, runner identity, thin orchestrator), and is the "separate mode" those documents deferred for detached, unattended runs.
+Design spec. Status: phase 1 (protocol and `/ag-build`, plugin 0.13.0) implemented 2026-09-16 — see `docs/plans/2026-09-16-ag-build-and-checkpoints.md`; daemon and console not yet built. Supersedes `/ag-loop` and the single-machine `bin/ag-run` driver as the way to run Agentile unattended; `bin/ag-run` stays as the zero-infrastructure fallback. Builds on `docs/agentile-loop-runner.md` (the runner and its exit contract) and `docs/plans/2026-09-06-loop-context-management.md` (fresh context per item, runner identity, thin orchestrator), and is the "separate mode" those documents deferred for detached, unattended runs.
 
 ## Context
 

@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Skill, AskUserQuestion
 
 Ship and deploy are different things, and this skill is the second one.
 
-**Ship** is per-spec: `/ag-loop` merges one spec to trunk and stamps
+**Ship** is per-spec: `/ag-build` merges one spec to trunk and stamps
 `shipped_at`. It happens many times a day and is reversible with a revert.
 
 **Deploy** is per-release: the code on trunk reaches an environment where
@@ -17,7 +17,7 @@ last deploy, and it earns heavier checks than a merge does — the slow,
 evidentiary ones you would never run on every commit.
 
 Because deploy is batched and outward-facing, it is **never** part of the
-per-spec loop. `/ag-loop` does not call this skill. A human runs it, or a
+per-spec loop. `/ag-build` does not call this skill. A human runs it, or a
 schedule does.
 
 ## Apply this project's playbook

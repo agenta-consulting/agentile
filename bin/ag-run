@@ -23,7 +23,7 @@
 #
 # AGENTILE_RUNNER_ID, if already set in the environment, names this driver's
 # claim identity (so a crashed run can be resumed by re-running with the same
-# id — see skills/ag-loop/SKILL.md, "Runner identity"). If unset, ag-run picks
+# id — see skills/ag-build/SKILL.md, "Identity"). If unset, ag-run picks
 # one and prints it, stable for the life of this process across every item it
 # drains.
 require "open3"

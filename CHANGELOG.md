@@ -4,6 +4,27 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.13.0 — 2026-09-16
+
+- **`/ag-build` replaces `/ag-loop`.** One spec from claim to shipped, then
+  stop; no skill iterates any more. `/ag-build <slug>` claims a named spec
+  (`ag-store claim --spec`, with `NOT_FOUND` and `TAKEN`). `/ag-loop` stays
+  for one release as an alias.
+- **Checkpoints.** Every pause writes `specs/NNNN-<slug>/checkpoints/NNN-<reason>.md`
+  via the new `bin/ag-checkpoint` (open, list, open_count, answer). The status
+  line carries the path: `AG_BUILD: paused <slug> <reason> <path>`. New reason
+  `question`: `ag-builder` and `ag-reviewer` may return `BUILD: question` /
+  `VERDICT: question` with options and a recommendation.
+- **`.agentile/loop.md` retired.** `pause_at_plan` → `human_checkpoint` on
+  `plan.md` (new playbook, accepts `route`); `pause_before_ship` →
+  `human_checkpoint` on `ship.md` (new playbook); `verify_retry_limit` and
+  `stop_on_gate_failure` → `verify.md`. `/ag-version` warns when a project
+  still has `loop.md`.
+- Spec template gains optional `model:`; `gates.json` gains an optional
+  `review` block; `templates/factory-worker.md` is the system prompt for a
+  headless factory worker. `bin/ag-run` drives `/ag-build`. Design:
+  `docs/agentile-factory.md`.
+
 ## 0.12.0 — 2026-09-14
 
 - **Outcomes: the layer above specs.** A flat, ranked list of falsifiable bets
