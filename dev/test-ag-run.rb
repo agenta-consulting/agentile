@@ -150,4 +150,13 @@ with_stub_claude do |bindir|
   raise "checkpoint path missing from report" unless out.include?("001-plan_review.md")
 end
 
+# 12. a status line wrapped in backticks or bold is still recognised
+with_stub_claude do |bindir|
+  out, _err, status, log = run_ag_run(bindir, ["`AG_BUILD: shipped 0001-a`", "**AG_BUILD: idle NONE**"])
+  raise "decorated lines should succeed: #{status.exitstatus}" unless status.success?
+  raise "expected 2 invocations, got #{log.size}" unless log.size == 2
+  raise "decorated shipped line not parsed" unless out.include?("AG_BUILD: shipped 0001-a")
+  raise "decorated idle line not parsed" unless out.include?("backlog idle (NONE)")
+end
+
 puts "ALL PASS"

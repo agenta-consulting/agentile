@@ -76,7 +76,10 @@ loop do
     exit 1
   end
 
-  line = out.lines.map(&:strip).reverse.find { |l| l.start_with?("AG_BUILD:", "AG_LOOP:") }
+  # A model sometimes wraps the status line in backticks or bold despite the
+  # skill's instruction; strip such decoration before matching.
+  line = out.lines.map { |l| l.strip.sub(/\A[`*_]+/, "").sub(/[`*_]+\z/, "") }
+            .reverse.find { |l| l.start_with?("AG_BUILD:", "AG_LOOP:") }
   unless line
     warn "[ag-run] no AG_BUILD status line found in output — showing the tail:"
     warn tail(out)

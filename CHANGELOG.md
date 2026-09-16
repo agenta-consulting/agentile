@@ -4,6 +4,16 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.13.1 — 2026-09-16
+
+- Headless workers are told to call `ag-store`, `ag-checkpoint`, `git` and the
+  gates by bare name as the first word of their own command — no
+  `export PATH=…;` prefix, absolute path, or `;`/`&&` chain — because the
+  `--allowedTools` allowlist matches command text as typed, and a first
+  denial makes the session deny every later prompt-requiring command. Found
+  on a real `/ag-build` run whose ship-approval checkpoint write was denied.
+- `bin/ag-run` tolerates a status line wrapped in backticks or bold.
+
 ## 0.13.0 — 2026-09-16
 
 - **`/ag-build` replaces `/ag-loop`.** One spec from claim to shipped, then
