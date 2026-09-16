@@ -352,4 +352,13 @@ raise "no checkpoints -> zero human wait: #{f.inspect}" unless f[:human_wait_sec
 raise "legacy Created fallback: #{f.inspect}" unless f[:queue_wait_seconds] == 36000   # 00:00 -> 10:00
 raise "in_progress: #{f.inspect}" unless f[:in_progress] == false
 
+# 17. spec_read surfaces the legacy Created date when Created At is empty (no data loss on read)
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recL", { "Slug" => "legacy", "Status" => "ready", "Title" => "Legacy",
+                                                "Created" => "2026-09-13" })]))
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+out = adapter.spec_read("legacy")
+raise "legacy created lost on read: #{out[0, 200].inspect}" unless out.include?("2026-09-13")
+
 puts "ALL PASS"

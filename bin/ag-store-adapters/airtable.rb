@@ -239,6 +239,9 @@ module Airtable
       v[:captured_by] = (f["Captured By"] || []).map { |id| member_name_of(id) }.compact
       v[:shaped_by] = (f["Shaped By"] || []).map { |id| member_name_of(id) }.compact
       v[:claimed_by_member] = member_name_of(Array(f["Claimed By (Member)"]).first)
+      # Legacy fallback: a spec written before 0.14.0 has only the `Created`
+      # date. Without this, reading it back silently drops its creation date.
+      v[:created_at] = (f["Created At"] || f["Created"])
       v[:serves] = outcome_slug_of(Array(f["Serves Outcome"]).first)
       v[:tags] = Array(f["Tags"])
       v
