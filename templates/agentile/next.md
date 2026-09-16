@@ -6,4 +6,4 @@
 
 `/ag-next` atomically claims the highest-priority unclaimed ready spec and reports
 it. WIP is capped by `wip_limit` in prioritise.md. To run claims continuously (claim
-→ build → verify → ship → repeat), use `/ag-loop`.
+→ build → verify → ship), use `/ag-build`, which claims for itself.

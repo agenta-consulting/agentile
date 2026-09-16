@@ -37,7 +37,7 @@ A Low-certainty item usually leaves shaping as a **spike** (a timeboxed explorat
 
 The names `/ag-shape` may recommend. Rename or re-scope to taste.
 
-- **foreground** — pair in real time; you steer step by step. Under `/ag-loop`,
+- **foreground** — pair in real time; you steer step by step. Under `/ag-build`,
   a foreground spec pauses after planning so you can review `plan.md` before
   any code is written.
 - **background** — hand to a background/async agent; review the resulting PR.

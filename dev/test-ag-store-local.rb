@@ -90,6 +90,18 @@ Dir.mktmpdir do |root|
   raise "claim again: #{store('claim', 'sess-2', '', '0', dir: dir)}" unless store("claim", "sess-2", "", "0", dir: dir) == "NONE"
 end
 
+# 5b. claim --spec goes through ag-store with the same vocabulary
+Dir.mktmpdir do |root|
+  dir = scaffold(root)
+  specs_dir = File.join(dir, "specs")
+  write_spec(specs_dir, "0001-a.md")
+  write_spec(specs_dir, "0002-b.md")
+  claimed = store("claim", "sess-1", "", "0", "--spec", "b", dir: dir)
+  raise "targeted claim: #{claimed}" unless claimed.end_with?("0002-b.md")
+  raise "taken: #{store('claim', 'sess-2', '', '0', '--spec', 'b', dir: dir)}" unless store("claim", "sess-2", "", "0", "--spec", "b", dir: dir) == "TAKEN"
+  raise "not found" unless store("claim", "sess-2", "", "0", "--spec", "zzz", dir: dir) == "NOT_FOUND"
+end
+
 # 6. release clears the claim and returns the spec to ready
 Dir.mktmpdir do |root|
   dir = scaffold(root)

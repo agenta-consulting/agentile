@@ -39,7 +39,7 @@ Cover these in order:
 
 1. **Delegation** — should this stage hand off entirely to a skill instead of running the baseline? If yes, which skill? Offer plausible candidates based on the stage (for example: `worktree-workflow` for `build`, `verify`, or `ship`; `ag-spec` for `spec`; the user may name any skill). This sets `delegate_to`.
 
-2. **Human checkpoint** — should the stage pause and require an explicit "approved" from a human before handing off to the next stage? This sets `human_checkpoint: true`. Default is no.
+2. **Human checkpoint** — should the stage pause and require an explicit "approved" from a human before handing off to the next stage? This sets `human_checkpoint: true`. Default is no, except `ship` (default yes) and `plan`, which also accepts `route` (pause only for `foreground` and `spike` specs; the default). For `verify`, also ask for `retry_limit` (default 1) and `stop_on_gate_failure` (default true).
 
 3. **Extra skills** — any additional skills that should run alongside the baseline? (These run in addition to, not instead of, normal behaviour.) This sets `also_run`. The user may list zero or more skill names.
 
@@ -49,7 +49,7 @@ Cover these in order:
 
 Write `.agentile/<stage>.md`, creating the file if it does not exist. Structure it as:
 
-- A YAML frontmatter block (between `---` markers) containing only the directives that were set — omit any key that was left blank or defaulted to no.
+- A YAML frontmatter block (between `---` markers) containing only the directives that were set — omit any key that was left blank or defaulted to no. The policy keys `/ag-build` reads are the exception: always write `human_checkpoint` for the `plan` stage (`route` when the default is taken) and for the `ship` stage (`true` when the default is taken), and always write both `retry_limit` and `stop_on_gate_failure` for the `verify` stage — never omit them, or the scaffolded playbook loses the key `/ag-build` reads.
 - Followed by the prose body (if any).
 
 If frontmatter would be empty, omit it entirely and write only prose (or a brief note that defaults apply).

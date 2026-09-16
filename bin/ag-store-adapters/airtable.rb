@@ -309,7 +309,7 @@ module Airtable
 
     # ---- claim (read -> check -> update -> re-read; see the concurrency note) ----
 
-    def claim(identity, label, wip)
+    def claim(identity, label, wip, target = nil)
       wip = wip.to_s.empty? ? 0 : wip.to_i
       @specs_records = nil # force a fresh read — claim must not work from a stale cache
       pool = specs_records
@@ -317,19 +317,34 @@ module Airtable
       in_progress = pool.count { |r| r["fields"]["Status"] == "in_progress" }
       return "WIP_FULL" if wip.positive? && in_progress >= wip
 
-      ready = pool.select { |r| r["fields"]["Status"] == "ready" && r["fields"]["Claimed By (Session)"].to_s.empty? }
-      return "NONE" if ready.empty?
-
-      prioritised = ready.select { |r| r["fields"]["Rank"] }
-      return "UNPRIORITISED" if prioritised.empty?
-
+      target = nil if target.to_s.empty?
       shipped_slugs = pool.select { |r| r["fields"]["Status"] == "shipped" }.map { |r| r["fields"]["Slug"] }.to_set
-      eligible = prioritised.select do |r|
-        (r["fields"]["Depends On"] || []).all? { |dep_id| shipped_slugs.include?(slug_of(dep_id)) }
-      end
-      return "BLOCKED" if eligible.empty?
+      deps_shipped = ->(r) { (r["fields"]["Depends On"] || []).all? { |dep_id| shipped_slugs.include?(slug_of(dep_id)) } }
 
-      chosen = eligible.min_by { |r| [r["fields"]["Rank"], r["fields"]["Slug"]] }
+      if target
+        # Slugs are stored bare; a caller may name a spec either way
+        # (`--spec 0009-unit-conversion-rules` or `--spec unit-conversion-rules`).
+        bare = target.sub(/\A\d+-/, "")
+        chosen = pool.find { |r| r["fields"]["Slug"] == bare }
+        return "NOT_FOUND" if chosen.nil?
+        # NOT_FOUND means "no ACTIVE spec has that slug" — the local adapter's
+        # claim pool simply excludes done/ and abandoned/, so a shipped or
+        # abandoned record must read the same way here rather than as TAKEN.
+        return "NOT_FOUND" if %w[shipped abandoned].include?(chosen["fields"]["Status"])
+        return "TAKEN" unless chosen["fields"]["Status"] == "ready" && chosen["fields"]["Claimed By (Session)"].to_s.empty?
+        return "BLOCKED" unless deps_shipped.call(chosen)
+      else
+        ready = pool.select { |r| r["fields"]["Status"] == "ready" && r["fields"]["Claimed By (Session)"].to_s.empty? }
+        return "NONE" if ready.empty?
+
+        prioritised = ready.select { |r| r["fields"]["Rank"] }
+        return "UNPRIORITISED" if prioritised.empty?
+
+        eligible = prioritised.select { |r| deps_shipped.call(r) }
+        return "BLOCKED" if eligible.empty?
+
+        chosen = eligible.min_by { |r| [r["fields"]["Rank"], r["fields"]["Slug"]] }
+      end
       @client.update_record(@base_id, @specs_table, chosen["id"], {
                                "Status" => "in_progress", "Claimed By (Session)" => identity.to_s,
                                "Label" => label.to_s, "Claimed At" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ"),

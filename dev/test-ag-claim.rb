@@ -14,6 +14,12 @@ def claim(dir, session: "s", wip: 0)
   out.strip
 end
 
+def claim_spec(dir, slug, session: "s", wip: 0)
+  out, err, st = Open3.capture3("ruby", HELP, dir, session, "", wip.to_s, "--spec", slug)
+  raise "ag-claim --spec failed: #{err}" unless st.success?
+  out.strip
+end
+
 def dirspec(dir, dname, status:, depends_on: [])
   d = File.join(dir, dname)
   FileUtils.mkdir_p(d)
@@ -168,6 +174,51 @@ Dir.mktmpdir do |d|
   raise "claim failed: #{st.exitstatus}" unless st.success?
   body = File.read(path.strip)
   raise "label not verbatim: #{body[/^label:.*$/].inspect}" unless body.include?("label: #{tricky}")
+end
+
+# 17. --spec claims the named slug even when it is not the top of the queue
+Dir.mktmpdir do |d|
+  spec(d, "0001-top.md", status: "ready")
+  spec(d, "0002-wanted.md", status: "ready")
+  path = claim_spec(d, "wanted")
+  raise "targeted claim: #{path}" unless path.end_with?("0002-wanted.md")
+  fm = YAML.safe_load(File.read(path)[/^---\n(.*?)\n---/m, 1], permitted_classes: [Time, Date])
+  raise "targeted stamp" unless fm["status"] == "in_progress" && fm["claimed_by"] == "s"
+  raise "top untouched" unless File.read(File.join(d, "0001-top.md")).include?("status: ready")
+end
+
+# 18. --spec on an unprefixed spec works (a named claim ignores rank)
+Dir.mktmpdir do |d|
+  spec(d, "unranked.md", status: "ready")
+  raise "unranked target: #{claim_spec(d, 'unranked')}" unless claim_spec(d, "unranked").end_with?("unranked.md")
+end
+
+# 19. --spec vocabulary: NOT_FOUND, TAKEN, BLOCKED, WIP_FULL
+Dir.mktmpdir do |d|
+  spec(d, "0001-a.md", status: "in_progress")
+  spec(d, "0002-b.md", status: "ready", depends_on: ["ghost"])
+  spec(d, "0003-c.md", status: "ready")
+  raise "not found" unless claim_spec(d, "nope") == "NOT_FOUND"
+  raise "taken" unless claim_spec(d, "a") == "TAKEN"
+  raise "blocked target" unless claim_spec(d, "b") == "BLOCKED"
+  raise "wip target" unless claim_spec(d, "c", wip: 1) == "WIP_FULL"
+end
+
+# 20. --spec resolves a directory spec by its directory slug
+Dir.mktmpdir do |d|
+  dirspec(d, "0004-dir", status: "ready")
+  raise "dir target: #{claim_spec(d, 'dir')}" unless claim_spec(d, "dir").end_with?("0004-dir/SPEC.md")
+end
+
+# 21. --spec accepts the prefixed form as well as the bare slug — slugs are stored
+#     without their NNNN- prefix, but a caller naming a spec reads it off the filename
+Dir.mktmpdir do |d|
+  spec(d, "0009-thing.md", status: "ready")
+  raise "prefixed target: #{claim_spec(d, '0009-thing')}" unless claim_spec(d, "0009-thing").end_with?("0009-thing.md")
+end
+Dir.mktmpdir do |d|
+  spec(d, "0009-thing.md", status: "ready")
+  raise "bare target: #{claim_spec(d, 'thing')}" unless claim_spec(d, "thing").end_with?("0009-thing.md")
 end
 
 puts "ALL PASS"
