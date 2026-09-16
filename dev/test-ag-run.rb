@@ -36,7 +36,7 @@ def with_stub_claude
   end
 end
 
-# Runs ag-run against a scripted sequence of /ag-loop --once outcomes.
+# Runs ag-run against a scripted sequence of /ag-build outcomes.
 # Returns [stdout, stderr, status, env_log_lines] — env_log_lines is the
 # AGENTILE_RUNNER_ID seen on each stub invocation, oldest first.
 def run_ag_run(bindir, plan_lines, extra_env: {}, args: [])

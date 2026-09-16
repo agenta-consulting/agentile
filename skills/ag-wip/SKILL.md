@@ -1,6 +1,6 @@
 ---
 name: ag-wip
-description: Show Agentile work in progress — which specs are claimed, by which session/label, since when, and the exact command to resume each. Read-only. Trigger phrases include "/ag-wip", "what's in progress", "what's being worked on", "show work in flight".
+description: Show Agentile work in progress — which specs are claimed, by which session/label, since when, and how to resume or answer each. Read-only. Trigger phrases include "/ag-wip", "what's in progress", "what's being worked on", "show work in flight".
 allowed-tools: Bash, Read
 ---
 
@@ -14,7 +14,7 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
 2. Run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) and parse the JSON array.
 
-3. For each in-progress spec, classify `claimed_by`: a Claude session id (a UUID), a factory worker (starts with `factory/`), or another named runner (anything else, e.g. `ag-run@host/12345`, set via `AGENTILE_RUNNER_ID`). Then run `ag-checkpoint list "<spec-dir>"` (the spec's directory under `<dir>/specs/`; skip if it has no directory yet) and note the newest checkpoint's `reason` and `status`. Print:
+3. For each in-progress spec, classify `claimed_by`: a Claude session id (a UUID), a factory worker (starts with `factory/`), or another named runner (anything else, e.g. `ag-run@host/12345`, set via `AGENTILE_RUNNER_ID`). Then run `ag-checkpoint list "<spec-dir>"` (the spec's directory under `<dir>/specs/`; skip if it has no directory yet) and note the newest checkpoint's `reason` and `status` — the list is oldest first, so the newest is the **last** element of its output. Every branch below ends with the same trailing `[…]` column reporting that checkpoint; when the spec has a directory but no checkpoints in it (or has no directory yet), the column reads `[running]`. Print:
 
    ```
    <slug>  in_progress  <label if present, otherwise claimed_by>  (claimed <relative age>)  [waiting: <reason> since <asked_at> | answered: <reason>]
@@ -31,7 +31,7 @@ Display all specs currently in flight — their owner, label, age, and how to re
    for a factory worker; and
 
    ```
-   <slug>  in_progress  <label if present, otherwise claimed_by>  (claimed <relative age>)
+   <slug>  in_progress  <label if present, otherwise claimed_by>  (claimed <relative age>)  [waiting: <reason> since <asked_at> | answered: <reason>]
      → not a session — claimed by runner "<claimed_by>". Re-run its driver with the
        same AGENTILE_RUNNER_ID to continue it, or export AGENTILE_RUNNER_ID=<claimed_by>
        and run /ag-build interactively to pick it up.

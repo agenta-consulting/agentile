@@ -69,19 +69,19 @@ Absent a playbook, the built-in baseline applies. Use `/ag-customise <stage>` to
 
 ### Concurrent builds
 
-Two skills govern the transition from ready work to in-flight work, and they are deliberately separate acts:
+Four skills govern the transition from ready work to in-flight work, and they are deliberately separate acts:
 
 - **`/ag-prioritise`** is an interactive ordering session: it proposes a rank order (Business Value × Technical Certainty, with any `depends_on` constraints respected), you reorder it, and it renames the ready specs densely to `docs/agentile/specs/0001-<slug>.md`, `0002-…` — the number is the rank, visible in `ls`. An unprefixed spec (`specs/<slug>.md`) is shaped and Ready but not yet prioritised, so it is not claimable. The old `priority:` frontmatter field is retired; the filename prefix is the single source of truth. The `wip_limit` and weighting live in `.agentile/prioritise.md`. Run it whenever the ready queue changes.
-- **`/ag-next`** is a transactional pull: it atomically claims the top unclaimed ready spec under a file lock (`bin/ag-claim`), stamps it with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Two loops running concurrently can never grab the same item. If all prioritised work is blocked waiting on dependencies, `/ag-next` reports `BLOCKED`; if shaped work exists but none of it has been prioritised yet, it reports `UNPRIORITISED` — run `/ag-prioritise` to proceed.
-- **`/ag-wip`** lists every in-progress claim and prints the resume command (`claude --resume <session-id>`) for each. Stale claims are surfaced for human judgement — Agentile flags them but does not auto-reclaim; **releasing** a claim (back to `ready`, claim fields cleared) is distinct from **abandoning** the spec (dropped for good).
+- **`/ag-next`** is a transactional pull: it atomically claims the top unclaimed ready spec under a file lock (`bin/ag-claim`), stamps it with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Two builds running concurrently can never grab the same item. If all prioritised work is blocked waiting on dependencies, `/ag-next` reports `BLOCKED`; if shaped work exists but none of it has been prioritised yet, it reports `UNPRIORITISED` — run `/ag-prioritise` to proceed.
+- **`/ag-wip`** lists every in-progress claim with how to resume or answer each — a `claude --resume` line for a session, the console for a factory worker, re-run instructions for another named runner — plus any open checkpoint. Stale claims are surfaced for human judgement — Agentile flags them but does not auto-reclaim; **releasing** a claim (back to `ready`, claim fields cleared) is distinct from **abandoning** the spec (dropped for good).
 - **`/ag-abandon <slug>`** drops a spec that won't ship (failed review, withdrawn, not worth doing). It records the reason, walks the dependency chain with `bin/ag-dependents`, and offers — per dependent — to cascade the abandonment (with an auto-reason referencing the top-level one) or to keep it active and strip the now-dead link so it isn't silently `BLOCKED`. Abandoned specs move to `specs/abandoned/` with `status: abandoned`.
 
 The session id is a resume handle, so a build that was interrupted mid-cycle can be picked back up exactly where it stopped. `claimed_by` is really a **claim identity**, resolved as `${AGENTILE_RUNNER_ID}` if set, else `${CLAUDE_SESSION_ID}`. A factory worker claims as `factory/<project>/<NNNN-slug>`; the `bin/ag-run` fallback as `ag-run@host/pid`. `/ag-wip` tells them apart — a session id gets the `claude --resume` line, a factory worker points at the console, another named runner gets re-run instructions.
 
-The claim lock is a **per-machine** file lock: it serialises concurrent loops on one machine. Across machines, the repository is the sync point — commit and push claim stamps promptly, and treat a pushed claim as authoritative. Agentile is single-repo by design; cross-repo or cross-team coordination is out of scope.
+The claim lock is a **per-machine** file lock: it serialises concurrent builds on one machine. Across machines, the repository is the sync point — commit and push claim stamps promptly, and treat a pushed claim as authoritative. Agentile is single-repo by design; cross-repo or cross-team coordination is out of scope.
 
 One sharp edge: the claim lock lives in the specs directory, so it only
-serialises loops that **share one checkout**. Two loops in two different git
+serialises builds that **share one checkout**. Two builds in two different git
 worktrees each have their own copy of the backlog and can claim the same spec.
 Keep the **backlog in the main checkout** — claim and prioritise there; send
 *builders* to worktrees (the `ag-builder` agent already isolates itself). Don't
@@ -155,11 +155,11 @@ never shipped.
 
 Every pause is a **checkpoint file** in the spec's directory (`specs/NNNN-<slug>/checkpoints/001-plan_review.md` and so on), written with `bin/ag-checkpoint`. In a session you answer by replying; anywhere else you answer with `ag-checkpoint answer <path>` or on the factory console, and the next `/ag-build` with the same claim identity carries on from the answer. Every turn ends with a machine-readable `AG_BUILD: <shipped|paused|failed|idle> …` line.
 
-Pause policy lives in the stage playbooks: `.agentile/plan.md` (`human_checkpoint: route | true | false`), `.agentile/ship.md` (`human_checkpoint`, default true — nothing merges without your approval), and `.agentile/verify.md` (`retry_limit`, `stop_on_gate_failure`). There is no separate loop config; `.agentile/loop.md` from earlier versions is retired and ignored and `/ag-version` says where its keys went.
+Pause policy lives in the stage playbooks: `.agentile/plan.md` (`human_checkpoint: route | true | false`), `.agentile/build.md` (`human_checkpoint`, default false), `.agentile/ship.md` (`human_checkpoint`, default true — nothing merges without your approval), and `.agentile/verify.md` (`retry_limit`, `stop_on_gate_failure`). There is no separate loop config; `.agentile/loop.md` from earlier versions is retired and ignored: `/ag-version` says where its keys went.
 
 For an unattended machine there are two drivers:
 
-- **`bin/ag-run`** — zero infrastructure: runs `/ag-build` in a fresh `claude -p` process per item, sequentially, and stops at the first checkpoint. Forwards anything after `--` to `claude` (e.g. `bin/ag-run -- --permission-mode acceptEdits`); a headless run needs a permission story since nothing can answer a prompt.
+- **`bin/ag-run`** — zero infrastructure: runs `/ag-build` in a fresh `claude -p` process per item, sequentially, and stops at the first checkpoint. Takes an optional `--limit N`, and forwards anything after `--` to `claude` (e.g. `bin/ag-run -- --permission-mode acceptEdits`); a headless run needs a permission story since nothing can answer a prompt.
 - **The Agentile Factory** — one daemon per machine that feeds off every registered project's backlog, runs parallel workers with a chosen model each, and gives you a console for everything waiting on you. Design: `docs/agentile-factory.md`.
 
 `/ag-loop` remains for one release as an alias that runs `/ag-build` once.
@@ -195,7 +195,7 @@ For an unattended machine there are two drivers:
 | plan | writes `plan.md` | reviews/amends `plan.md` | route-aware: `foreground`/`spike` pause |
 | build | implements against the gates | available for questions | playbook opt-in |
 | verify | fresh-context review + gates | reads the diff | playbook opt-in |
-| ship | merges, stamps, archives | approves the ship | pause-before-ship (default on) |
+| ship | merges, stamps, archives | approves the ship | `ship.md` `human_checkpoint` (default on) |
 | learn | compiles the digest, proposes edits | approves what gets encoded | approval of context edits |
 
 ## Install (in a project)
