@@ -210,4 +210,15 @@ Dir.mktmpdir do |d|
   raise "dir target: #{claim_spec(d, 'dir')}" unless claim_spec(d, "dir").end_with?("0004-dir/SPEC.md")
 end
 
+# 21. --spec accepts the prefixed form as well as the bare slug — slugs are stored
+#     without their NNNN- prefix, but a caller naming a spec reads it off the filename
+Dir.mktmpdir do |d|
+  spec(d, "0009-thing.md", status: "ready")
+  raise "prefixed target: #{claim_spec(d, '0009-thing')}" unless claim_spec(d, "0009-thing").end_with?("0009-thing.md")
+end
+Dir.mktmpdir do |d|
+  spec(d, "0009-thing.md", status: "ready")
+  raise "bare target: #{claim_spec(d, 'thing')}" unless claim_spec(d, "thing").end_with?("0009-thing.md")
+end
+
 puts "ALL PASS"

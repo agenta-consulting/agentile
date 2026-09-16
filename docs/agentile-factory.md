@@ -126,6 +126,7 @@ docs/agentile/specs/0007-<slug>/checkpoints/
 reason: question            # one of the pause reasons above
 asked_at: 2026-09-16T03:12:40Z
 session_id: 2eb81f90-…      # the worker session to resume if the process is gone
+asked_by: builder           # what asked: plan | build | builder | reviewer | verify | ship
 status: open                # open | answered
 answered_at:
 answered_by:
@@ -235,7 +236,7 @@ The console runs on the factory machine and is reached over the LAN or Tailscale
 
 - **projects**: name, path, on, drain, rank, workers_cap, default_model, route_models (json), permission_mode, allowed_tools (json), review (json, mirrored from gates.json at registration and refreshed each poll), last_claim_result, last_polled_at.
 - **workers**: project_id, spec_slug, spec_rank, runner_id, session_id, model, worktree_path, branch, pid, status (`running`, `paused`, `handed_over`, `shipped`, `failed`, `crashed`, `stopped`), started_at, ended_at, paused_at, turns, input_tokens, output_tokens, cost_reported, exit_status, last_line.
-- **checkpoints**: worker_id, reason, path, status (`open`, `answered`), asked_at, answered_at, answered_by, answer_summary, review_url, review_port, review_pid.
+- **checkpoints**: worker_id, reason, path, status (`open`, `answered`), asked_at, asked_by, answered_at, answered_by, answer_summary, review_url, review_port, review_pid.
 - **messages**: worker_id, direction (`to_worker`, `from_worker`), body, at. The chat transcript.
 - **events**: worker_id, at, kind (`tool_use`, `assistant`, `result`, `stderr`), summary. Pruned after seven days; the transcript on disk is the durable record.
 

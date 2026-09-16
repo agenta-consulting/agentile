@@ -322,8 +322,15 @@ module Airtable
       deps_shipped = ->(r) { (r["fields"]["Depends On"] || []).all? { |dep_id| shipped_slugs.include?(slug_of(dep_id)) } }
 
       if target
-        chosen = pool.find { |r| r["fields"]["Slug"] == target }
+        # Slugs are stored bare; a caller may name a spec either way
+        # (`--spec 0009-unit-conversion-rules` or `--spec unit-conversion-rules`).
+        bare = target.sub(/\A\d+-/, "")
+        chosen = pool.find { |r| r["fields"]["Slug"] == bare }
         return "NOT_FOUND" if chosen.nil?
+        # NOT_FOUND means "no ACTIVE spec has that slug" — the local adapter's
+        # claim pool simply excludes done/ and abandoned/, so a shipped or
+        # abandoned record must read the same way here rather than as TAKEN.
+        return "NOT_FOUND" if %w[shipped abandoned].include?(chosen["fields"]["Status"])
         return "TAKEN" unless chosen["fields"]["Status"] == "ready" && chosen["fields"]["Claimed By (Session)"].to_s.empty?
         return "BLOCKED" unless deps_shipped.call(chosen)
       else

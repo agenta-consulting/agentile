@@ -38,23 +38,33 @@ A headless run must pre-authorise these tools and the gates: `--permission-promp
 
 The **spec directory** for checkpoints is the directory holding `plan.md`: for the `local` store the directory of the claimed `SPEC.md`; for `airtable`, `<dir>/specs/<slug>/`. It exists once `/ag-plan` has run (it promotes a flat spec); every pause in this skill happens after that.
 
+Every `ag-checkpoint open` call also passes `--by <who>`, naming what asked — `plan`, `build`, `verify` or `ship` for a stage checkpoint, and `builder` or `reviewer` for a `question`. It lands as the `asked_by` field, and Step 0 routes an answered `question` by it.
+
+**Record an answer that arrives in chat.** The checkpoint file is the record of the decision; the transcript is not. So when the human answers in conversation rather than in the file — an interactive session where you relayed the ask with `AskUserQuestion`, or where the user simply replied in their next turn — record it before you act on it:
+
+```
+printf '%s' "<reply>" | ag-checkpoint answer "<checkpoint-path>" --by "<identity>"
+```
+
+then proceed exactly as Step 0's routing for an answered checkpoint of that reason. Never act on an unrecorded answer: the factory console, `/ag-wip` and any later resume read the file.
+
 ## Steps
 
 ### Step 0 — Resume check
 
-Run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"`. If no entry's `claimed_by` equals this identity, nothing of yours is in flight: append `event=started` and go to Step 1. Otherwise that entry is your spec and you claim nothing this run — take its `slug` (the `<slug>` every run-log line and status line uses) and its `route` from the listing, and derive `<spec-dir>` from its identifier (see **Tools**). Then:
+Run `ag-store spec_list --status in_progress --dir "<dir>" --store "<store>"`. If no entry's `claimed_by` equals this identity, nothing of yours is in flight: append `event=started` and go to Step 1. Otherwise that entry is your spec and you claim nothing this run — take its `slug` (the `<slug>` every run-log line and status line uses) and its `route` from the listing, and derive `<spec-dir>` from its identifier (see **Tools**) — that identifier is the `<id>` for every later `ag-store` call, exactly as in Step 1. Then:
 
-- If `<spec-dir>/plan.md` does not exist, go to Step 2.
+- If the spec is still in flat form, or `<spec-dir>/plan.md` is absent, go to Step 2.
 - Otherwise run `ag-checkpoint list "<spec-dir>"`. If it lists no checkpoints, go to Step 3.
 - If the newest checkpoint is `answered`, read its `answer` field from the `list` output — that is the human's decision — and resume by the checkpoint's reason, which is the only rule for where to go:
   - `plan_review` → Step 3.
   - `build_blocked` → Step 3, re-dispatching the builder with the answer as its instruction.
   - `build_checkpoint` → Step 3, re-dispatching the builder with the answer as its instruction; if the answer is a bare approval, go to Step 4 instead of rebuilding.
-  - `question` → the step that asked (Step 3 if the builder asked, Step 4 if the reviewer asked), passing the answer to the agent you re-dispatch.
+  - `question` → the step that asked, read off the checkpoint's `asked_by` field in the `ag-checkpoint list` output: `builder` → Step 3, `reviewer` → Step 4. Pass the answer to the agent you re-dispatch.
   - `gate_failure` → Step 3 with the answer as the builder's instruction — unless the answer says to release or abandon the spec, in which case run `ag-store release "<id>" --dir "<dir>" --store "<store>"` or point at `/ag-abandon <slug>`, append `event=failed detail=gate_failure`, and end with `AG_BUILD: failed <slug> gate_failure`.
   - `verify_checkpoint` → Step 5 on approval; otherwise Step 3 with the answer as the builder's instruction.
   - `ship_approval` → Step 6 on approval; otherwise Step 3 with the answer as the builder's instruction.
-- If the newest checkpoint is still `open`, do not re-ask: report that it is waiting, and end with `AG_BUILD: paused <slug> <reason> <path>`.
+- If the newest checkpoint is still `open`, never open a second one for the same ask. In an interactive session, relay its `ask` with `AskUserQuestion`, record the reply against that checkpoint (see **Tools**), and continue by the routing above for its reason. Headless, report that it is waiting and end with `AG_BUILD: paused <slug> <reason> <path>`.
 
 ### Step 1 — Claim
 
@@ -75,34 +85,38 @@ Invoke `/ag-plan <id>`. Invoked from `/ag-build`, it dispatches the `ag-planner`
 Pause for plan review when the stage playbook `.agentile/plan.md`'s `human_checkpoint` is `true`, or is `route` and the spec's `route` (from the Step 1 listing, or the Step 0 listing on a resumed run) is `foreground` or `spike`. To pause: write the checkpoint with the plan summary `/ag-plan` returned as the ask,
 
 ```
-printf '%s' "<summary>. Review or amend plan.md in place, then answer this checkpoint." | ag-checkpoint open "<spec-dir>" plan_review --session "${CLAUDE_SESSION_ID}"
+printf '%s' "<summary>. Review or amend plan.md in place, then answer this checkpoint." | ag-checkpoint open "<spec-dir>" plan_review --session "${CLAUDE_SESSION_ID}" --by plan
 ```
 
-append `event=paused detail=plan_review`, and end the turn: one paragraph, the line "Plan written to `<spec-dir>/plan.md` — review or amend it, then reply 'approved'.", and the status line `AG_BUILD: paused <slug> plan_review <checkpoint-path>`. An amended `plan.md` is the approved plan.
+append `event=paused detail=plan_review`, and end the turn: one paragraph, the line "Plan written to `<spec-dir>/plan.md` — review or amend it, then reply 'approved'.", and the status line `AG_BUILD: paused <slug> plan_review <checkpoint-path>`. An amended `plan.md` is the approved plan. If the approval instead comes back in chat, record it against the checkpoint (see **Tools**) and continue as Step 0 routes an answered `plan_review`.
 
 ### Step 3 — Implement
 
 Read `.agentile/build.md`'s frontmatter. If `delegate_to: <skill>` is set, invoke that skill; otherwise dispatch the `ag-builder` agent with the spec identifier, its `plan.md` path, the build playbook path, and, when resuming from an answered `question` checkpoint, the answer text. The builder's first line is one of:
 
 - `BUILD: done` → continue.
-- `BUILD: blocked` → checkpoint `build_blocked` with the builder's reason as the ask; `event=paused detail=build_blocked`; end with `AG_BUILD: paused <slug> build_blocked <path>`.
-- `BUILD: question` → checkpoint `question` with the builder's question block (question, options, recommendation) as the ask; `event=paused detail=question`; end with `AG_BUILD: paused <slug> question <path>`.
+- `BUILD: blocked` → checkpoint `build_blocked` (`--by build`) with the builder's reason as the ask; `event=paused detail=build_blocked`; end with `AG_BUILD: paused <slug> build_blocked <path>`.
+- `BUILD: question` → checkpoint `question` (`--by builder`, which is how Step 0 sends the answer back here) with the builder's question block (question, options, recommendation) as the ask; `event=paused detail=question`; end with `AG_BUILD: paused <slug> question <path>`.
 
-If `build.md` sets `human_checkpoint: true`: checkpoint `build_checkpoint` with the builder's summary; `event=paused detail=build_checkpoint`; end with `AG_BUILD: paused <slug> build_checkpoint <path>`.
+If `build.md` sets `human_checkpoint: true`: checkpoint `build_checkpoint` (`--by build`) with the builder's summary; `event=paused detail=build_checkpoint`; end with `AG_BUILD: paused <slug> build_checkpoint <path>`.
+
+At any of these pauses, an answer that arrives in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for that reason.
 
 ### Step 4 — Verify
 
 Dispatch the `ag-reviewer` agent. Its first line is one of:
 
 - `VERDICT: pass` → continue.
-- `VERDICT: question` → checkpoint `question` exactly as in Step 3.
-- `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` with the findings as the ask, `event=paused detail=gate_failure`, and end with `AG_BUILD: paused <slug> gate_failure <path>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, `event=failed detail=gate_failure` and end with `AG_BUILD: failed <slug> gate_failure`.
+- `VERDICT: question` → checkpoint `question` exactly as in Step 3, but `--by reviewer`, which is how Step 0 sends the answer back here.
+- `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` (`--by build`) with the findings as the ask, `event=paused detail=gate_failure`, and end with `AG_BUILD: paused <slug> gate_failure <path>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, `event=failed detail=gate_failure` and end with `AG_BUILD: failed <slug> gate_failure`.
 
-If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` with the reviewer's findings summary; `event=paused detail=verify_checkpoint`; end with `AG_BUILD: paused <slug> verify_checkpoint <path>`.
+If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` (`--by verify`) with the reviewer's findings summary; `event=paused detail=verify_checkpoint`; end with `AG_BUILD: paused <slug> verify_checkpoint <path>`.
+
+At either pause, an answer that arrives in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for that reason.
 
 ### Step 5 — Ship approval
 
-If `ship.md`'s `human_checkpoint` is `true` (default): checkpoint `ship_approval` whose ask has three lines — the spec slug and title, what was built (one sentence from the builder's report), and the verify outcome (one sentence from the reviewer's) — then `event=paused detail=ship_approval`, end the turn with those three lines, "Approve to ship `<slug>`?", and `AG_BUILD: paused <slug> ship_approval <path>`.
+If `ship.md`'s `human_checkpoint` is `true` (default): checkpoint `ship_approval` (`--by ship`) whose ask has three lines — the spec slug and title, what was built (one sentence from the builder's report), and the verify outcome (one sentence from the reviewer's) — then `event=paused detail=ship_approval`, end the turn with those three lines, "Approve to ship `<slug>`?", and `AG_BUILD: paused <slug> ship_approval <path>`. An approval that comes back in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for `ship_approval`.
 
 An answered `ship_approval` whose answer says anything other than approval (a note, "send back") is a bounce: go to Step 3 with the answer as the builder's instruction.
 
@@ -132,7 +146,7 @@ AG_BUILD: idle <NONE|WIP_FULL|BLOCKED|UNPRIORITISED>
 
 ## Questions instead of guesses
 
-A worker cannot prompt. When the builder or reviewer needs a human decision the spec, plan, `CLAUDE.md` and ADRs cannot settle, it returns `question` and this skill writes the checkpoint. Prefer a recorded assumption in `plan.md` when the stakes are low; ask once, with options and a recommendation, when they are not. In an interactive session you may also relay the question with `AskUserQuestion` — but still write the checkpoint first, so the item shows on the factory console.
+A worker cannot prompt. When the builder or reviewer needs a human decision the spec, plan, `CLAUDE.md` and ADRs cannot settle, it returns `question` and this skill writes the checkpoint. Prefer a recorded assumption in `plan.md` when the stakes are low; ask once, with options and a recommendation, when they are not. In an interactive session you may also relay the question with `AskUserQuestion` — but still write the checkpoint first, so the item shows on the factory console, and record the reply against it (see **Tools**) before acting on it.
 
 ## Interactive use beside the factory
 

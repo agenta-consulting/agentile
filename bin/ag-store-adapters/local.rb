@@ -89,7 +89,8 @@ module Local
 
   # Prints/returns the claimed spec path, or one of:
   #   WIP_FULL | BLOCKED | UNPRIORITISED | NONE          (queue claim)
-  #   WIP_FULL | BLOCKED | NOT_FOUND | TAKEN            (targeted claim, `target` = slug)
+  #   WIP_FULL | BLOCKED | NOT_FOUND | TAKEN            (targeted claim, `target` = slug,
+  #                                                      with or without its NNNN- prefix)
   # A targeted claim ignores rank — the caller chose the spec — but still
   # respects the WIP limit and unshipped dependencies.
   def claim(specs_dir, session, label, wip, target = nil)
@@ -116,7 +117,10 @@ module Local
 
       chosen = nil
       if target
-        chosen = pool.find { |s| s[:slug] == target }
+        # Slugs are stored bare; a caller may name a spec either way
+        # (`--spec 0009-unit-conversion-rules` or `--spec unit-conversion-rules`).
+        bare = target.sub(/\A\d+-/, "")
+        chosen = pool.find { |s| s[:slug] == bare }
         if chosen.nil?
           result = "NOT_FOUND"
           next

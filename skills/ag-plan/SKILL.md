@@ -19,7 +19,8 @@ from the project root). If it exists, honour it:
 - Invoke any skills listed in `also_run` alongside the baseline.
 - If `human_checkpoint` is `true`, or is `route` and the spec's `route` is
   `foreground` or `spike`, stop after producing your output and require an
-  explicit human "approved" before handing off to the next stage.
+  explicit human "approved" before handing off to the next stage (when invoked
+  from `/ag-build`, return instead; it writes the checkpoint).
 - Treat the prose body as project policy, layered on the baseline below.
 
 If the file is absent, use the baseline below unchanged.

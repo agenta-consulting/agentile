@@ -83,4 +83,47 @@ Dir.mktmpdir do |root|
   raise "empty list" unless cp("list", d)[0] == "[]"
 end
 
+# 6. numbering comes from the highest existing number, not the count — a deleted
+#    checkpoint must not make the next open collide with a file still on disk
+Dir.mktmpdir do |root|
+  d = spec_dir(root)
+  p1, _e, _s = cp("open", d, "plan_review", stdin: "first")
+  p2, _e, _s = cp("open", d, "question", stdin: "second")
+  raise "001: #{p1}" unless p1.end_with?("001-plan_review.md")
+  raise "002: #{p2}" unless p2.end_with?("002-question.md")
+  File.delete(p1)
+  p3, _e, _s = cp("open", d, "question", stdin: "third")
+  raise "003 after delete: #{p3}" unless p3.end_with?("003-question.md")
+  raise "002 clobbered" unless File.read(p2).include?("second")
+end
+
+# 7. open --by records asked_by in the frontmatter and in list output; absent --by is ""
+Dir.mktmpdir do |root|
+  d = spec_dir(root)
+  path, err, st = cp("open", d, "question", "--by", "builder", stdin: "Which auth scheme?")
+  raise "open --by failed: #{err}" unless st.success?
+  fm = YAML.safe_load(File.read(path)[/\A---\n(.*?)\n---/m, 1], permitted_classes: [Time, Date])
+  raise "asked_by frontmatter: #{fm['asked_by'].inspect}" unless fm["asked_by"] == "builder"
+  cp("open", d, "question", stdin: "no asker")
+  rows = JSON.parse(cp("list", d)[0])
+  raise "asked_by in list" unless rows[0]["asked_by"] == "builder"
+  raise "asked_by empty without --by: #{rows[1]['asked_by'].inspect}" unless rows[1]["asked_by"] == ""
+end
+
+# 8. values with YAML metacharacters survive a round trip (session_id, asked_by, answered_by)
+Dir.mktmpdir do |root|
+  d = spec_dir(root)
+  tricky = "id: with colon"
+  path, err, st = cp("open", d, "question", "--session", tricky, "--by", "role: builder", stdin: "Which?")
+  raise "tricky open failed: #{err}" unless st.success?
+  out, err, st = cp("list", d)
+  raise "tricky list failed: #{err}" unless st.success?
+  rows = JSON.parse(out)
+  raise "session_id: #{rows[0]['session_id'].inspect}" unless rows[0]["session_id"] == tricky
+  raise "asked_by: #{rows[0]['asked_by'].inspect}" unless rows[0]["asked_by"] == "role: builder"
+  cp("answer", path, "--by", "keith: the human", stdin: "Option 2.")
+  rows = JSON.parse(cp("list", d)[0])
+  raise "answered_by: #{rows[0]['answered_by'].inspect}" unless rows[0]["answered_by"] == "keith: the human"
+end
+
 puts "ALL PASS"

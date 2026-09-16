@@ -14,7 +14,10 @@ here. See the Versioning section in [README.md](./README.md) for why.
   via the new `bin/ag-checkpoint` (open, list, open_count, answer). The status
   line carries the path: `AG_BUILD: paused <slug> <reason> <path>`. New reason
   `question`: `ag-builder` and `ag-reviewer` may return `BUILD: question` /
-  `VERDICT: question` with options and a recommendation.
+  `VERDICT: question` with options and a recommendation. `open` takes `--by
+  <who>`, recorded as the `asked_by` frontmatter field and reported by `list`,
+  so an answered `question` routes back to whichever of the builder or the
+  reviewer asked it.
 - **`.agentile/loop.md` retired.** `pause_at_plan` → `human_checkpoint` on
   `plan.md` (new playbook, accepts `route`); `pause_before_ship` →
   `human_checkpoint` on `ship.md` (new playbook); `verify_retry_limit` and
@@ -24,6 +27,10 @@ here. See the Versioning section in [README.md](./README.md) for why.
   `review` block; `templates/factory-worker.md` is the system prompt for a
   headless factory worker. `bin/ag-run` drives `/ag-build`. Design:
   `docs/agentile-factory.md`.
+- **Upgrading with work in flight:** finish or release any spec claimed by a
+  `/ag-loop` session before upgrading; a pre-0.13.0 claim resumed by
+  `/ag-build` finds no checkpoints and restarts at implement, in a fresh
+  worktree.
 
 ## 0.12.0 — 2026-09-14
 
