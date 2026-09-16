@@ -64,7 +64,8 @@ module Airtable
       { name: "Affected Areas" }.merge(long_text),
       { name: "Open Questions" }.merge(long_text),
       { name: "Verification" }.merge(long_text),
-      { name: "Created" }.merge(date),
+      { name: "Created" }.merge(date),        # legacy; read-only fallback for specs created before 0.14.0
+      { name: "Created At" }.merge(datetime),
       { name: "Plan Path" }.merge(text),
       { name: "Claimed By (Session)" }.merge(text),
       { name: "Label" }.merge(text),
@@ -145,7 +146,7 @@ module Airtable
 
     FRONTMATTER_KEYS = %i[
       title slug status depends_on type route business_value technical_certainty
-      rank created serves tags outcome claimed_by label claimed_at claimed_by_member
+      rank created_at serves tags outcome claimed_by label claimed_at claimed_by_member
       abandoned_reason abandoned_at shipped_at captured_by shaped_by
     ].freeze
 

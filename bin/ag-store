@@ -38,6 +38,7 @@
 #   outcome_achieve <slug>                             --dir <dir>
 #   outcome_abandon <slug> --reason "<text>"           --dir <dir>
 #   map                                                --dir <dir>
+#   flow         [<slug>]   cycle time + agent/human split  --dir <dir>
 #   brief_sync                                         --dir <dir>
 #   whoami
 #   doctor                                              --dir <dir>
@@ -163,6 +164,7 @@ result =
     when "outcome_achieve" then adapter.outcome_achieve(positional[0])
     when "outcome_abandon" then adapter.outcome_abandon(positional[0], reason: flags["reason"].to_s)
     when "map" then adapter.map
+    when "flow" then adapter.flow(agentile_dir, positional[0])
     when "whoami" then adapter.whoami
     when "doctor" then adapter.doctor
     when "provision" then adapter.provision
@@ -222,6 +224,8 @@ result =
     Local.map(agentile_dir)
   when "brief_sync"
     Local.brief_sync(agentile_dir, Local.outcome_list(agentile_dir))
+  when "flow"
+    Local.flow(specs_dir, positional[0])
   when "whoami"
     Local.whoami
   when "doctor"

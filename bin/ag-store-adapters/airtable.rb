@@ -51,7 +51,7 @@ module Airtable
     SPECS_FIELDS = {
       title: "Title", slug: "Slug", status: "Status", type: "Type", route: "Route",
       business_value: "Business Value", technical_certainty: "Technical Certainty",
-      rank: "Rank", outcome: "Outcome", problem: "Problem / Why Now",
+      rank: "Rank", created_at: "Created At", outcome: "Outcome", problem: "Problem / Why Now",
       acceptance_criteria: "Acceptance Criteria", scope_in: "Scope In", scope_out: "Scope Out",
       edge_cases: "Edge Cases", affected_areas: "Affected Areas", open_questions: "Open Questions",
       verification: "Verification", created: "Created", plan_path: "Plan Path",
@@ -202,7 +202,7 @@ module Airtable
         path: r["id"],
         status: f["Status"],
         title: f["Title"],
-        created: f["Created"],
+        created_at: (f["Created At"] || f["Created"]),
         business_value: f["Business Value"],
         technical_certainty: f["Technical Certainty"],
         route: f["Route"],
@@ -445,6 +445,28 @@ module Airtable
       @client.update_record(@base_id, @specs_table, r["id"], { "Plan Path" => plan_path })
       invalidate_specs_cache!
       plan_path
+    end
+
+    # ---- flow metrics ----
+    # Same derivation as the local store (Local.compute_flow is shared): the
+    # timestamps come from the record, the checkpoints from the spec's own
+    # directory in this repo, which exists in both store modes.
+
+    def flow(agentile_dir, ident = nil)
+      recs = ident.to_s.empty? ? specs_records : [spec_by_slug(ident)].compact
+      abort "ag-store: no such spec: #{ident}" if recs.empty? && !ident.to_s.empty?
+
+      out = recs.sort_by { |r| r["fields"]["Slug"].to_s }.map do |r|
+        f = r["fields"]
+        spec_dir = agentile_dir ? File.join(agentile_dir, "specs", f["Slug"].to_s) : nil
+        Local.compute_flow(
+          slug: f["Slug"], status: f["Status"],
+          created_at: (f["Created At"] || f["Created"]),
+          claimed_at: f["Claimed At"], shipped_at: f["Shipped At"],
+          checkpoints: Local.read_checkpoints(spec_dir),
+        )
+      end
+      ident.to_s.empty? ? out : out.first
     end
 
     # ---- outcomes (docs/agentile-outcomes.md §4.3) ----

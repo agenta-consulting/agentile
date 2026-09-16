@@ -326,4 +326,106 @@ Dir.mktmpdir do |root|
   raise "brief_sync without heading returns false" unless store("brief_sync", dir: dir) == false
 end
 
+# 19. flow: queue wait, cycle time, and the agent/human split from checkpoints
+Dir.mktmpdir do |root|
+  dir = scaffold(root); specs_dir = File.join(dir, "specs")
+  FileUtils.mkdir_p(File.join(specs_dir, "0001-timed", "checkpoints"))
+  File.write(File.join(specs_dir, "0001-timed", "SPEC.md"), <<~MD)
+    ---
+    title: Timed
+    slug: timed
+    status: shipped
+    created_at: "2026-09-01T09:00:00Z"
+    claimed_at: "2026-09-01T10:00:00Z"
+    shipped_at: "2026-09-01T13:00:00Z"
+    ---
+    # Timed
+  MD
+  cp = lambda do |n, reason, asked, answered|
+    File.write(File.join(specs_dir, "0001-timed", "checkpoints", format("%03d-%s.md", n, reason)), <<~MD)
+      ---
+      reason: #{reason}
+      asked_at: "#{asked}"
+      session_id: s1
+      asked_by: #{reason == 'ship_approval' ? 'ship' : 'plan'}
+      status: #{answered ? 'answered' : 'open'}
+      answered_at: #{answered ? "\"#{answered}\"" : ''}
+      answered_by: #{answered ? 'keith' : ''}
+      ---
+      ## Ask
+
+      q
+
+      ## Answer
+
+      #{answered ? 'approved' : ''}
+    MD
+  end
+  cp.call(1, "plan_review",  "2026-09-01T10:30:00Z", "2026-09-01T11:00:00Z")   # 30 min human wait
+  cp.call(2, "ship_approval","2026-09-01T12:30:00Z", "2026-09-01T13:00:00Z")   # 30 min human wait
+
+  f = store("flow", "timed", dir: dir)
+  raise "queue wait: #{f.inspect}"  unless f["queue_wait_seconds"] == 3600      # 09:00 -> 10:00
+  raise "cycle: #{f.inspect}"       unless f["cycle_seconds"] == 10800          # 10:00 -> 13:00
+  raise "human wait: #{f.inspect}"  unless f["human_wait_seconds"] == 3600      # 2 x 30 min
+  raise "agent: #{f.inspect}"       unless f["agent_seconds"] == 7200           # cycle - human
+  raise "lead: #{f.inspect}"        unless f["lead_seconds"] == 14400           # 09:00 -> 13:00
+  raise "in_progress: #{f.inspect}" unless f["in_progress"] == false
+  raise "checkpoints: #{f.inspect}" unless f["checkpoints"].length == 2
+  raise "cp detail: #{f['checkpoints'][0].inspect}" unless f["checkpoints"][0]["reason"] == "plan_review" &&
+    f["checkpoints"][0]["wait_seconds"] == 1800 && f["checkpoints"][0]["asked_by"] == "plan"
+end
+
+# 20. flow on an in-progress spec with an OPEN checkpoint counts the wait so far, and legacy `created` still reads
+Dir.mktmpdir do |root|
+  dir = scaffold(root); specs_dir = File.join(dir, "specs")
+  FileUtils.mkdir_p(File.join(specs_dir, "0001-live", "checkpoints"))
+  File.write(File.join(specs_dir, "0001-live", "SPEC.md"), <<~MD)
+    ---
+    title: Live
+    slug: live
+    status: in_progress
+    created: 2026-09-01
+    claimed_at: "#{(Time.now.utc - 3600).strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    ---
+    # Live
+  MD
+  File.write(File.join(specs_dir, "0001-live", "checkpoints", "001-ship_approval.md"), <<~MD)
+    ---
+    reason: ship_approval
+    asked_at: "#{(Time.now.utc - 600).strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    session_id: s1
+    asked_by: ship
+    status: open
+    answered_at:
+    answered_by:
+    ---
+    ## Ask
+
+    ship it?
+
+    ## Answer
+
+  MD
+  f = store("flow", "live", dir: dir)
+  raise "in_progress: #{f.inspect}" unless f["in_progress"] == true
+  raise "cycle ~1h: #{f.inspect}" unless (3500..3700).cover?(f["cycle_seconds"])
+  raise "open wait ~10m: #{f.inspect}" unless (540..660).cover?(f["human_wait_seconds"])
+  raise "agent ~50m: #{f.inspect}" unless (2900..3100).cover?(f["agent_seconds"])
+  raise "legacy created: #{f.inspect}" unless f["created_at"].to_s.start_with?("2026-09-01")
+  raise "open cp flagged: #{f.inspect}" unless f["checkpoints"][0]["status"] == "open"
+  raise "shipped nil: #{f.inspect}" unless f["shipped_at"].nil? && f["lead_seconds"].nil?
+end
+
+# 21. flow with no slug returns every spec, and spec_list exposes created_at
+Dir.mktmpdir do |root|
+  dir = scaffold(root); specs_dir = File.join(dir, "specs")
+  write_spec(specs_dir, "0001-a.md", extra: { "created_at" => '"2026-09-01T09:00:00Z"' })
+  write_spec(specs_dir, "0002-b.md")
+  all = store("flow", dir: dir)
+  raise "flow all: #{all.inspect}" unless all.length == 2 && all.map { |f| f["slug"] }.sort == %w[a b]
+  listed = store("spec_list", dir: dir)
+  raise "created_at in spec_list: #{listed[0].inspect}" unless listed[0].key?("created_at")
+end
+
 puts "ALL PASS"

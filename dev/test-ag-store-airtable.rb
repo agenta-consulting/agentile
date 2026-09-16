@@ -320,4 +320,36 @@ adapter.spec_write("blank", { claimed_at: "", shipped_at: "" })
 wf = transport.calls.last[:body]["fields"]
 raise "blank date on write should be null: #{wf.inspect}" unless wf.key?("Claimed At") && wf["Claimed At"].nil? && wf["Shipped At"].nil?
 
+# 15. Created At (datetime) replaces Created (date); spec markdown round-trips created_at
+raise "Created At in schema" unless Airtable::Schema::SPECS_BASE_FIELDS.any? { |f| f[:name] == "Created At" && f[:type] == "dateTime" }
+cmd = md.sub("created: 2026-06-10", 'created_at: "2026-06-10T09:00:00Z"')
+cv = Airtable::Schema.parse_spec_markdown(cmd)
+raise "parse created_at: #{cv.inspect}" unless cv[:created_at] == '"2026-06-10T09:00:00Z"' || cv[:created_at] == "2026-06-10T09:00:00Z"
+rt = Airtable::Schema.parse_spec_markdown(Airtable::Schema.render_spec_markdown(cv))
+raise "created_at round-trip: #{rt[:created_at].inspect}" unless rt[:created_at].to_s.include?("2026-06-10T09:00:00")
+
+transport = FakeTransport.new
+transport.push(200, records_page([]))
+transport.push(200, records_page([]))
+transport.push(200, { "records" => [{ "id" => "recC" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_create("dated", cmd)
+cf = transport.calls.last[:body]["records"][0]["fields"]
+raise "sends Created At: #{cf.inspect}" unless cf["Created At"].to_s.include?("2026-06-10T09:00:00")
+
+# 16. flow: computed from the record's timestamps, falling back to the legacy Created date
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recF", {
+  "Slug" => "shipped-thing", "Status" => "shipped",
+  "Created" => "2026-09-01", "Claimed At" => "2026-09-01T10:00:00.000Z",
+  "Shipped At" => "2026-09-01T13:00:00.000Z" })]))
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+f = adapter.flow("/nonexistent-dir", "shipped-thing")
+raise "cycle: #{f.inspect}" unless f[:cycle_seconds] == 10800
+raise "no checkpoints -> zero human wait: #{f.inspect}" unless f[:human_wait_seconds] == 0 && f[:agent_seconds] == 10800
+raise "legacy Created fallback: #{f.inspect}" unless f[:queue_wait_seconds] == 36000   # 00:00 -> 10:00
+raise "in_progress: #{f.inspect}" unless f[:in_progress] == false
+
 puts "ALL PASS"

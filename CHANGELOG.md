@@ -4,6 +4,28 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.14.0 — 2026-09-16
+
+- **Flow metrics: `ag-store flow [<slug>]`.** Reports, per spec,
+  `queue_wait_seconds` (created→claim), `cycle_seconds` (claim→ship), and the
+  split of that cycle into `agent_seconds` and `human_wait_seconds`, with a
+  per-checkpoint breakdown. Every number is derived from timestamps that already
+  existed — nothing new is stored. A checkpoint is by definition an interval
+  where the loop stopped and waited for a person, so summing
+  `answered_at - asked_at` across a spec's checkpoints separates time the agents
+  worked from time the work sat waiting on a human. An unanswered checkpoint
+  counts its wait up to now, so the split is live for work in flight.
+- `/ag-wip` prints the agent/human split for each in-progress spec and names the
+  open checkpoint the loop is waiting on. `/ag-retro` reads `flow` instead of
+  doing the arithmetic by hand, and distinguishes the three bottlenecks a single
+  "lead time" number hides: queue wait, human wait, and agent time.
+- **`created` becomes `created_at`, a datetime.** A date could not measure a
+  queue wait shorter than a day, which on this loop is most of them. The
+  Airtable `Created` date field stays as a read-only fallback for specs written
+  before this release; `provision` adds `Created At` to existing bases. Bare
+  dates parse as midnight **UTC**, not local, so the same spec yields the same
+  numbers on any machine.
+
 ## 0.13.1 — 2026-09-16
 
 - Headless workers are told to call `ag-store`, `ag-checkpoint`, `git` and the

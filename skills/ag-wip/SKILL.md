@@ -39,8 +39,18 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
    for any other named runner. Compute the relative age from `claimed_at` (e.g. "2 h ago", "3 d ago").
 
-4. Flag any spec whose `claimed_at` timestamp is older than approximately 24 hours with a warning:
+4. For each in-progress spec, run `ag-store flow "<slug>" --dir "<dir>" --store "<store>"` and print the split beneath it:
+
+   ```
+     elapsed <cycle_seconds>  =  agent <agent_seconds>  +  waiting on a human <human_wait_seconds>
+   ```
+
+   Format the durations readably (e.g. "3h 12m"). When `open_checkpoint_count`
+   is above zero, name the open checkpoint's `reason` and `asked_by` — that is
+   what the loop is waiting for, and its wait is still counting.
+
+5. Flag any spec whose `claimed_at` timestamp is older than approximately 24 hours with a warning:
 
    > Likely stale — **release the claim** (`ag-store release <slug> --dir "<dir>" --store "<store>"`) to put it back in the queue, or resume it with the command above. Releasing a claim is not abandoning: the spec stays live.
 
-5. Make no changes to any file.
+6. Make no changes to any file.

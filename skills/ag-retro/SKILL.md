@@ -32,7 +32,7 @@ Default to the last 7 days (or a window the user names). First resolve the **Age
 
 - `git log --since` with stats — commits, churn, which areas changed most.
 - Merge/PR history via `gh pr list --state merged` and `gh pr view` when the `gh` CLI is available; otherwise rely on git.
-- `ag-store spec_list --dir "<dir>" --store "<store>"` (active) and `ag-store spec_list --pool done --dir "<dir>" --store "<store>"` (shipped) — which specs shipped, which stalled, which became spikes. Shipped specs keep `created`, `claimed_at`, and `shipped_at`: compute ready→claim (queue wait) and claim→ship (cycle time) from them directly.
+- `ag-store spec_list --dir "<dir>" --store "<store>"` (active) and `ag-store spec_list --pool done --dir "<dir>" --store "<store>"` (shipped) — which specs shipped, which stalled, which became spikes. - `ag-store flow --dir "<dir>" --store "<store>"` — the flow numbers for every spec, already computed: `queue_wait_seconds` (created→claim), `cycle_seconds` (claim→ship), and the split of that cycle into `agent_seconds` and `human_wait_seconds`, with a per-checkpoint breakdown. Do not recompute these from timestamps by hand.
 - `docs/adr/` — decisions made in the window.
 
 Run heavy log/grep commands so only your summary lands in context, not raw output.
@@ -41,7 +41,7 @@ Run heavy log/grep commands so only your summary lands in context, not raw outpu
 
 Answer, with evidence:
 
-- **Where did work wait?** The longest gaps between spec-ready and merge — the flow bottleneck.
+- **Where did work wait?** Use `flow`. Three different bottlenecks look identical in a "lead time" number and need different fixes: a large `queue_wait_seconds` means shaped work sat unclaimed (a prioritisation problem), a large `human_wait_seconds` means the loop stalled at checkpoints (you are the constraint — look at which `reason` and `asked_by` dominate), and a large `agent_seconds` means the building itself is slow (gates, environment, spec quality).
 - **What needed the most rework?** Files or areas with repeated churn or repeated review bounces.
 - **What surprised us?** Incidents, reverts, or specs that ballooned past their scope boundary.
 - **Lead time** — is it dropping? If not, the constraint is upstream of coding; say so plainly.

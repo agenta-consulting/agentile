@@ -9,6 +9,7 @@ require "yaml"
 require "date" # spec frontmatter has `created: YYYY-MM-DD`, which YAML loads as a Date
 require "fileutils"
 require "time"
+require "json"
 
 module Local
   RESERVED = %w[done abandoned].freeze
@@ -293,7 +294,7 @@ module Local
           path: s[:path],
           status: s[:fm]["status"],
           title: s[:fm]["title"],
-          created: s[:fm]["created"],
+          created_at: (s[:fm]["created_at"] || s[:fm]["created"]),
           business_value: s[:fm]["business_value"],
           technical_certainty: s[:fm]["technical_certainty"],
           route: s[:fm]["route"],
@@ -625,6 +626,119 @@ module Local
     new_raw = raw.sub(/^#{Regexp.escape(BRIEF_HEADING)}\n.*?(?=^## |\z)/m) { section }
     File.write(path, new_raw)
     true
+  end
+
+  # ---- flow metrics (cycle time, and the agent/human split) ----
+  # Every number here is DERIVED from timestamps that already exist: the spec's
+  # created_at/claimed_at/shipped_at, and each checkpoint's asked_at/answered_at.
+  # Nothing is stored. A checkpoint is by definition an interval where the loop
+  # stopped and waited for a person, so summing them splits the cycle into time
+  # the agents worked and time the work sat waiting on a human.
+
+  def parse_ts(value)
+    return nil if value.nil?
+    return value.utc if value.is_a?(Time)
+    return Time.utc(value.year, value.month, value.day) if value.is_a?(Date)
+
+    s = value.to_s.strip.delete('"')
+    return nil if s.empty?
+
+    # A bare date (the legacy `created:` / Airtable `Created` field) is midnight
+    # UTC, not midnight local — otherwise the same spec yields a different queue
+    # wait depending on the machine's timezone, which would not be reproducible.
+    if (m = s.match(/\A(\d{4})-(\d{2})-(\d{2})\z/))
+      return Time.utc(m[1].to_i, m[2].to_i, m[3].to_i)
+    end
+
+    begin
+      Time.parse(s).utc
+    rescue ArgumentError
+      nil
+    end
+  end
+
+  def secs(from, to)
+    return nil if from.nil? || to.nil?
+
+    [(to - from).round, 0].max
+  end
+
+  # Checkpoint files live beside SPEC.md in the spec's own directory, in BOTH
+  # store modes — they are repo files, not store records.
+  def read_checkpoints(spec_dir)
+    return [] if spec_dir.nil?
+
+    Dir.glob(File.join(spec_dir, "checkpoints", "*.md")).sort.filter_map do |path|
+      fm = (YAML.safe_load(File.read(path)[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
+      asked = parse_ts(fm["asked_at"])
+      next nil if asked.nil?
+
+      {
+        file: File.basename(path), reason: fm["reason"].to_s, asked_by: fm["asked_by"].to_s,
+        status: (fm["status"].to_s.empty? ? "open" : fm["status"].to_s),
+        asked_at: asked, answered_at: parse_ts(fm["answered_at"]),
+      }
+    end
+  end
+
+  # Pure: shared with the airtable adapter, which supplies its own timestamps
+  # and spec directory. `now` is injectable so the caller controls the clock.
+  def compute_flow(slug:, status:, created_at:, claimed_at:, shipped_at:, checkpoints:, now: Time.now.utc)
+    created, claimed, shipped = parse_ts(created_at), parse_ts(claimed_at), parse_ts(shipped_at)
+    in_progress = shipped.nil? && !claimed.nil?
+    cycle_end = shipped || (in_progress ? now : nil)
+
+    cps = checkpoints.map do |c|
+      # An unanswered checkpoint is still waiting: measure to the ship, or to now.
+      ended = c[:answered_at] || cycle_end || now
+      c.merge(wait_seconds: secs(c[:asked_at], ended))
+    end
+    human = cps.sum { |c| c[:wait_seconds].to_i }
+    cycle = secs(claimed, cycle_end)
+
+    {
+      slug: slug, status: status, in_progress: in_progress,
+      created_at: created&.strftime("%Y-%m-%dT%H:%M:%SZ"),
+      claimed_at: claimed&.strftime("%Y-%m-%dT%H:%M:%SZ"),
+      shipped_at: shipped&.strftime("%Y-%m-%dT%H:%M:%SZ"),
+      queue_wait_seconds: secs(created, claimed),
+      cycle_seconds: cycle,
+      human_wait_seconds: (cycle.nil? ? nil : human),
+      agent_seconds: (cycle.nil? ? nil : [cycle - human, 0].max),
+      lead_seconds: secs(created, shipped),
+      checkpoint_count: cps.length,
+      open_checkpoint_count: cps.count { |c| c[:status] != "answered" },
+      checkpoints: cps.map do |c|
+        { reason: c[:reason], asked_by: c[:asked_by], status: c[:status],
+          asked_at: c[:asked_at].strftime("%Y-%m-%dT%H:%M:%SZ"),
+          answered_at: c[:answered_at]&.strftime("%Y-%m-%dT%H:%M:%SZ"),
+          wait_seconds: c[:wait_seconds] }
+      end,
+    }
+  end
+
+  def spec_dir_of(spec)
+    File.basename(spec[:path]) == "SPEC.md" ? File.dirname(spec[:path]) : nil
+  end
+
+  def flow_for(spec)
+    compute_flow(
+      slug: spec[:slug], status: spec[:fm]["status"],
+      created_at: (spec[:fm]["created_at"] || spec[:fm]["created"]),
+      claimed_at: spec[:fm]["claimed_at"], shipped_at: spec[:fm]["shipped_at"],
+      checkpoints: read_checkpoints(spec_dir_of(spec)),
+    )
+  end
+
+  def flow(specs_dir, ident = nil)
+    if ident.to_s.empty?
+      pools = specs_in(specs_dir) + specs_in(File.join(specs_dir, "done")) + specs_in(File.join(specs_dir, "abandoned"))
+      return pools.sort_by { |s| s[:slug] }.map { |s| flow_for(s) }
+    end
+    spec = find_by_ident(specs_dir, ident)
+    abort "ag-store: no such spec: #{ident}" unless spec
+
+    flow_for(spec)
   end
 
   # ---- whoami / doctor ----

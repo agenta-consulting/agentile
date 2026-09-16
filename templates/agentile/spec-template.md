@@ -8,7 +8,7 @@ type: feature
 route: <foreground | background | spike>
 business_value: <high | medium | low>
 technical_certainty: <high | medium | low>
-created: <YYYY-MM-DD>
+created_at: "<YYYY-MM-DDTHH:MM:SSZ>"   # UTC; set at shaping. Flow metrics measure from here.
 outcome: <one observable metric or check that will prove the change worked in production>
 # model:                      # optional — the Claude model a factory worker should use for this spec (an alias like sonnet or opus, or a full model name); absent = the project's route table
 # Claim fields — set by /ag-next when the item is pulled; KEPT after ship so the
