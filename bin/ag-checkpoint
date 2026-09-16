@@ -1,7 +1,10 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
-# ag-checkpoint — the files a paused /ag-build leaves in a spec's directory so a
-# human (or the factory console) can answer without the worker waiting.
+# ag-checkpoint — DEPRECATED as of 0.15.0. Checkpoints are now store records
+# (`ag-store checkpoint_open|list|open_count|answer`), because a question
+# addressed to a human must be answerable from another machine — a file in one
+# worker's checkout is not. This script still works against the `local` store's
+# files; use ag-store everywhere else. It will be removed in a later release.
 #
 #   ag-checkpoint open <spec-dir> <reason> [--session <id>] [--by <who>]
 #                                                              ask text on stdin; prints the path

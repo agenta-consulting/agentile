@@ -39,6 +39,12 @@
 #   outcome_abandon <slug> --reason "<text>"           --dir <dir>
 #   map                                                --dir <dir>
 #   flow         [<slug>]   cycle time + agent/human split  --dir <dir>
+#   checkpoint_open <slug> <reason> [--by <stage>] [--session <id>]  (ask on stdin) --dir <dir>
+#   checkpoint_list <slug>                             --dir <dir>
+#   checkpoint_open_count <slug>                       --dir <dir>
+#   checkpoint_answer <id> [--by <who>]   (answer on stdin) --dir <dir>
+#   run_event <event> [--spec <slug>] [--runner <id>] [--detail "<text>"]  --dir <dir>
+#   run_list  [--spec <slug>]                          --dir <dir>
 #   brief_sync                                         --dir <dir>
 #   whoami
 #   doctor                                              --dir <dir>
@@ -49,7 +55,7 @@
 #
 # --store airtable also needs --airtable-base <id> (except create_base, which
 # makes one) and, on ENV, AGENTILE_AIRTABLE_TOKEN. Table names default to
-# Inbox/Specs/Members/Outcomes; override with --airtable-inbox-table / --airtable-specs-table
+# Inbox/Specs/Members/Outcomes/Checkpoints/Runs; override with --airtable-inbox-table / --airtable-specs-table
 # / --airtable-members-table / --airtable-outcomes-table if a project renamed them.
 #
 # All output is one JSON value on stdout (a string, array, object, or bool) —
@@ -131,7 +137,9 @@ adapter = if store == "airtable"
             Airtable::Adapter.new(
               base_id: flags["airtable-base"], inbox_table: flags["airtable-inbox-table"] || "Inbox",
               specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members",
-              outcomes_table: flags["airtable-outcomes-table"] || "Outcomes"
+              outcomes_table: flags["airtable-outcomes-table"] || "Outcomes",
+              checkpoints_table: flags["airtable-checkpoints-table"] || "Checkpoints",
+              runs_table: flags["airtable-runs-table"] || "Runs"
             )
           elsif store != "local"
             abort "ag-store: unknown adapter '#{store}'"
@@ -164,7 +172,15 @@ result =
     when "outcome_achieve" then adapter.outcome_achieve(positional[0])
     when "outcome_abandon" then adapter.outcome_abandon(positional[0], reason: flags["reason"].to_s)
     when "map" then adapter.map
-    when "flow" then adapter.flow(agentile_dir, positional[0])
+    when "flow" then adapter.flow(nil, positional[0])
+    when "checkpoint_open"
+      adapter.checkpoint_open(positional[0], positional[1], $stdin.read, session: flags["session"], by: flags["by"])
+    when "checkpoint_list" then adapter.checkpoint_list(positional[0])
+    when "checkpoint_open_count" then adapter.checkpoint_open_count(positional[0])
+    when "checkpoint_answer" then adapter.checkpoint_answer(positional[0], $stdin.read, by: flags["by"])
+    when "run_event"
+      adapter.run_event(positional[0], spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
+    when "run_list" then adapter.run_list(spec: flags["spec"])
     when "whoami" then adapter.whoami
     when "doctor" then adapter.doctor
     when "provision" then adapter.provision
@@ -226,6 +242,19 @@ result =
     Local.brief_sync(agentile_dir, Local.outcome_list(agentile_dir))
   when "flow"
     Local.flow(specs_dir, positional[0])
+  when "checkpoint_open"
+    Local.checkpoint_open(specs_dir, positional[0], positional[1], $stdin.read,
+                          session: flags["session"], by: flags["by"])
+  when "checkpoint_list"
+    Local.checkpoint_list(specs_dir, positional[0])
+  when "checkpoint_open_count"
+    Local.checkpoint_open_count(specs_dir, positional[0])
+  when "checkpoint_answer"
+    Local.checkpoint_answer(specs_dir, positional[0], $stdin.read, by: flags["by"])
+  when "run_event"
+    Local.run_event(agentile_dir, positional[0], spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
+  when "run_list"
+    Local.run_list(agentile_dir, spec: flags["spec"])
   when "whoami"
     Local.whoami
   when "doctor"

@@ -33,5 +33,13 @@ Credentials are never written here — `AGENTILE_AIRTABLE_TOKEN` is an
 environment variable only, set wherever you keep local secrets for tools you
 run (never in a tracked file).
 
-`plan.md`, supporting files, and ADRs always stay in this repo in **both**
-modes — only the Inbox and spec content move to a shared store.
+The split is **events vs artefacts**, not local vs remote:
+
+- **Events go to the store** — the Inbox, specs, and (since 0.15.0) checkpoints
+  and run events. A checkpoint is a question addressed to a human who may be at
+  another machine, and the run log is the team's record of what ran where.
+  Keeping either in one checkout means a teammate cannot answer a paused worker,
+  and the flow numbers are only as complete as that machine's git history.
+- **Artefacts stay in this repo, in both modes** — `plan.md`, the `SPEC.md`
+  snapshot, findings, supporting files, and ADRs. They are things you review and
+  amend, and they belong beside the diff they describe.

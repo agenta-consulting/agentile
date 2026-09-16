@@ -4,6 +4,26 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.15.0 — 2026-09-16
+
+- **Checkpoints and run events move into the store.** Both were repo files, so a
+  headless worker that paused wrote its question to an uncommitted file on its
+  own machine and printed a path only that machine could act on — which defeats
+  the point of a checkpoint, and breaks as soon as two people or two machines are
+  involved. They are now store records: new `Checkpoints` and `Runs` tables in
+  Airtable, linked to `Specs`. The `local` store keeps files exactly as before,
+  so solo mode is unchanged.
+- New ops: `checkpoint_open`, `checkpoint_list`, `checkpoint_open_count`,
+  `checkpoint_answer`, `run_event`, `run_list`. `/ag-build` calls them instead of
+  `bin/ag-checkpoint`, which is deprecated and now only drives the local files.
+- **The line is events vs artefacts, not local vs remote.** `plan.md`, the
+  `SPEC.md` snapshot, findings, supporting files and ADRs stay in the repo in
+  both modes — they are reviewed and amended beside the diff they describe.
+- `ag-store flow` takes its human-wait intervals from the store's checkpoints
+  rather than the filesystem, so the agent/human split is correct on a machine
+  that never ran the build.
+- `provision` adds both tables to an existing base; `doctor` reports them.
+
 ## 0.14.0 — 2026-09-16
 
 - **Flow metrics: `ag-store flow [<slug>]`.** Reports, per spec,

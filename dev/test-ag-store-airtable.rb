@@ -361,4 +361,65 @@ adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
 out = adapter.spec_read("legacy")
 raise "legacy created lost on read: #{out[0, 200].inspect}" unless out.include?("2026-09-13")
 
+# 18. checkpoints and run events are store records; flow reads checkpoints from the store, not files
+raise "Checkpoints schema" unless defined?(Airtable::Schema::CHECKPOINTS_BASE_FIELDS)
+raise "Runs schema" unless defined?(Airtable::Schema::RUNS_BASE_FIELDS)
+raise "Checkpoints link to Specs" unless Airtable::Schema::LINK_FIELDS[:checkpoints].any? { |f| f[0] == "Spec" }
+raise "Runs link to Specs" unless Airtable::Schema::LINK_FIELDS[:runs].any? { |f| f[0] == "Spec" }
+
+# open a checkpoint -> creates a record linked to the spec
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS", { "Slug" => "cp", "Status" => "in_progress" })]))  # spec lookup
+transport.push(200, records_page([]))                                                            # existing checkpoints
+transport.push(200, { "records" => [{ "id" => "recCP1" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+id = adapter.checkpoint_open("cp", "ship_approval", "Approve to ship cp?", session: "s1", by: "ship")
+raise "returns record id: #{id.inspect}" unless id == "recCP1"
+call = transport.calls.last
+raise "checkpoint path: #{call[:path]}" unless call[:path] == "/v0/appTEST/Checkpoints"
+cf = call[:body]["records"][0]["fields"]
+raise "checkpoint fields: #{cf.inspect}" unless cf["Reason"] == "ship_approval" && cf["Asked By"] == "ship" &&
+  cf["Status"] == "open" && cf["Ask"] == "Approve to ship cp?" && cf["Spec"] == ["recS"] && cf["Seq"] == 1 &&
+  !cf["Asked At"].to_s.empty?
+
+# list projects the same canonical shape the local store returns
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS", { "Slug" => "cp" })]))
+transport.push(200, records_page([rec("recCP1", { "Spec" => ["recS"], "Seq" => 1, "Reason" => "ship_approval",
+  "Asked By" => "ship", "Asked At" => "2026-09-01T12:30:00.000Z", "Status" => "answered",
+  "Ask" => "ship?", "Answer" => "approved", "Answered At" => "2026-09-01T13:00:00.000Z" })]))
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+l = adapter.checkpoint_list("cp")
+raise "list: #{l.inspect}" unless l.length == 1 && l[0][:id] == "recCP1" && l[0][:reason] == "ship_approval" &&
+  l[0][:ask] == "ship?" && l[0][:answer] == "approved" && l[0][:status] == "answered"
+
+# run_event creates a Runs record
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS", { "Slug" => "cp" })]))
+transport.push(200, { "records" => [{ "id" => "recR1" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.run_event("claimed", spec: "cp", runner: "r1", detail: "rank 1")
+rc = transport.calls.last
+raise "runs path: #{rc[:path]}" unless rc[:path] == "/v0/appTEST/Runs"
+rf = rc[:body]["records"][0]["fields"]
+raise "run fields: #{rf.inspect}" unless rf["Event"] == "claimed" && rf["Runner"] == "r1" &&
+  rf["Detail"] == "rank 1" && rf["Spec"] == ["recS"] && !rf["At"].to_s.empty?
+
+# flow takes its human-wait from the store's checkpoints
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS", { "Slug" => "cp", "Status" => "shipped",
+  "Created At" => "2026-09-01T09:00:00.000Z", "Claimed At" => "2026-09-01T10:00:00.000Z",
+  "Shipped At" => "2026-09-01T13:00:00.000Z" })]))
+transport.push(200, records_page([rec("recCP1", { "Spec" => ["recS"], "Seq" => 1, "Reason" => "ship_approval",
+  "Asked By" => "ship", "Asked At" => "2026-09-01T12:30:00.000Z", "Status" => "answered",
+  "Answered At" => "2026-09-01T13:00:00.000Z" })]))
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+f = adapter.flow(nil, "cp")
+raise "flow human wait from store: #{f.inspect}" unless f[:human_wait_seconds] == 1800
+raise "flow agent: #{f.inspect}" unless f[:agent_seconds] == 9000 && f[:cycle_seconds] == 10800
+
 puts "ALL PASS"

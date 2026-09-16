@@ -115,6 +115,33 @@ module Airtable
       { name: "Abandoned Reason" }.merge(long_text),
     ].freeze
 
+    # Session state (0.14.0): a checkpoint is a question addressed to a human who
+    # may be at another machine, and a run event is the cross-machine record of
+    # what ran where. Both are records here, files in the `local` store.
+    # Primary fields are plain text refs — Airtable forbids a select or a link
+    # as primary, and a slug alone reads badly in a linked-record chip.
+    CHECKPOINTS_BASE_FIELDS = [
+      { name: "Ref" }.merge(text),
+      { name: "Seq" }.merge(number),
+      { name: "Reason" }.merge(select("plan_review", "build_blocked", "build_checkpoint",
+                                      "gate_failure", "verify_checkpoint", "ship_approval", "question")),
+      { name: "Asked By" }.merge(text),
+      { name: "Asked At" }.merge(datetime),
+      { name: "Session Id" }.merge(text),
+      { name: "Status" }.merge(select("open", "answered")),
+      { name: "Ask" }.merge(long_text),
+      { name: "Answer" }.merge(long_text),
+      { name: "Answered At" }.merge(datetime),
+    ].freeze
+
+    RUNS_BASE_FIELDS = [
+      { name: "Ref" }.merge(text),
+      { name: "Event" }.merge(select("started", "claimed", "shipped", "paused", "failed", "idle", "deployed")),
+      { name: "At" }.merge(datetime),
+      { name: "Runner" }.merge(text),
+      { name: "Detail" }.merge(long_text),
+    ].freeze
+
     # Link fields added once every table's id is known (table: field name -> [target table key, multiple?]).
     LINK_FIELDS = {
       specs: [
@@ -130,6 +157,13 @@ module Airtable
       ],
       outcomes: [
         ["Created By", :members, false],
+      ],
+      checkpoints: [
+        ["Spec", :specs, false],
+        ["Answered By", :members, false],
+      ],
+      runs: [
+        ["Spec", :specs, false],
       ],
     }.freeze
 

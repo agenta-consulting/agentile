@@ -428,4 +428,45 @@ Dir.mktmpdir do |root|
   raise "created_at in spec_list: #{listed[0].inspect}" unless listed[0].key?("created_at")
 end
 
+# 22. checkpoint ops through ag-store: open -> list -> answer, local store keeps files
+Dir.mktmpdir do |root|
+  dir = scaffold(root); specs_dir = File.join(dir, "specs")
+  FileUtils.mkdir_p(File.join(specs_dir, "0001-cp"))
+  File.write(File.join(specs_dir, "0001-cp", "SPEC.md"), "---\ntitle: Cp\nslug: cp\nstatus: in_progress\nclaimed_at: \"2026-09-01T10:00:00Z\"\n---\n# Cp\n")
+
+  id = store("checkpoint_open", "cp", "ship_approval", "--by", "ship", "--session", "s1", dir: dir, stdin: "Approve to ship cp?")
+  raise "open returns an id: #{id.inspect}" unless id.is_a?(String) && !id.empty?
+  raise "local id is a path: #{id}" unless id.include?("checkpoints/001-ship_approval.md") && File.file?(id)
+
+  open_list = store("checkpoint_list", "cp", dir: dir)
+  raise "list: #{open_list.inspect}" unless open_list.length == 1
+  c = open_list[0]
+  raise "list shape: #{c.inspect}" unless c["reason"] == "ship_approval" && c["asked_by"] == "ship" &&
+    c["status"] == "open" && c["ask"] == "Approve to ship cp?" && c["id"] == id
+  raise "open_count: #{store('checkpoint_open_count', 'cp', dir: dir)}" unless store("checkpoint_open_count", "cp", dir: dir) == 1
+
+  store("checkpoint_answer", id, "--by", "keith", dir: dir, stdin: "approved")
+  done = store("checkpoint_list", "cp", dir: dir)[0]
+  raise "answered: #{done.inspect}" unless done["status"] == "answered" && done["answer"] == "approved" &&
+    done["answered_by"] == "keith" && !done["answered_at"].to_s.empty?
+  raise "open_count after: #{store('checkpoint_open_count', 'cp', dir: dir)}" unless store("checkpoint_open_count", "cp", dir: dir) == 0
+
+  # and flow now sees that wait
+  f = store("flow", "cp", dir: dir)
+  raise "flow sees checkpoint: #{f.inspect}" unless f["checkpoint_count"] == 1 && f["checkpoints"][0]["reason"] == "ship_approval"
+end
+
+# 23. run events through ag-store: append and read back, newest last
+Dir.mktmpdir do |root|
+  dir = scaffold(root)
+  File.write(File.join(dir, "runs.md"), "# Agentile run log\n\nAppend-only.\n\n")
+  store("run_event", "claimed", "--spec", "cp", "--runner", "r1", "--detail", "rank 1", dir: dir)
+  store("run_event", "shipped", "--spec", "cp", "--runner", "r1", dir: dir)
+  evs = store("run_list", dir: dir)
+  raise "run_list: #{evs.inspect}" unless evs.length == 2
+  raise "order/shape: #{evs.inspect}" unless evs[0]["event"] == "claimed" && evs[1]["event"] == "shipped" &&
+    evs[0]["spec"] == "cp" && evs[0]["runner"] == "r1" && evs[0]["detail"] == "rank 1" && !evs[0]["at"].to_s.empty?
+  raise "filter by spec: #{store('run_list', '--spec', 'nope', dir: dir).inspect}" unless store("run_list", "--spec", "nope", dir: dir).empty?
+end
+
 puts "ALL PASS"

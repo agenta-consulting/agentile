@@ -74,7 +74,7 @@ module Airtable
     }.freeze
 
     def initialize(base_id:, inbox_table: "Inbox", specs_table: "Specs", members_table: "Members",
-                   outcomes_table: "Outcomes", token: ENV.fetch("AGENTILE_AIRTABLE_TOKEN", nil), client: nil)
+                   outcomes_table: "Outcomes", checkpoints_table: "Checkpoints", runs_table: "Runs", token: ENV.fetch("AGENTILE_AIRTABLE_TOKEN", nil), client: nil)
       abort "ag-store: --airtable-base is required for the airtable store" if base_id.to_s.empty?
       abort "ag-store: AGENTILE_AIRTABLE_TOKEN is not set" if client.nil? && token.to_s.empty?
 
@@ -83,6 +83,8 @@ module Airtable
       @specs_table = specs_table
       @members_table = members_table
       @outcomes_table = outcomes_table
+      @checkpoints_table = checkpoints_table
+      @runs_table = runs_table
       @client = client || Client.new(token: token)
     end
 
@@ -450,23 +452,123 @@ module Airtable
       plan_path
     end
 
+    # ---- checkpoints and run events (session state, 0.14.0) ----
+    # Records, not files: a checkpoint opened by a worker on one machine has to
+    # be answerable from another, and the run log has to be the team's, not a
+    # checkout's. Artefacts (plan.md, the SPEC snapshot, findings, ADRs) stay in
+    # the repo in both store modes.
+
+    def checkpoints_records
+      @checkpoints_records ||= @client.list_records(@base_id, @checkpoints_table)
+    end
+
+    def invalidate_checkpoints_cache!
+      @checkpoints_records = nil
+    end
+
+    def project_checkpoint(r)
+      f = r["fields"]
+      { id: r["id"], seq: f["Seq"], reason: f["Reason"].to_s, asked_by: f["Asked By"].to_s,
+        asked_at: f["Asked At"].to_s, session_id: f["Session Id"].to_s,
+        status: (f["Status"].to_s.empty? ? "open" : f["Status"].to_s),
+        answered_at: f["Answered At"].to_s,
+        answered_by: member_name_of(Array(f["Answered By"]).first).to_s,
+        ask: f["Ask"].to_s, answer: f["Answer"].to_s }
+    end
+
+    def checkpoints_for(ident)
+      r = spec_by_slug(ident)
+      abort "ag-store: no such spec: #{ident}" unless r
+
+      checkpoints_records.select { |c| Array(c["fields"]["Spec"]).include?(r["id"]) }
+                         .sort_by { |c| c["fields"]["Seq"].to_i }
+    end
+
+    def checkpoint_list(ident)
+      checkpoints_for(ident).map { |r| project_checkpoint(r) }
+    end
+
+    def checkpoint_open_count(ident)
+      checkpoint_list(ident).count { |c| c[:status] != "answered" }
+    end
+
+    def checkpoint_open(ident, reason, ask, session: nil, by: nil)
+      abort "ag-store: unknown checkpoint reason #{reason.inspect}" unless Local::CHECKPOINT_REASONS.include?(reason.to_s)
+
+      spec = spec_by_slug(ident)
+      abort "ag-store: no such spec: #{ident}" unless spec
+
+      seq = checkpoints_for(ident).map { |c| c["fields"]["Seq"].to_i }.max.to_i + 1
+      fields = {
+        "Ref" => "#{spec['fields']['Slug']} ##{format('%03d', seq)} #{reason}",
+        "Seq" => seq, "Reason" => reason.to_s, "Asked By" => by.to_s,
+        "Asked At" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "Session Id" => session.to_s, "Status" => "open", "Ask" => ask.to_s.strip,
+        "Spec" => [spec["id"]],
+      }
+      created = @client.create_records(@base_id, @checkpoints_table, [fields])
+      invalidate_checkpoints_cache!
+      created.first["id"]
+    end
+
+    def checkpoint_answer(id, answer, by: nil)
+      fields = { "Status" => "answered", "Answer" => answer.to_s.strip,
+                 "Answered At" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ") }
+      if (m = by.to_s.start_with?("rec") ? by : find_member_by_email(by.to_s)&.dig("id"))
+        fields["Answered By"] = [m]
+      end
+      @client.update_record(@base_id, @checkpoints_table, id, fields)
+      invalidate_checkpoints_cache!
+      id
+    end
+
+    def run_event(event, spec: nil, runner: nil, detail: nil)
+      abort "ag-store: unknown run event #{event.inspect}" unless Local::RUN_EVENTS.include?(event.to_s)
+
+      at = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+      fields = { "Ref" => "#{at} #{event}#{spec.to_s.empty? ? '' : " #{spec}"}",
+                 "Event" => event.to_s, "At" => at,
+                 "Runner" => runner.to_s, "Detail" => detail.to_s }
+      if !spec.to_s.empty? && (r = spec_by_slug(spec))
+        fields["Spec"] = [r["id"]]
+      end
+      @client.create_records(@base_id, @runs_table, [fields])
+      at
+    end
+
+    def run_list(spec: nil)
+      recs = @client.list_records(@base_id, @runs_table)
+      recs = recs.select { |r| slug_of_spec_link(r) == spec } if spec
+      recs.map { |r|
+        f = r["fields"]
+        { at: f["At"].to_s, runner: (f["Runner"].to_s.empty? ? nil : f["Runner"].to_s),
+          event: f["Event"].to_s, spec: slug_of_spec_link(r), detail: f["Detail"].to_s }
+      }.sort_by { |e| e[:at] }
+    end
+
+    def slug_of_spec_link(r)
+      id = Array(r["fields"]["Spec"]).first
+      id && slug_of(id)
+    end
+
     # ---- flow metrics ----
     # Same derivation as the local store (Local.compute_flow is shared): the
     # timestamps come from the record, the checkpoints from the spec's own
     # directory in this repo, which exists in both store modes.
 
-    def flow(agentile_dir, ident = nil)
+    def flow(_agentile_dir = nil, ident = nil)
       recs = ident.to_s.empty? ? specs_records : [spec_by_slug(ident)].compact
       abort "ag-store: no such spec: #{ident}" if recs.empty? && !ident.to_s.empty?
 
       out = recs.sort_by { |r| r["fields"]["Slug"].to_s }.map do |r|
         f = r["fields"]
-        spec_dir = agentile_dir ? File.join(agentile_dir, "specs", f["Slug"].to_s) : nil
+        cps = checkpoints_records.select { |c| Array(c["fields"]["Spec"]).include?(r["id"]) }
+                                 .map { |c| project_checkpoint(c) }
         Local.compute_flow(
           slug: f["Slug"], status: f["Status"],
           created_at: (f["Created At"] || f["Created"]),
           claimed_at: f["Claimed At"], shipped_at: f["Shipped At"],
-          checkpoints: Local.read_checkpoints(spec_dir),
+          checkpoints: cps,
         )
       end
       ident.to_s.empty? ? out : out.first
@@ -573,6 +675,8 @@ module Airtable
         "Specs table exists" => names.include?(@specs_table),
         "Members table exists" => names.include?(@members_table),
         "Outcomes table exists" => names.include?(@outcomes_table),
+        "Checkpoints table exists" => names.include?(@checkpoints_table),
+        "Runs table exists" => names.include?(@runs_table),
       }
 
       # Schema drift: a base provisioned before a field was added to the schema
@@ -599,6 +703,10 @@ module Airtable
         @members_table => Schema::MEMBERS_BASE_FIELDS.map { |f| f[:name] },
         @outcomes_table => Schema::OUTCOMES_BASE_FIELDS.map { |f| f[:name] } +
                            Schema::LINK_FIELDS.fetch(:outcomes, []).map(&:first),
+        @checkpoints_table => Schema::CHECKPOINTS_BASE_FIELDS.map { |f| f[:name] } +
+                              Schema::LINK_FIELDS.fetch(:checkpoints, []).map(&:first),
+        @runs_table => Schema::RUNS_BASE_FIELDS.map { |f| f[:name] } +
+                       Schema::LINK_FIELDS.fetch(:runs, []).map(&:first),
       }
       expected.flat_map do |table_name, field_names|
         table = tables.find { |t| t["name"] == table_name }
@@ -618,6 +726,8 @@ module Airtable
       inbox_id = ensure_table(existing, @inbox_table, Schema::INBOX_BASE_FIELDS)
       members_id = ensure_table(existing, @members_table, Schema::MEMBERS_BASE_FIELDS)
       outcomes_id = ensure_table(existing, @outcomes_table, Schema::OUTCOMES_BASE_FIELDS)
+      checkpoints_id = ensure_table(existing, @checkpoints_table, Schema::CHECKPOINTS_BASE_FIELDS)
+      runs_id = ensure_table(existing, @runs_table, Schema::RUNS_BASE_FIELDS)
 
       # A table that already existed keeps whatever fields it has, so a field
       # added to the schema after a base was provisioned would never appear.
@@ -626,11 +736,16 @@ module Airtable
       ensure_base_fields(inbox_id, Schema::INBOX_BASE_FIELDS)
       ensure_base_fields(members_id, Schema::MEMBERS_BASE_FIELDS)
       ensure_base_fields(outcomes_id, Schema::OUTCOMES_BASE_FIELDS)
+      ensure_base_fields(checkpoints_id, Schema::CHECKPOINTS_BASE_FIELDS)
+      ensure_base_fields(runs_id, Schema::RUNS_BASE_FIELDS)
 
-      table_ids = { specs: specs_id, inbox: inbox_id, members: members_id, outcomes: outcomes_id }
+      table_ids = { specs: specs_id, inbox: inbox_id, members: members_id, outcomes: outcomes_id,
+                    checkpoints: checkpoints_id, runs: runs_id }
       ensure_link_fields(specs_id, :specs, table_ids)
       ensure_link_fields(inbox_id, :inbox, table_ids)
       ensure_link_fields(outcomes_id, :outcomes, table_ids)
+      ensure_link_fields(checkpoints_id, :checkpoints, table_ids)
+      ensure_link_fields(runs_id, :runs, table_ids)
       doctor
     end
 

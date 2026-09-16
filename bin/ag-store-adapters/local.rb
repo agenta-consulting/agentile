@@ -601,6 +601,130 @@ module Local
     build_map(outcome_list(agentile_dir), entries)
   end
 
+  # ---- checkpoints and run events (session state) ----
+  # The `local` store keeps these as repo files, exactly as bin/ag-checkpoint
+  # and runs.md always have. The `airtable` store keeps them as records, so a
+  # checkpoint opened by one machine's worker can be answered from another.
+  # Artefacts (plan.md, the SPEC snapshot, findings, ADRs) stay in the repo in
+  # BOTH modes — this split is events vs artefacts, not local vs remote.
+
+  CHECKPOINT_REASONS = %w[plan_review build_blocked build_checkpoint gate_failure
+                          verify_checkpoint ship_approval question].freeze
+
+  def checkpoint_dir(specs_dir, ident)
+    spec = find_by_ident(specs_dir, ident)
+    abort "ag-store: no such spec: #{ident}" unless spec
+
+    dir = spec_dir_of(spec)
+    abort "ag-store: spec #{ident} has no directory yet — run /ag-plan first" if dir.nil?
+    File.join(dir, "checkpoints")
+  end
+
+  def parse_checkpoint(path)
+    raw = File.read(path)
+    fm = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
+    body = raw.sub(/\A---\n.*?\n---/m, "")
+    section = lambda do |name|
+      m = body.match(/^## #{name}\s*\n(.*?)(?=^## |\z)/m)
+      m ? m[1].strip : ""
+    end
+    {
+      id: path, seq: File.basename(path)[/\A\d+/].to_i, reason: fm["reason"].to_s,
+      asked_by: fm["asked_by"].to_s, asked_at: fm["asked_at"].to_s.delete('"'),
+      session_id: fm["session_id"].to_s, status: (fm["status"].to_s.empty? ? "open" : fm["status"].to_s),
+      answered_at: fm["answered_at"].to_s.delete('"'), answered_by: fm["answered_by"].to_s.delete('"'),
+      ask: section.call("Ask"), answer: section.call("Answer"),
+    }
+  end
+
+  def checkpoint_list(specs_dir, ident)
+    Dir.glob(File.join(checkpoint_dir(specs_dir, ident), "*.md")).sort.map { |p| parse_checkpoint(p) }
+  end
+
+  def checkpoint_open_count(specs_dir, ident)
+    checkpoint_list(specs_dir, ident).count { |c| c[:status] != "answered" }
+  end
+
+  def checkpoint_open(specs_dir, ident, reason, ask, session: nil, by: nil)
+    abort "ag-store: unknown checkpoint reason #{reason.inspect}" unless CHECKPOINT_REASONS.include?(reason.to_s)
+
+    dir = checkpoint_dir(specs_dir, ident)
+    FileUtils.mkdir_p(dir)
+    # Number from the highest existing, never the count: a deleted checkpoint
+    # must not make the next one collide with a file that is still there.
+    n = Dir.glob(File.join(dir, "*.md")).map { |p| File.basename(p)[/\A\d+/].to_i }.max.to_i + 1
+    path = File.join(dir, format("%03d-%s.md", n, reason))
+    File.write(path, <<~MD)
+      ---
+      reason: #{reason}
+      asked_at: "#{Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+      session_id: #{session.to_s.inspect}
+      asked_by: #{by.to_s.inspect}
+      status: open
+      answered_at:
+      answered_by:
+      ---
+
+      ## Ask
+
+      #{ask.to_s.strip}
+
+      ## Answer
+
+    MD
+    path
+  end
+
+  def checkpoint_answer(_specs_dir, id, answer, by: nil)
+    abort "ag-store: no such checkpoint: #{id}" unless File.file?(id.to_s)
+
+    raw = File.read(id)
+    fm = raw[/\A---\n(.*?)\n---/m, 1] or abort "ag-store: #{id} has no frontmatter"
+    new_fm = fm.sub(/^status:.*$/) { "status: answered" }
+               .sub(/^answered_at:.*$/) { "answered_at: \"#{Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ')}\"" }
+               .sub(/^answered_by:.*$/) { "answered_by: #{by.to_s.inspect}" }
+    body = raw.sub(/\A---\n.*?\n---/m) { "---\n#{new_fm}\n---" }
+    body = body.sub(/^## Answer\s*\n.*\z/m) { "## Answer\n\n#{answer.to_s.strip}\n" }
+    File.write(id, body)
+    id
+  end
+
+  # ---- run events ----
+
+  RUN_EVENTS = %w[started claimed shipped paused failed idle deployed].freeze
+  RUN_RE = /\A- (\S+) runner=(\S*) event=(\S+) spec=(\S+) detail=(.*)\z/
+
+  def runs_path(agentile_dir)
+    File.join(agentile_dir, "runs.md")
+  end
+
+  def run_event(agentile_dir, event, spec: nil, runner: nil, detail: nil, at: nil)
+    abort "ag-store: unknown run event #{event.inspect}" unless RUN_EVENTS.include?(event.to_s)
+
+    path = runs_path(agentile_dir)
+    abort "ag-store: no run log at #{path} — run /ag-init first" unless File.exist?(path)
+
+    stamp = at || Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    line = "- #{stamp} runner=#{runner.to_s.empty? ? '-' : runner} event=#{event} " \
+           "spec=#{spec.to_s.empty? ? '-' : spec} detail=#{detail}"
+    File.open(path, "a") { |f| f.puts(line) }
+    stamp
+  end
+
+  def run_list(agentile_dir, spec: nil)
+    path = runs_path(agentile_dir)
+    return [] unless File.exist?(path)
+
+    File.readlines(path, chomp: true).filter_map do |l|
+      m = RUN_RE.match(l) or next nil
+      ev = { at: m[1], runner: (m[2] == "-" ? nil : m[2]), event: m[3],
+             spec: (m[4] == "-" ? nil : m[4]), detail: m[5] }
+      next nil if spec && ev[:spec] != spec
+
+      ev
+    end
+  end
+
   # ---- brief_sync (docs/agentile-outcomes.md §4.2) ----
   # Rewrites the brief's "## Prioritised outcomes" section from the open
   # outcomes, by rank, so the prose list and the store cannot drift. The
@@ -689,10 +813,13 @@ module Local
     cycle_end = shipped || (in_progress ? now : nil)
 
     cps = checkpoints.map do |c|
+      # Timestamps arrive as Time from the file reader and as ISO strings from
+      # the store; normalise here so both adapters can share this.
+      asked, answered = parse_ts(c[:asked_at]), parse_ts(c[:answered_at])
       # An unanswered checkpoint is still waiting: measure to the ship, or to now.
-      ended = c[:answered_at] || cycle_end || now
-      c.merge(wait_seconds: secs(c[:asked_at], ended))
-    end
+      ended = answered || cycle_end || now
+      c.merge(asked_at: asked, answered_at: answered, wait_seconds: secs(asked, ended))
+    end.reject { |c| c[:asked_at].nil? }
     human = cps.sum { |c| c[:wait_seconds].to_i }
     cycle = secs(claimed, cycle_end)
 
