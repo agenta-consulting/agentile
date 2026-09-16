@@ -528,6 +528,7 @@ module Airtable
       at = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
       fields = { "Ref" => "#{at} #{event}#{spec.to_s.empty? ? '' : " #{spec}"}",
                  "Event" => event.to_s, "At" => at,
+                 "Status" => (Local::RUN_TERMINAL.include?(event.to_s) ? "closed" : "active"),
                  "Runner" => runner.to_s, "Detail" => detail.to_s }
       if !spec.to_s.empty? && (r = spec_by_slug(spec))
         fields["Spec"] = [r["id"]]
@@ -536,14 +537,31 @@ module Airtable
       at
     end
 
-    def run_list(spec: nil)
+    # Closing APPENDS a `closed` event; the Status field on each row is what an
+    # Airtable view filters on, and the live set is still derived from the log
+    # so both stores answer identically.
+    def run_close(spec: nil, runner: nil, detail: nil)
+      run_event("closed", spec: spec, runner: runner, detail: (detail.to_s.empty? ? "run closed" : detail))
+    end
+
+    def run_list(spec: nil, status: nil)
       recs = @client.list_records(@base_id, @runs_table)
-      recs = recs.select { |r| slug_of_spec_link(r) == spec } if spec
-      recs.map { |r|
+      events = recs.map { |r|
         f = r["fields"]
         { at: f["At"].to_s, runner: (f["Runner"].to_s.empty? ? nil : f["Runner"].to_s),
-          event: f["Event"].to_s, spec: slug_of_spec_link(r), detail: f["Detail"].to_s }
+          event: f["Event"].to_s, spec: slug_of_spec_link(r),
+          status: (f["Status"].to_s.empty? ? (Local::RUN_TERMINAL.include?(f["Event"].to_s) ? "closed" : "active") : f["Status"].to_s),
+          detail: f["Detail"].to_s }
       }.sort_by { |e| e[:at] }
+      events = events.select { |e| e[:spec] == spec } if spec
+      return events if status.to_s.empty?
+
+      live = Local.run_active_pairs(events)
+      case status.to_s
+      when "active" then events.select { |e| live.include?([e[:spec], e[:runner]]) }
+      when "closed" then events.reject { |e| live.include?([e[:spec], e[:runner]]) }
+      else abort "ag-store: unknown run status #{status.inspect} (active|closed)"
+      end
     end
 
     def slug_of_spec_link(r)

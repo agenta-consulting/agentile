@@ -131,6 +131,20 @@ An answered `ship_approval` whose answer says anything other than approval (a no
 
 Any error you cannot recover from — a required file missing, an agent that returns no verdict line, a tool that fails repeatedly, a denied permission you cannot work around — ends the run: append `event=failed detail=<short-code>` and end with `AG_BUILD: failed <slug-or-'-'> <short-code>`. The code is one lowercase snake_case word or short phrase naming the cause (`no_verdict_line`, `checkpoint_write_denied`); use `-` for the slug when no spec was claimed. Do not invent new checkpoint reasons for these — the seven reasons are fixed, and an error is a failure, not a pause.
 
+## Closing the run
+
+When the spec ships, fails unrecoverably, or you release the claim, append a
+closing event so the run drops out of the active view while its history is kept
+for the flow metrics:
+
+```
+ag-store run_close --spec "<slug>" --runner "<identity>" --detail "<why>" --dir "<dir>" --store "<store>"
+```
+
+A `shipped` or `failed` event already closes the run on its own; `run_close` is
+for the cases those do not cover — a released claim, an abandoned spec, or a
+worker that stopped for good.
+
 ## Exit contract
 
 The **very last line** of every turn this skill ends is exactly one of:

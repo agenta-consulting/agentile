@@ -136,7 +136,9 @@ module Airtable
 
     RUNS_BASE_FIELDS = [
       { name: "Ref" }.merge(text),
-      { name: "Event" }.merge(select("started", "claimed", "shipped", "paused", "failed", "idle", "deployed")),
+      { name: "Event" }.merge(select("started", "claimed", "shipped", "paused", "failed", "idle", "deployed", "closed")),
+      # Lets an Airtable view hide finished runs without deleting them.
+      { name: "Status" }.merge(select("active", "closed")),
       { name: "At" }.merge(datetime),
       { name: "Runner" }.merge(text),
       { name: "Detail" }.merge(long_text),

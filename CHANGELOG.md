@@ -4,6 +4,23 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.16.0 — 2026-09-16
+
+- **Run events carry a status.** `Runs` was the only table without one, so
+  finished runs accumulated in the same view as live ones. Each event is now
+  `active` or `closed`, and `ag-store run_list --status active|closed` filters —
+  in Airtable the `Status` field is what a view hides finished runs on.
+- **Retiring a run appends, never edits.** `ag-store run_close --spec <slug>
+  [--runner <id>]` records a `closed` event; the log stays append-only and every
+  row is kept, because the flow metrics are computed from that history. Which
+  runs are live is *derived* — a (spec, runner) pair is active until a terminal
+  event (`shipped`, `failed`, `deployed`, `closed`) lands for it — so both stores
+  answer identically and a stored flag can never go stale against the log.
+- `/ag-wip` cross-checks the two: a spec still `in_progress` with no active run
+  is a claim whose worker is gone, and it now says so instead of looking busy.
+- Log lines written before this release parse unchanged; a missing `status=` is
+  inferred from the event.
+
 ## 0.15.0 — 2026-09-16
 
 - **Checkpoints and run events move into the store.** Both were repo files, so a

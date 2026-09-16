@@ -422,4 +422,38 @@ f = adapter.flow(nil, "cp")
 raise "flow human wait from store: #{f.inspect}" unless f[:human_wait_seconds] == 1800
 raise "flow agent: #{f.inspect}" unless f[:agent_seconds] == 9000 && f[:cycle_seconds] == 10800
 
+# 19. Runs carry a Status so the Airtable view can hide finished runs; closing appends
+raise "Runs Status field" unless Airtable::Schema::RUNS_BASE_FIELDS.any? { |f| f[:name] == "Status" }
+raise "closed is a valid event" unless Airtable::Schema::RUNS_BASE_FIELDS
+  .find { |f| f[:name] == "Event" }[:options][:choices].map { |c| c[:name] }.include?("closed")
+
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS", { "Slug" => "alpha" })]))
+transport.push(200, { "records" => [{ "id" => "recR1" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.run_event("claimed", spec: "alpha", runner: "r1")
+raise "claimed active: #{transport.calls.last[:body].inspect}" unless transport.calls.last[:body]["records"][0]["fields"]["Status"] == "active"
+
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS", { "Slug" => "alpha" })]))
+transport.push(200, { "records" => [{ "id" => "recR2" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.run_event("shipped", spec: "alpha", runner: "r1")
+raise "shipped closed: #{transport.calls.last[:body].inspect}" unless transport.calls.last[:body]["records"][0]["fields"]["Status"] == "closed"
+
+# run_list --status active drops pairs whose last event was terminal
+transport = FakeTransport.new
+transport.push(200, records_page([
+  rec("r1", { "At" => "2026-09-01T10:00:00.000Z", "Event" => "claimed", "Runner" => "a", "Spec" => ["recA"], "Status" => "active" }),
+  rec("r2", { "At" => "2026-09-01T11:00:00.000Z", "Event" => "shipped", "Runner" => "a", "Spec" => ["recA"], "Status" => "closed" }),
+  rec("r3", { "At" => "2026-09-01T12:00:00.000Z", "Event" => "claimed", "Runner" => "b", "Spec" => ["recB"], "Status" => "active" }),
+]))
+transport.push(200, records_page([rec("recA", { "Slug" => "alpha" }), rec("recB", { "Slug" => "beta" })]))
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+live = adapter.run_list(status: "active").map { |e| e[:spec] }.uniq
+raise "active only beta: #{live.inspect}" unless live == ["beta"]
+
 puts "ALL PASS"

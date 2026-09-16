@@ -44,7 +44,8 @@
 #   checkpoint_open_count <slug>                       --dir <dir>
 #   checkpoint_answer <id> [--by <who>]   (answer on stdin) --dir <dir>
 #   run_event <event> [--spec <slug>] [--runner <id>] [--detail "<text>"]  --dir <dir>
-#   run_list  [--spec <slug>]                          --dir <dir>
+#   run_list  [--spec <slug>] [--status active|closed] --dir <dir>
+#   run_close [--spec <slug>] [--runner <id>] [--detail "<text>"]  --dir <dir>
 #   brief_sync                                         --dir <dir>
 #   whoami
 #   doctor                                              --dir <dir>
@@ -180,7 +181,8 @@ result =
     when "checkpoint_answer" then adapter.checkpoint_answer(positional[0], $stdin.read, by: flags["by"])
     when "run_event"
       adapter.run_event(positional[0], spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
-    when "run_list" then adapter.run_list(spec: flags["spec"])
+    when "run_list" then adapter.run_list(spec: flags["spec"], status: flags["status"])
+    when "run_close" then adapter.run_close(spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
     when "whoami" then adapter.whoami
     when "doctor" then adapter.doctor
     when "provision" then adapter.provision
@@ -254,7 +256,9 @@ result =
   when "run_event"
     Local.run_event(agentile_dir, positional[0], spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
   when "run_list"
-    Local.run_list(agentile_dir, spec: flags["spec"])
+    Local.run_list(agentile_dir, spec: flags["spec"], status: flags["status"])
+  when "run_close"
+    Local.run_close(agentile_dir, spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
   when "whoami"
     Local.whoami
   when "doctor"

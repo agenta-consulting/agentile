@@ -691,8 +691,11 @@ module Local
 
   # ---- run events ----
 
-  RUN_EVENTS = %w[started claimed shipped paused failed idle deployed].freeze
-  RUN_RE = /\A- (\S+) runner=(\S*) event=(\S+) spec=(\S+) detail=(.*)\z/
+  RUN_EVENTS = %w[started claimed shipped paused failed idle deployed closed].freeze
+  # An event that ends a run. Anything else leaves it live.
+  RUN_TERMINAL = %w[shipped failed deployed closed].freeze
+  # `status=` is optional so lines written before 0.16.0 still parse.
+  RUN_RE = /\A- (\S+) runner=(\S*) event=(\S+) spec=(\S+)(?: status=(\S+))? detail=(.*)\z/
 
   def runs_path(agentile_dir)
     File.join(agentile_dir, "runs.md")
@@ -705,23 +708,48 @@ module Local
     abort "ag-store: no run log at #{path} — run /ag-init first" unless File.exist?(path)
 
     stamp = at || Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    status = RUN_TERMINAL.include?(event.to_s) ? "closed" : "active"
     line = "- #{stamp} runner=#{runner.to_s.empty? ? '-' : runner} event=#{event} " \
-           "spec=#{spec.to_s.empty? ? '-' : spec} detail=#{detail}"
+           "spec=#{spec.to_s.empty? ? '-' : spec} status=#{status} detail=#{detail}"
     File.open(path, "a") { |f| f.puts(line) }
     stamp
   end
 
-  def run_list(agentile_dir, spec: nil)
+  # Closing APPENDS a `closed` event — the log is append-only, so a run is
+  # retired by recording that it ended, never by editing what was written.
+  def run_close(agentile_dir, spec: nil, runner: nil, detail: nil)
+    run_event(agentile_dir, "closed", spec: spec, runner: runner,
+              detail: (detail.to_s.empty? ? "run closed" : detail))
+  end
+
+  # Whether each (spec, runner) pair is still live: a pair is active until a
+  # terminal event lands for it. Derived, never stored — the same answer on any
+  # machine, from the same log.
+  def run_active_pairs(events)
+    last = {}
+    events.each { |e| last[[e[:spec], e[:runner]]] = e[:event] }
+    last.reject { |_, ev| RUN_TERMINAL.include?(ev.to_s) }.keys
+  end
+
+  def run_list(agentile_dir, spec: nil, status: nil)
     path = runs_path(agentile_dir)
     return [] unless File.exist?(path)
 
-    File.readlines(path, chomp: true).filter_map do |l|
+    events = File.readlines(path, chomp: true).filter_map do |l|
       m = RUN_RE.match(l) or next nil
-      ev = { at: m[1], runner: (m[2] == "-" ? nil : m[2]), event: m[3],
-             spec: (m[4] == "-" ? nil : m[4]), detail: m[5] }
-      next nil if spec && ev[:spec] != spec
+      { at: m[1], runner: (m[2] == "-" ? nil : m[2]), event: m[3],
+        spec: (m[4] == "-" ? nil : m[4]),
+        status: (m[5] || (RUN_TERMINAL.include?(m[3]) ? "closed" : "active")),
+        detail: m[6] }
+    end
+    events = events.select { |e| e[:spec] == spec } if spec
+    return events if status.to_s.empty?
 
-      ev
+    live = run_active_pairs(events)
+    case status.to_s
+    when "active" then events.select { |e| live.include?([e[:spec], e[:runner]]) }
+    when "closed" then events.reject { |e| live.include?([e[:spec], e[:runner]]) }
+    else abort "ag-store: unknown run status #{status.inspect} (active|closed)"
     end
   end
 

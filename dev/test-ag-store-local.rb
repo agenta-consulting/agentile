@@ -469,4 +469,38 @@ Dir.mktmpdir do |root|
   raise "filter by spec: #{store('run_list', '--spec', 'nope', dir: dir).inspect}" unless store("run_list", "--spec", "nope", dir: dir).empty?
 end
 
+# 24. run events carry a status, closing is append-only, and --active filters the dead ones out
+Dir.mktmpdir do |root|
+  dir = scaffold(root)
+  File.write(File.join(dir, "runs.md"), "# Agentile run log\n\nAppend-only.\n\n")
+  # a legacy line, written before status existed — must still parse
+  File.open(File.join(dir, "runs.md"), "a") { |f| f.puts("- 2026-09-01T09:00:00Z runner=old event=claimed spec=legacy detail=from an older release") }
+
+  store("run_event", "claimed", "--spec", "alpha", "--runner", "r1", dir: dir)
+  store("run_event", "paused",  "--spec", "alpha", "--runner", "r1", "--detail", "ship_approval", dir: dir)
+  store("run_event", "claimed", "--spec", "beta",  "--runner", "r2", dir: dir)
+  store("run_event", "shipped", "--spec", "beta",  "--runner", "r2", dir: dir)
+
+  all = store("run_list", dir: dir)
+  raise "all events: #{all.length}" unless all.length == 5
+  raise "legacy parses: #{all[0].inspect}" unless all[0]["spec"] == "legacy" && all[0]["status"] == "active"
+  raise "claimed is active: #{all[1].inspect}" unless all[1]["event"] == "claimed" && all[1]["status"] == "active"
+  raise "shipped is closed: #{all.last.inspect}" unless all.last["event"] == "shipped" && all.last["status"] == "closed"
+
+  active = store("run_list", "--status", "active", dir: dir)
+  specs = active.map { |e| e["spec"] }.uniq.sort
+  raise "beta shipped so is not active: #{specs.inspect}" unless specs == %w[alpha legacy]
+
+  # closing appends rather than rewriting — history is never edited
+  before = File.readlines(File.join(dir, "runs.md")).length
+  store("run_close", "--spec", "alpha", "--runner", "r1", "--detail", "session ended", dir: dir)
+  after = File.readlines(File.join(dir, "runs.md")).length
+  raise "close appends: #{before} -> #{after}" unless after == before + 1
+  raise "original lines intact" unless File.read(File.join(dir, "runs.md")).include?("runner=old event=claimed spec=legacy")
+
+  active2 = store("run_list", "--status", "active", dir: dir).map { |e| e["spec"] }.uniq.sort
+  raise "alpha now closed: #{active2.inspect}" unless active2 == %w[legacy]
+  raise "closed events kept for data: #{store('run_list', dir: dir).length}" unless store("run_list", dir: dir).length == 6
+end
+
 puts "ALL PASS"
