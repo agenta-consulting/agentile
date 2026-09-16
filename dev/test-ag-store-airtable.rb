@@ -456,4 +456,35 @@ adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
 live = adapter.run_list(status: "active").map { |e| e[:spec] }.uniq
 raise "active only beta: #{live.inspect}" unless live == ["beta"]
 
+# 20. Airtable cannot add a choice to an existing select via the API (both PATCH forms 422),
+#     so a value added to the schema later reaches a live base by `typecast` on first write.
+#     doctor still reports the drift so it is visible rather than silently self-healing.
+transport = FakeTransport.new
+existing_event_field = { "id" => "fldEV", "name" => "Event",
+                         "options" => { "choices" => [{ "id" => "sel1", "name" => "claimed" }] } }
+tables = [{ "id" => "tblR", "name" => "Runs", "fields" => [existing_event_field] }]
+client = Airtable::Client.new(token: "t", transport: FakeTransport.new)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+missing = adapter.missing_select_choices(tables)
+raise "detects missing choices: #{missing.inspect}" unless missing.any? { |m| m.include?("Runs.Event") && m.include?("closed") }
+
+# run_event writes with typecast, which is what lets the unknown option be created
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS", { "Slug" => "alpha" })]))
+transport.push(200, { "records" => [{ "id" => "recR9" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.run_event("closed", spec: "alpha", runner: "r1")
+raise "run_event uses typecast: #{transport.calls.last[:body].inspect}" unless transport.calls.last[:body]["typecast"] == true
+
+# so does opening a checkpoint (Reason and Status are both selects)
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS", { "Slug" => "alpha" })]))
+transport.push(200, records_page([]))
+transport.push(200, { "records" => [{ "id" => "recCP9" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.checkpoint_open("alpha", "question", "?", by: "builder")
+raise "checkpoint_open uses typecast: #{transport.calls.last[:body].inspect}" unless transport.calls.last[:body]["typecast"] == true
+
 puts "ALL PASS"

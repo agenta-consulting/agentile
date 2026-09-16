@@ -112,6 +112,12 @@ module Airtable
       request(:post, "/v0/meta/bases/#{base_id}/tables/#{table_id}/fields", body: field_def)
     end
 
+    # Only `name`, `description` and `options` are patchable. Used to add choices
+    # to an existing select — Airtable rejects a write of an unknown option.
+    def update_field(base_id, table_id, field_id, body)
+      request(:patch, "/v0/meta/bases/#{base_id}/tables/#{table_id}/fields/#{field_id}", body: body)
+    end
+
     def create_base(workspace_id, name, tables)
       request(:post, "/v0/meta/bases", body: { workspaceId: workspace_id, name: name, tables: tables })
     end

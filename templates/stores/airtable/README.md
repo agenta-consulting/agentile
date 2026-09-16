@@ -101,6 +101,18 @@ than inferred:
     "schema up to date": false,
     "missing fields": ["Inbox.Type"]
 
+It also reports a **stale select** — a value added to `schema.rb` after the base
+was provisioned:
+
+    "schema up to date": false,
+    "missing select choices": ["Runs.Event: closed"]
+
+Airtable has no API for adding a choice to an existing select (PATCHing the
+field is rejected as a type change), so `provision` cannot fix this one. The
+writes that use those selects pass `typecast: true`, which lets Airtable create
+the option on first use — so it resolves itself the first time the new value is
+written, and `doctor` is how you see the gap before that happens.
+
 Run `doctor` after pulling a change that touches `schema.rb`, and after adding
 a field yourself. What provision **cannot** do is change an existing field:
 field *order*, field *type*, and which field is *primary* are all fixed at

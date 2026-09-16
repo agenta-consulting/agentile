@@ -4,6 +4,18 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.16.1 — 2026-09-16
+
+- `doctor` reports a **stale select**: a choice added to `schema.rb` after a base
+  was provisioned. Found the hard way — writing `Runs.Event: closed` to the live
+  base failed with a 422 because `provision` adds missing *fields* but the field
+  already existed with an older choice list.
+- Airtable has no API for adding a choice to an existing select (both PATCH
+  forms are rejected as a type change), so `Runs` and `Checkpoints` writes pass
+  `typecast: true` — Airtable then creates the option on first use. `doctor`
+  still names the gap, so a base behind the schema is visible rather than
+  silently self-healing.
+
 ## 0.16.0 — 2026-09-16
 
 - **Run events carry a status.** `Runs` was the only table without one, so

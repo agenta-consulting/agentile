@@ -506,7 +506,7 @@ module Airtable
         "Session Id" => session.to_s, "Status" => "open", "Ask" => ask.to_s.strip,
         "Spec" => [spec["id"]],
       }
-      created = @client.create_records(@base_id, @checkpoints_table, [fields])
+      created = @client.create_records(@base_id, @checkpoints_table, [fields], typecast: true)
       invalidate_checkpoints_cache!
       created.first["id"]
     end
@@ -533,7 +533,7 @@ module Airtable
       if !spec.to_s.empty? && (r = spec_by_slug(spec))
         fields["Spec"] = [r["id"]]
       end
-      @client.create_records(@base_id, @runs_table, [fields])
+      @client.create_records(@base_id, @runs_table, [fields], typecast: true)
       at
     end
 
@@ -702,8 +702,10 @@ module Airtable
       # missing fields so the fix (`ag-store provision`) is obvious — a bare
       # "false" would send someone reading the adapter source to find out why.
       missing = schema_drift(tables)
-      report["schema up to date"] = missing.empty?
+      stale_choices = missing_select_choices(tables)
+      report["schema up to date"] = missing.empty? && stale_choices.empty?
       report["missing fields"] = missing unless missing.empty?
+      report["missing select choices"] = stale_choices unless stale_choices.empty?
       report
     rescue Airtable::ApiError => e
       { "base reachable" => false, "error" => e.message }
@@ -765,6 +767,41 @@ module Airtable
       ensure_link_fields(checkpoints_id, :checkpoints, table_ids)
       ensure_link_fields(runs_id, :runs, table_ids)
       doctor
+    end
+
+    # Every select the schema defines, as { table_name => { field_name => [choices] } }.
+    def expected_select_choices
+      {
+        @specs_table => Schema::SPECS_BASE_FIELDS, @inbox_table => Schema::INBOX_BASE_FIELDS,
+        @outcomes_table => Schema::OUTCOMES_BASE_FIELDS, @members_table => Schema::MEMBERS_BASE_FIELDS,
+        @checkpoints_table => Schema::CHECKPOINTS_BASE_FIELDS, @runs_table => Schema::RUNS_BASE_FIELDS,
+      }.transform_values do |defs|
+        defs.select { |f| f[:type] == "singleSelect" }
+            .to_h { |f| [f[:name], f.dig(:options, :choices).map { |c| c[:name] }] }
+      end
+    end
+
+    # A value added to the schema after a base was provisioned does NOT reach it
+    # by adding fields — the field exists, only its choice list is stale, and
+    # writing that value fails with a 422 ("Insufficient permissions to create
+    # new select option"), which is how this was found. Airtable has no API for
+    # adding a choice to an existing select — PATCHing the field is rejected as
+    # a type change — so the writes below pass `typecast: true`, which lets
+    # Airtable create the option on first use. doctor reports the gap anyway, so
+    # a base behind the schema is visible rather than silently self-healing.
+    def missing_select_choices(tables)
+      expected_select_choices.flat_map do |table_name, fields|
+        table = tables.find { |t| t["name"] == table_name }
+        next [] if table.nil?
+
+        fields.flat_map do |field_name, wanted|
+          live = (table["fields"] || []).find { |f| f["name"] == field_name }
+          next [] if live.nil?
+
+          have = (live.dig("options", "choices") || []).map { |c| c["name"] }
+          (wanted - have).map { |c| "#{table_name}.#{field_name}: #{c}" }
+        end
+      end
     end
 
     # Adds any schema field the table is missing. Never alters or removes an
