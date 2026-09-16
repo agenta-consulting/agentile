@@ -30,6 +30,15 @@
 #   deps         <id>                                  --dir <dir>
 #   dependents   <slug>                                --dir <dir>
 #   attach       <id> <plan-path>                      --dir <dir>
+#   outcome_list [--status open|achieved|abandoned]    --dir <dir>
+#   outcome_read <slug>                                --dir <dir>
+#   outcome_create <slug>          (markdown on stdin) --dir <dir>
+#   outcome_write <slug> --set k=v [--set k=v ...]     --dir <dir>
+#   outcome_rank <slug> [<slug>...]                    --dir <dir>
+#   outcome_achieve <slug>                             --dir <dir>
+#   outcome_abandon <slug> --reason "<text>"           --dir <dir>
+#   map                                                --dir <dir>
+#   brief_sync                                         --dir <dir>
 #   whoami
 #   doctor                                              --dir <dir>
 #
@@ -39,8 +48,8 @@
 #
 # --store airtable also needs --airtable-base <id> (except create_base, which
 # makes one) and, on ENV, AGENTILE_AIRTABLE_TOKEN. Table names default to
-# Inbox/Specs/Members; override with --airtable-inbox-table / --airtable-specs-table
-# / --airtable-members-table if a project renamed them.
+# Inbox/Specs/Members/Outcomes; override with --airtable-inbox-table / --airtable-specs-table
+# / --airtable-members-table / --airtable-outcomes-table if a project renamed them.
 #
 # All output is one JSON value on stdout (a string, array, object, or bool) —
 # a skill reads it with a JSON parser, never by scraping stdout text. Errors
@@ -110,7 +119,8 @@ if op == "create_base"
   base_id = Airtable.create_base(
     token: ENV.fetch("AGENTILE_AIRTABLE_TOKEN", nil), workspace_id: flags["airtable-workspace"],
     name: positional[0], inbox_table: flags["airtable-inbox-table"] || "Inbox",
-    specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members"
+    specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members",
+    outcomes_table: flags["airtable-outcomes-table"] || "Outcomes"
   )
   puts JSON.generate(base_id)
   exit 0
@@ -119,7 +129,8 @@ end
 adapter = if store == "airtable"
             Airtable::Adapter.new(
               base_id: flags["airtable-base"], inbox_table: flags["airtable-inbox-table"] || "Inbox",
-              specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members"
+              specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members",
+              outcomes_table: flags["airtable-outcomes-table"] || "Outcomes"
             )
           elsif store != "local"
             abort "ag-store: unknown adapter '#{store}'"
@@ -129,7 +140,7 @@ result =
   if store == "airtable"
     case op
     when "inbox_list" then adapter.inbox_list
-    when "inbox_add" then adapter.inbox_add(positional[0], flags["by"], flags["title"], flags["type"])
+    when "inbox_add" then adapter.inbox_add(positional[0], flags["by"], flags["title"], flags["type"], flags["serves"])
     when "inbox_drop" then adapter.inbox_drop(positional[0])
     when "spec_list" then adapter.spec_list(status: flags["status"], pool: flags["pool"] || "active")
     when "spec_read" then adapter.spec_read(positional[0])
@@ -144,9 +155,18 @@ result =
     when "dependents" then adapter.dependents(positional[0])
     when "promote" then adapter.promote(positional[0], agentile_dir)
     when "attach" then adapter.attach(positional[0], positional[1])
+    when "outcome_list" then adapter.outcome_list(status: flags["status"])
+    when "outcome_read" then adapter.outcome_read(positional[0])
+    when "outcome_create" then adapter.outcome_create(positional[0], $stdin.read, flags["by"])
+    when "outcome_write" then adapter.outcome_write(positional[0], sets.transform_keys(&:to_sym))
+    when "outcome_rank" then adapter.outcome_rank(positional)
+    when "outcome_achieve" then adapter.outcome_achieve(positional[0])
+    when "outcome_abandon" then adapter.outcome_abandon(positional[0], reason: flags["reason"].to_s)
+    when "map" then adapter.map
     when "whoami" then adapter.whoami
     when "doctor" then adapter.doctor
     when "provision" then adapter.provision
+    when "brief_sync" then Local.brief_sync(agentile_dir, adapter.outcome_list)
     else abort "ag-store: unknown op '#{op}'"
     end
   else
@@ -154,7 +174,7 @@ result =
   when "inbox_list"
     Local.inbox_list(agentile_dir).map { |s| s.reject { |k, _| k == :line_index } }
   when "inbox_add"
-    Local.inbox_add(agentile_dir, positional[0], flags["by"], flags["title"], flags["type"])
+    Local.inbox_add(agentile_dir, positional[0], flags["by"], flags["title"], flags["type"], flags["serves"])
   when "inbox_drop"
     Local.inbox_drop(agentile_dir, positional[0])
   when "spec_list"
@@ -184,6 +204,24 @@ result =
     Local.dependents(specs_dir, positional[0])
   when "attach"
     Local.attach(specs_dir, positional[0], positional[1])
+  when "outcome_list"
+    Local.outcome_list(agentile_dir, status: flags["status"])
+  when "outcome_read"
+    Local.outcome_read(agentile_dir, positional[0])
+  when "outcome_create"
+    Local.outcome_create(agentile_dir, positional[0], $stdin.read)
+  when "outcome_write"
+    Local.outcome_write(agentile_dir, positional[0], sets)
+  when "outcome_rank"
+    Local.outcome_rank(agentile_dir, positional)
+  when "outcome_achieve"
+    Local.outcome_achieve(agentile_dir, positional[0])
+  when "outcome_abandon"
+    Local.outcome_abandon(agentile_dir, positional[0], reason: flags["reason"].to_s)
+  when "map"
+    Local.map(agentile_dir)
+  when "brief_sync"
+    Local.brief_sync(agentile_dir, Local.outcome_list(agentile_dir))
   when "whoami"
     Local.whoami
   when "doctor"

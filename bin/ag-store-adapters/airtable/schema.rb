@@ -37,6 +37,12 @@ module Airtable
       { type: "number", options: { precision: 0 } }
     end
 
+    # Options are created on write with `typecast: true` (see client.rb), so
+    # the field starts empty and a new tag never needs a schema call.
+    def self.multi_select
+      { type: "multipleSelects", options: { choices: [] } }
+    end
+
     # Non-link fields only — link fields (Depends On, the *By member fields)
     # are added in a second pass once every table's id is known; see airtable.rb#provision.
     SPECS_BASE_FIELDS = [
@@ -48,6 +54,7 @@ module Airtable
       { name: "Business Value" }.merge(select("high", "medium", "low")),
       { name: "Technical Certainty" }.merge(select("high", "medium", "low")),
       { name: "Rank" }.merge(number),
+      { name: "Tags" }.merge(multi_select),
       { name: "Outcome" }.merge(long_text),
       { name: "Problem / Why Now" }.merge(long_text),
       { name: "Acceptance Criteria" }.merge(long_text),
@@ -90,6 +97,23 @@ module Airtable
       { name: "Git Email" }.merge(text),
     ].freeze
 
+    # Outcomes (docs/agentile-outcomes.md §4.3). Title first so it is the
+    # primary field — a slug makes a poor record name in linked-record chips.
+    OUTCOMES_BASE_FIELDS = [
+      { name: "Title" }.merge(text),
+      { name: "Slug" }.merge(text),
+      { name: "Status" }.merge(select("open", "achieved", "abandoned")),
+      { name: "Rank" }.merge(number),
+      { name: "Claim" }.merge(long_text),
+      { name: "Measure" }.merge(long_text),
+      { name: "Stop Rule" }.merge(long_text),
+      { name: "Notes" }.merge(long_text),
+      { name: "Created" }.merge(date),
+      { name: "Achieved At" }.merge(datetime),
+      { name: "Abandoned At" }.merge(datetime),
+      { name: "Abandoned Reason" }.merge(long_text),
+    ].freeze
+
     # Link fields added once every table's id is known (table: field name -> [target table key, multiple?]).
     LINK_FIELDS = {
       specs: [
@@ -97,9 +121,14 @@ module Airtable
         ["Claimed By (Member)", :members, false],
         ["Captured By", :members, false],
         ["Shaped By", :members, true],
+        ["Serves Outcome", :outcomes, false],
       ],
       inbox: [
         ["Captured By", :members, false],
+        ["Serves Outcome", :outcomes, false],
+      ],
+      outcomes: [
+        ["Created By", :members, false],
       ],
     }.freeze
 
@@ -116,7 +145,7 @@ module Airtable
 
     FRONTMATTER_KEYS = %i[
       title slug status depends_on type route business_value technical_certainty
-      rank created outcome claimed_by label claimed_at claimed_by_member
+      rank created serves tags outcome claimed_by label claimed_at claimed_by_member
       abandoned_reason abandoned_at shipped_at captured_by shaped_by
     ].freeze
 
@@ -128,6 +157,19 @@ module Airtable
       open_questions: "Open questions",
       verification: "Verification",
     }.freeze
+
+    # A list value may arrive as an Array (parsed markdown) or as the string
+    # "[a, b]" (an ag-store --set flag hands the adapter raw text). The local
+    # store never sees the difference — YAML parses the string on read — so
+    # this is where the airtable adapter has to.
+    def self.list_value(val)
+      return [] if val.nil?
+      return val.map(&:to_s) if val.is_a?(Array)
+
+      s = val.to_s.strip
+      s = s[1..-2] if s.start_with?("[") && s.end_with?("]")
+      s.split(",").map(&:strip).reject(&:empty?)
+    end
 
     def self.yaml_scalar(val)
       return "[#{Array(val).join(', ')}]" if val.is_a?(Array)
@@ -188,6 +230,40 @@ module Airtable
       v[:scope_in] = scope[/\*\*In scope:\*\*\s*(.*?)(?=\n\n\*\*Out of scope|\z)/m, 1].to_s.strip
       v[:scope_out] = scope[/\*\*Out of scope:\*\*\s*(.*)\z/m, 1].to_s.strip
 
+      v
+    end
+
+    # ---- outcome markdown <-> fields (docs/agentile-outcomes.md §2) ----
+
+    OUTCOME_FRONTMATTER_KEYS = %i[title slug status rank created achieved_at abandoned_at abandoned_reason created_by].freeze
+    OUTCOME_SECTIONS = { claim: "Claim", measure: "Measure", stop_rule: "Stop rule", notes: "Notes" }.freeze
+
+    def self.render_outcome_markdown(v)
+      fm = OUTCOME_FRONTMATTER_KEYS.filter_map do |k|
+        next if v[k].nil? || v[k] == ""
+
+        "#{k}: #{yaml_scalar(v[k])}"
+      end.join("\n")
+      body = +"# #{v[:title]}\n\n"
+      OUTCOME_SECTIONS.each { |key, heading| body << "## #{heading}\n\n#{v[key]}\n\n" }
+      "---\n#{fm}\n---\n\n#{body.rstrip}\n"
+    end
+
+    def self.parse_outcome_markdown(markdown)
+      fm_text = markdown[/\A---\n(.*?)\n---/m, 1] || ""
+      body = markdown.sub(/\A---\n.*?\n---/m, "").strip
+      v = {}
+      fm_text.each_line do |line|
+        next unless (m = line.chomp.match(/\A([A-Za-z_]+):\s*(.*)\z/))
+
+        v[m[1].to_sym] = m[2].strip
+      end
+      v[:title] = body[/\A#\s+(.+)$/, 1].to_s.strip if v[:title].to_s.empty?
+      sections = body.split(/^## /).drop(1).to_h do |chunk|
+        heading, rest = chunk.split("\n", 2)
+        [heading.strip, rest.to_s.strip]
+      end
+      OUTCOME_SECTIONS.each { |key, heading| v[key] = sections[heading].to_s }
       v
     end
   end

@@ -63,12 +63,14 @@ If the file is absent, use the baseline below unchanged.
    make quoting easier):
 
    ```
-   ag-store inbox_add "<stub text>" --title "<title>" --type "<type>" --by "<whoami output>" --dir "<Agentile directory>" --store "<store>"
+   ag-store inbox_add "<stub text>" --title "<title>" --type "<type>" [--serves "<outcome-slug>"] --by "<whoami output>" --dir "<Agentile directory>" --store "<store>"
    ```
 
-   The `local` store accepts `--title`/`--type` and ignores them (its inbox is
-   a flat markdown list); the `airtable` store stores the title as the primary
-   field and the type as a select.
+   The `local` store accepts `--title`/`--type`/`--serves` and ignores them
+   (its inbox is a flat markdown list); the `airtable` store stores the title
+   as the primary field, the type as a select, and `serves` as a link to the
+   Outcome. Pass `--serves` only when the user named an Outcome explicitly
+   ("for the identity outcome") — never ask.
 
    A non-zero exit means the inbox doesn't exist yet (project not initialised, or a path mismatch) — tell the user to run `/ag-init` first rather than working around it.
 8. Reply with one short line confirming the stub was captured (and by whom, if the store records it). Nothing more.

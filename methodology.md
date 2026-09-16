@@ -94,6 +94,20 @@ fulfilled dependency and mineable for the learn step. (How the artefact is
 stored — file formats, directory layout, where the metadata lives — is the
 implementation's business.)
 
+### Outcomes: the bet above the spec
+
+Specs are units of change; they do not say what the change is *for* beyond
+their own metric. An **Outcome** does: a claim that spans specs and is
+falsifiable independently of them, a measure, and a stop rule. It is not a
+container — it has no progress field, no rollup, and nothing derived is stored
+on it; the grouped view is computed on demand. It is flat: a grouping with its
+own claim is a sibling Outcome, one without is a tag. And it never gates:
+work can be captured, shaped and claimed with no Outcome at all.
+
+The point of the layer is decomposition, not reporting. An Outcome is the
+prompt the loop generates work from, and the unit at which a human decides to
+stop. (Whether Outcomes are files or rows is the implementation's business.)
+
 ### Prioritisation and pulling as distinct acts
 
 The ready queue needs two operations that are easy to conflate but must stay separate.

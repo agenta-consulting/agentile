@@ -187,4 +187,137 @@ adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
 checks = adapter.doctor
 raise "doctor: #{checks.inspect}" unless checks["Specs table exists"] == true && checks["Inbox table exists"] == false
 
+# 8. outcome markdown round-trips; spec markdown carries serves + tags
+omd = <<~MD
+  ---
+  title: Buyers cannot reject on identity grounds
+  slug: identity
+  status: open
+  rank: 1
+  created: 2026-09-14
+  ---
+
+  # Buyers cannot reject on identity grounds
+
+  ## Claim
+
+  Reviewers sign in through their own IdP.
+
+  ## Measure
+
+  A pilot against a real tenant.
+
+  ## Stop rule
+
+  Two buyers accept local accounts.
+
+  ## Notes
+
+  none yet
+MD
+ov = Airtable::Schema.parse_outcome_markdown(omd)
+raise "outcome parse claim: #{ov.inspect}" unless ov[:claim] == "Reviewers sign in through their own IdP."
+raise "outcome parse stop_rule: #{ov.inspect}" unless ov[:stop_rule] == "Two buyers accept local accounts."
+raise "outcome parse rank: #{ov.inspect}" unless ov[:rank] == "1"
+ore = Airtable::Schema.parse_outcome_markdown(Airtable::Schema.render_outcome_markdown(ov))
+raise "outcome round-trip" unless ore[:claim] == ov[:claim] && ore[:measure] == ov[:measure] && ore[:notes] == "none yet" && ore[:title] == ov[:title]
+
+smd = md.sub("outcome: no more", "serves: identity\ntags: [auth, testing]\noutcome: no more")
+sv = Airtable::Schema.parse_spec_markdown(smd)
+raise "spec serves: #{sv.inspect}" unless sv[:serves] == "identity"
+raise "spec tags: #{sv.inspect}" unless sv[:tags] == %w[auth testing]
+sre = Airtable::Schema.parse_spec_markdown(Airtable::Schema.render_spec_markdown(sv))
+raise "spec serves/tags round-trip" unless sre[:serves] == "identity" && sre[:tags] == %w[auth testing]
+
+# 9. Client sends typecast only when asked
+transport = FakeTransport.new
+transport.push(200, { "records" => [] })
+transport.push(200, {})
+client = Airtable::Client.new(token: "t", transport: transport)
+client.create_records("appTEST", "Specs", [{ "Tags" => ["auth"] }], typecast: true)
+client.update_record("appTEST", "Specs", "recA", { "Title" => "x" })
+raise "typecast on create: #{transport.calls[0][:body].inspect}" unless transport.calls[0][:body]["typecast"] == true
+raise "no typecast by default: #{transport.calls[1][:body].inspect}" if transport.calls[1][:body].key?("typecast")
+
+# 10. outcome_create sends per-field values to the Outcomes table; spec_create with tags sends typecast + Serves Outcome link
+transport = FakeTransport.new
+transport.push(200, records_page([])) # outcomes lookup (dup check)
+transport.push(200, { "records" => [{ "id" => "recO1" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.outcome_create("identity", omd, nil)
+oc = transport.calls.last
+raise "outcome path: #{oc[:path]}" unless oc[:path] == "/v0/appTEST/Outcomes"
+of = oc[:body]["records"][0]["fields"]
+raise "outcome fields: #{of.inspect}" unless of["Slug"] == "identity" && of["Claim"] == "Reviewers sign in through their own IdP." && of["Stop Rule"] == "Two buyers accept local accounts." && of["Rank"] == 1 && of["Status"] == "open"
+
+transport = FakeTransport.new
+transport.push(200, records_page([])) # specs (depends_on resolution)
+transport.push(200, records_page([rec("recO1", { "Slug" => "identity", "Status" => "open" })])) # outcomes (serves resolution)
+transport.push(200, { "records" => [{ "id" => "recS1" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_create("sso", smd)
+sc = transport.calls.last
+raise "spec typecast: #{sc[:body].inspect}" unless sc[:body]["typecast"] == true
+sf = sc[:body]["records"][0]["fields"]
+raise "spec serves link: #{sf.inspect}" unless sf["Serves Outcome"] == ["recO1"]
+raise "spec tags: #{sf.inspect}" unless sf["Tags"] == %w[auth testing]
+
+# 11. map: groups specs by Serves Outcome, computes blocked from Depends On, indexes tags
+transport = FakeTransport.new
+transport.push(200, records_page([
+                     rec("recA", { "Slug" => "oidc", "Status" => "ready", "Serves Outcome" => ["recO1"], "Tags" => ["auth"] }),
+                     rec("recB", { "Slug" => "scim", "Status" => "ready", "Serves Outcome" => ["recO1"], "Depends On" => ["recA"], "Tags" => %w[auth lifecycle] }),
+                     rec("recC", { "Slug" => "free", "Status" => "shipped" }),
+                   ]))
+transport.push(200, records_page([rec("recO1", { "Slug" => "identity", "Title" => "Identity", "Status" => "open", "Rank" => 1 })]))
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+m = adapter.map
+o = m[:outcomes][0]
+raise "map outcome: #{o.inspect}" unless o[:slug] == "identity" && o[:specs]["ready"] == %w[oidc scim] && o[:blocked] == %w[scim]
+raise "map unlinked: #{m[:unlinked].inspect}" unless m[:unlinked]["shipped"] == %w[free]
+raise "map tags: #{m[:tags].inspect}" unless m[:tags] == { "auth" => %w[oidc scim], "lifecycle" => %w[scim] }
+
+# 12. doctor reports a missing Outcomes table and the new Specs fields as drift
+transport = FakeTransport.new
+transport.push(200, { "tables" => [{ "name" => "Specs", "fields" => [{ "name" => "Slug" }] }, { "name" => "Inbox", "fields" => [] }, { "name" => "Members", "fields" => [] }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+checks = adapter.doctor
+raise "doctor outcomes table: #{checks.inspect}" unless checks["Outcomes table exists"] == false
+raise "doctor drift: #{checks.inspect}" unless checks["missing fields"].include?("Specs.Serves Outcome") && checks["missing fields"].include?("Specs.Tags")
+
+# 13. spec_write accepts bracketed list strings from --set for tags and depends_on (the CLI hands strings, not arrays)
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS1", { "Slug" => "sso", "Status" => "ready" }), rec("recD", { "Slug" => "dep", "Status" => "ready" })]))
+transport.push(200, {})
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_write("sso", { tags: "[testing, ui]", depends_on: "[dep]" })
+wc = transport.calls.last
+raise "spec_write tags from string: #{wc[:body].inspect}" unless wc[:body]["fields"]["Tags"] == %w[testing ui] && wc[:body]["typecast"] == true
+raise "spec_write depends_on from string: #{wc[:body].inspect}" unless wc[:body]["fields"]["Depends On"] == ["recD"]
+
+# 14. blank frontmatter values: date/number fields are dropped on create and sent as null on write (Airtable rejects "")
+bmd = md.sub("created: 2026-06-10\n", "created: 2026-06-10\nrank:\nclaimed_by:\nlabel:\nclaimed_at:\n")
+transport = FakeTransport.new
+transport.push(200, records_page([]))
+transport.push(200, { "records" => [{ "id" => "recB" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_create("blank", bmd)
+bf = transport.calls.last[:body]["records"][0]["fields"]
+raise "blank date/number sent on create: #{bf.inspect}" if bf.key?("Claimed At") || bf.key?("Rank")
+raise "blank text dropped on create: #{bf.inspect}" unless bf["Label"] == "" && bf["Claimed By (Session)"] == ""
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recB", { "Slug" => "blank", "Status" => "ready" })]))
+transport.push(200, {})
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_write("blank", { claimed_at: "", shipped_at: "" })
+wf = transport.calls.last[:body]["fields"]
+raise "blank date on write should be null: #{wf.inspect}" unless wf.key?("Claimed At") && wf["Claimed At"].nil? && wf["Shipped At"].nil?
+
 puts "ALL PASS"

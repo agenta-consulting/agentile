@@ -52,13 +52,15 @@ it as `docs/adr/0001-…` from the ADR template.
 
 The brief is what makes triage real: without it, `/ag-shape` and `/ag-prioritise`
 score Business Value against nothing. With it, they score against the brief's
-prioritised outcomes.
+prioritised outcomes. That "Prioritised outcomes" section is also the sync target
+for `ag-store brief_sync` — once Outcomes exist (`/ag-outcome`), the list is
+regenerated from them by rank; the rest of the brief stays hand-written.
 
 ## Step 2b — Team store setup (only if Team was chosen in Step 2)
 
 1. Confirm `AGENTILE_AIRTABLE_TOKEN` is set (`[ -n "$AGENTILE_AIRTABLE_TOKEN" ]`). If not, stop here and point the user at `templates/stores/airtable/README.md` — a personal access token with `data.records:read/write` and `schema.bases:read/write` scopes, set as an environment variable, never written into a tracked file. Re-run this step once it's set.
 2. Ask (`AskUserQuestion`) whether to **create a new base** or **use an existing one**:
-   - **Create**: ask for the Airtable workspace id, then run `ag-store create_base "<project name>" --airtable-workspace <workspace-id>` (bare command `ag-store`, on `PATH` while the plugin is enabled; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`). It prints the new base's id — this also creates and fully provisions the `Inbox`/`Specs`/`Members` tables in one step, so Step 2's provisioning call below is redundant for a freshly created base but still safe (idempotent) to run.
+   - **Create**: ask for the Airtable workspace id, then run `ag-store create_base "<project name>" --airtable-workspace <workspace-id>` (bare command `ag-store`, on `PATH` while the plugin is enabled; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`). It prints the new base's id — this also creates and fully provisions the `Inbox`/`Specs`/`Members`/`Outcomes` tables in one step, so Step 2's provisioning call below is redundant for a freshly created base but still safe (idempotent) to run.
    - **Existing**: ask for the base id directly.
 3. Provision (idempotent — safe even on a base `create_base` just built): `ag-store provision --dir "<Agentile directory>" --store airtable --airtable-base "<base-id>"`.
 4. Verify: `ag-store doctor --dir "<Agentile directory>" --store airtable --airtable-base "<base-id>"` — all checks should be `true`. If not, stop and surface the failure rather than continuing.
@@ -136,10 +138,11 @@ Copy from `templates/` into the project, preserving structure:
 - `.agentile/loop.md`
 - `.agentile/gates.json` — then fill in the commands and protected branches gathered in Step 2.
 - `.agentile/spec-template.md`
+- `.agentile/outcome-template.md`
 - `.agentile/plan-template.md`
 - `.agentile/adr-template.md`
 - `docs/adr/0000-record-architecture-decisions.md` — replace `<YYYY-MM-DD>` with today's date (`date +%Y-%m-%d`).
-- Create the specs tree: **Solo** — `<dir>/specs/`, `<dir>/specs/done/`, and `<dir>/specs/abandoned/`, each with a `.gitkeep`. **Team** — just the bare `<dir>/specs/` directory, no `.gitkeep`, and no `done`/`abandoned` subdirectories — terminal states live in the store's `Status` field, nothing ever moves into a local subdirectory. The bare directory still matters: once a spec starts planning, its `plan.md` and supporting files live at `<dir>/specs/<slug>/` (created on demand by `ag-store promote`) even under Team mode.
+- Create the specs tree: **Solo** — `<dir>/specs/`, `<dir>/specs/done/`, and `<dir>/specs/abandoned/`, each with a `.gitkeep`. **Team** — just the bare `<dir>/specs/` directory, no `.gitkeep`, and no `done`/`abandoned` subdirectories — terminal states live in the store's `Status` field, nothing ever moves into a local subdirectory. The bare directory still matters: once a spec starts planning, its `plan.md` and supporting files live at `<dir>/specs/<slug>/` (created on demand by `ag-store promote`) even under Team mode. Also create `<dir>/outcomes/` with a `.gitkeep` (**Solo**); in **Team** mode Outcomes live in the store's `Outcomes` table, which `provision` created.
 - Add `**/specs/.pull.lock` to the project's `.gitignore` (create `.gitignore` if absent; skip if the entry is already present) — the claim lock is a runtime file, not source.
 
 Note the source `templates/agentile/` maps to the project's `.agentile/` directory.

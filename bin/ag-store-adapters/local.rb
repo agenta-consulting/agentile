@@ -205,7 +205,7 @@ module Local
       m = STUB_RE.match(line)
       next unless m
 
-      stubs << { id: (stubs.size + 1).to_s, line_index: idx, text: m[1], captured_at: m[2], captured_by: nil }
+      stubs << { id: (stubs.size + 1).to_s, line_index: idx, text: m[1], captured_at: m[2], captured_by: nil, serves: nil }
     end
     stubs
   end
@@ -218,8 +218,10 @@ module Local
   # every inbox.md already in the wild. It matters in Airtable, where the
   # primary field is the record's name everywhere it is referenced. type is
   # dropped too — /ag-shape re-derives it from the stub text when the store
-  # cannot carry it.
-  def inbox_add(agentile_dir, text, _captured_by = nil, _title = nil, _type = nil)
+  # cannot carry it. serves (the Outcome a stub was decomposed from) is
+  # dropped for the same reason — a one-line inbox has nowhere to keep it,
+  # and /ag-shape asks.
+  def inbox_add(agentile_dir, text, _captured_by = nil, _title = nil, _type = nil, _serves = nil)
     path = inbox_path(agentile_dir)
     abort "ag-store: no such inbox: #{path} — run /ag-init first" unless File.exist?(path)
 
@@ -273,6 +275,8 @@ module Local
           claimed_at: s[:fm]["claimed_at"],
           label: s[:fm]["label"],
           shipped_at: s[:fm]["shipped_at"],
+          serves: (s[:fm]["serves"].to_s.empty? ? nil : s[:fm]["serves"].to_s),
+          tags: Array(s[:fm]["tags"]).map(&:to_s),
         }
       end
   end
@@ -411,6 +415,189 @@ module Local
   # directory form, <specs>/NNNN-slug/plan.md beside SPEC.md.
   def attach(_specs_dir, _ident, plan_path)
     plan_path
+  end
+
+  # ---- outcomes (docs/agentile-outcomes.md §4.2) ----
+  # Flat files at <dir>/outcomes/<slug>.md. Status and rank live in
+  # frontmatter — no NNNN- prefix, no done/abandoned moves: there are few
+  # outcomes, nothing claims them, and a stable filename beats a visible sort.
+
+  def outcomes_dir(agentile_dir)
+    File.join(agentile_dir, "outcomes")
+  end
+
+  def load_outcome(path)
+    raw = File.read(path)
+    fm = (YAML.safe_load(raw[/\A---\n(.*?)\n---/m, 1] || "", permitted_classes: [Time, Date]) || {})
+    { path: path, raw: raw, fm: fm, slug: File.basename(path, ".md") }
+  end
+
+  def outcomes_in(agentile_dir)
+    dir = outcomes_dir(agentile_dir)
+    return [] unless File.directory?(dir)
+
+    Dir.glob(File.join(dir, "*.md")).map { |p| load_outcome(p) }
+  end
+
+  def find_outcome(agentile_dir, slug)
+    outcomes_in(agentile_dir).find { |o| o[:slug] == slug.to_s }
+  end
+
+  def outcome_summary(o)
+    {
+      slug: o[:slug], title: o[:fm]["title"], status: o[:fm]["status"], rank: o[:fm]["rank"],
+      created: o[:fm]["created"], achieved_at: o[:fm]["achieved_at"], abandoned_at: o[:fm]["abandoned_at"],
+    }
+  end
+
+  # Ranked first (ascending), then unranked, then by slug — shared with the
+  # airtable adapter so both stores list outcomes in the same order.
+  def outcome_sort_key(summary)
+    rank = summary[:rank]
+    [rank.is_a?(Integer) ? rank : 1_000_000, summary[:slug].to_s]
+  end
+
+  def outcome_list(agentile_dir, status: nil)
+    outcomes_in(agentile_dir)
+      .map { |o| outcome_summary(o) }
+      .select { |o| status.nil? || o[:status] == status }
+      .sort_by { |o| outcome_sort_key(o) }
+  end
+
+  def outcome_read(agentile_dir, slug)
+    o = find_outcome(agentile_dir, slug)
+    abort "ag-store: no such outcome: #{slug}" unless o
+
+    o[:raw]
+  end
+
+  def outcome_create(agentile_dir, slug, markdown)
+    dir = outcomes_dir(agentile_dir)
+    FileUtils.mkdir_p(dir)
+    path = File.join(dir, "#{slug}.md")
+    abort "ag-store: an outcome already exists at #{path}" if File.exist?(path)
+
+    File.write(path, markdown)
+    path
+  end
+
+  def outcome_write(agentile_dir, slug, fields)
+    o = find_outcome(agentile_dir, slug)
+    abort "ag-store: no such outcome: #{slug}" unless o
+
+    stamp!(o, fields)
+    o[:path]
+  end
+
+  # Dense integer ranks by position, open outcomes only; anything else in the
+  # list is skipped — visible by its absence from the returned slugs.
+  def outcome_rank(agentile_dir, ordered_slugs)
+    open = ordered_slugs.select do |slug|
+      o = find_outcome(agentile_dir, slug)
+      o && o[:fm]["status"] == "open"
+    end
+    open.each_with_index { |slug, i| outcome_write(agentile_dir, slug, { "rank" => i + 1 }) }
+    open
+  end
+
+  def outcome_achieve(agentile_dir, slug, achieved_at: nil)
+    outcome_write(agentile_dir, slug, {
+      "status" => "achieved",
+      "achieved_at" => (achieved_at || Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")),
+    })
+    true
+  end
+
+  def outcome_abandon(agentile_dir, slug, reason:, abandoned_at: nil)
+    outcome_write(agentile_dir, slug, {
+      "status" => "abandoned",
+      "abandoned_at" => (abandoned_at || Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")),
+      "abandoned_reason" => reason,
+    })
+    true
+  end
+
+  # ---- map (docs/agentile-outcomes.md §4.1) ----
+  # The one computed view. build_map is pure and shared with the airtable
+  # adapter; each adapter only has to produce the flat spec entries.
+
+  MAP_STATES = %w[ready in_progress shipped abandoned].freeze
+
+  def empty_buckets
+    MAP_STATES.to_h { |st| [st, []] }
+  end
+
+  # outcomes: outcome_list output. specs: [{slug:, status:, serves:, tags:, blocked:}].
+  def build_map(outcomes, specs)
+    known = outcomes.map { |o| o[:slug].to_s }
+    by_outcome = Hash.new { |h, k| h[k] = empty_buckets }
+    unlinked = empty_buckets
+    blocked = Hash.new { |h, k| h[k] = [] }
+    orphaned = Hash.new { |h, k| h[k] = [] }
+    tags = Hash.new { |h, k| h[k] = [] }
+
+    specs.sort_by { |s| s[:slug].to_s }.each do |s|
+      st = s[:status].to_s
+      next unless MAP_STATES.include?(st)
+
+      serves = s[:serves].to_s
+      if serves.empty?
+        unlinked[st] << s[:slug]
+      elsif known.include?(serves)
+        by_outcome[serves][st] << s[:slug]
+      else
+        orphaned[serves] << s[:slug]
+      end
+      blocked[serves] << s[:slug] if s[:blocked]
+      Array(s[:tags]).each { |t| tags[t.to_s] << s[:slug] }
+    end
+
+    {
+      outcomes: outcomes.map { |o| o.merge(specs: by_outcome[o[:slug].to_s], blocked: blocked[o[:slug].to_s]) },
+      unlinked: unlinked.merge(blocked: blocked[""]),
+      orphaned: orphaned.sort.to_h,
+      tags: tags.sort.to_h,
+    }
+  end
+
+  def map(agentile_dir)
+    specs_dir = File.join(agentile_dir, "specs")
+    shipped = shipped_map(specs_dir)
+    all = specs_in(specs_dir) + specs_in(File.join(specs_dir, "done")) + specs_in(File.join(specs_dir, "abandoned"))
+    entries = all.map do |s|
+      {
+        slug: s[:slug], status: s[:fm]["status"], serves: s[:fm]["serves"], tags: Array(s[:fm]["tags"]),
+        blocked: s[:fm]["status"] == "ready" && !Array(s[:fm]["depends_on"]).all? { |d| shipped[d.to_s] },
+      }
+    end
+    build_map(outcome_list(agentile_dir), entries)
+  end
+
+  # ---- brief_sync (docs/agentile-outcomes.md §4.2) ----
+  # Rewrites the brief's "## Prioritised outcomes" section from the open
+  # outcomes, by rank, so the prose list and the store cannot drift. The
+  # brief is a repo file in both store modes; the caller passes whichever
+  # adapter's outcome_list applies.
+
+  BRIEF_HEADING = "## Prioritised outcomes"
+
+  def brief_sync(agentile_dir, outcomes)
+    path = File.join(agentile_dir, "brief.md")
+    abort "ag-store: no brief at #{path}" unless File.exist?(path)
+
+    raw = File.read(path)
+    unless raw.include?(BRIEF_HEADING)
+      warn "ag-store: #{path} has no '#{BRIEF_HEADING}' heading — nothing to sync"
+      return false
+    end
+
+    open = outcomes.select { |o| o[:status].to_s == "open" }
+    lines = open.each_with_index.map { |o, i| "#{i + 1}. **#{o[:title]}** (`#{o[:slug]}`)" }
+    body = lines.empty? ? "_No open outcomes yet — create one with `/ag-outcome`._" : lines.join("\n")
+    section = "#{BRIEF_HEADING}\n\n#{body}\n\n"
+    new_raw = raw.sub(/^#{Regexp.escape(BRIEF_HEADING)}\n.*?(?=^## |\z)/m) { section }
+    File.write(path, new_raw)
+    true
   end
 
   # ---- whoami / doctor ----

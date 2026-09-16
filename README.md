@@ -127,6 +127,18 @@ backend (Jira, Azure DevOps, …) is one new file under
 
 A spec can declare `depends_on: [slug, …]` in its frontmatter — a list of other specs (by slug) that must ship before this one can be claimed. Shaping asks about this by default, so dependencies are captured at the point of writing the spec rather than discovered mid-build. A spec isn't claimable until all its dependencies have shipped. When a spec ships it moves to `specs/done/`, keeping the active numbered list clean while remaining resolvable as a fulfilled dependency. (Abandoning a dependency, by contrast, leaves its dependents `BLOCKED` — `/ag-abandon` walks that chain so nothing is stranded silently.)
 
+### Outcomes
+
+The layer above specs. An **Outcome** is a bet — a claim about what becomes
+true, a measure a human judges it by, and a stop rule — kept flat and ranked.
+A spec may `serve` one Outcome (frontmatter `serves: <slug>`) and carry
+free-form `tags`; neither is ever required, and a spec with no Outcome is
+claimable exactly as before. Everything you would want to *report* — progress,
+what's blocked, what's grouped where — is computed by `ag-store map`, never
+stored, so it cannot go stale. The layer earns its place as an *input*:
+`/ag-decompose <slug>` turns an Outcome into candidate stubs. Design, and the
+Jira-epic argument it rejects: `docs/agentile-outcomes.md`.
+
 ### When shipped work turns out wrong
 
 A shipped spec that fails in production re-enters the loop as new work:
@@ -211,7 +223,7 @@ expiry behaviour rather than assuming a loop runs forever.
 
 ## Skills
 
-`/ag-new-project`, `/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-abandon`, `/ag-loop`, `/ag-deploy`, `/ag-customise`, `/ag-retro`, `/ag-version`.
+`/ag-new-project`, `/ag-init`, `/ag-capture`, `/ag-inbox`, `/ag-shape`, `/ag-outcome`, `/ag-decompose`, `/ag-map`, `/ag-spec`, `/ag-plan`, `/ag-prioritise`, `/ag-next`, `/ag-wip`, `/ag-abandon`, `/ag-loop`, `/ag-deploy`, `/ag-customise`, `/ag-retro`, `/ag-version`.
 
 ## Agents (the "hats")
 

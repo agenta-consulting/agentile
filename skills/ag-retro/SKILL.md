@@ -46,6 +46,7 @@ Answer, with evidence:
 - **What surprised us?** Incidents, reverts, or specs that ballooned past their scope boundary.
 - **Lead time** — is it dropping? If not, the constraint is upstream of coding; say so plainly.
 - **Did shipped work actually work?** For each spec shipped since the last retro, check its `outcome:` field — was the outcome observed? Unverified or unmet outcomes become new inbox stubs (`/ag-capture`), referencing the original slug.
+- **Are the bets still good?** For each open Outcome (`ag-store outcome_list --status open ...`) read its measure and stop rule against what shipped (`ag-store map ...`). Propose `achieved` where the evidence meets the measure, `abandoned` where the stop rule has fired, and say plainly where neither is yet decidable. A person confirms; you do not transition an Outcome on your own.
 
 Measure **flow, not output** — do not report lines of code or "agent velocity".
 
@@ -57,6 +58,7 @@ For each lesson worth keeping, propose a concrete change (and make it on approva
 - A new or updated **ADR** when the lesson is a decision.
 - A **`.agentile/shape.md`** addition when an item shipped wrong because shaping missed a question.
 - A **`brief.md`** update when the project's outcomes, constraints, or non-goals have shifted — keep the brief living rather than a launch document.
+- An **Outcome transition** on approval — `ag-store outcome_achieve <slug> ...`, or `/ag-abandon <slug>` (which cascades to the specs serving it) — followed by `ag-store brief_sync ...` so the brief's "Prioritised outcomes" list matches the store.
 
 ## Step 4 — Report
 
