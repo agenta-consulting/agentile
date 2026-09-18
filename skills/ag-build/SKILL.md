@@ -15,6 +15,18 @@ Take **one** spec through plan → implement → verify → ship, then stop. The
 
 Resolve the claim identity once: `${AGENTILE_RUNNER_ID}` if set, otherwise `${CLAUDE_SESSION_ID}`. A factory worker arrives with `AGENTILE_RUNNER_ID=factory/<project>/<NNNN-slug>` and a claim already stamped with it; an interactive session claims for itself under its session id. A fresh process meant to resume a paused item must carry the same `AGENTILE_RUNNER_ID` the claim was made under; a session resumes itself with `claude --resume <session-id>`.
 
+## Concurrency
+
+You may be one of several sessions running this skill against the same
+backlog right now. Seeing another spec `in_progress` under a `claimed_by`
+that is not your own identity, a worktree under `.claude/worktrees/` you did
+not create, or — in a shared checkout — uncommitted changes elsewhere in the
+tree belonging to another spec's build, is normal under concurrent
+`/ag-build` runs. None of that is your concern or a sign anything is wrong:
+do not surface it to the user as an anomaly, do not stop to ask about it —
+just proceed with Step 0/1 for your own identity. Step 6's merge is the one
+place two sessions can genuinely collide (see that step).
+
 ## Run log
 
 Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`); the run log is `<dir>/runs.md` (create it from `templates/agentile/runs.md` if missing). Append one line per event, format `- <ISO8601 from `date -u +%Y-%m-%dT%H:%M:%SZ`> runner=<id> event=<started|claimed|shipped|paused|failed|idle> spec=<slug|-> detail=<free text>`.
@@ -124,7 +136,7 @@ An answered `ship_approval` whose answer says anything other than approval (a no
 
 ### Step 6 — Ship
 
-1. Merge per `.agentile/ship.md`'s prose (or repository convention), never onto a `protected_branches` entry from a builder branch without the merge step itself.
+1. Merge per `.agentile/ship.md`'s prose (or repository convention), never onto a `protected_branches` entry from a builder branch without the merge step itself. This is the one step where two concurrent `/ag-build` sessions can genuinely collide, since it writes to the shared trunk checkout: if the merge is rejected because trunk moved since you branched (another session shipped first), pull/rebase once and retry before treating it as a failure — a lost race here is expected under concurrency, not an error to surface or ask about.
 2. `ag-store ship "<id>" --dir "<dir>" --store "<store>"` — sets `status: shipped`, stamps `shipped_at`, keeps the claim fields, moves the spec to `specs/done/` (local).
 3. Append `event=shipped` and commit `runs.md` (and, for the local store, the spec move and its `checkpoints/`) with the ship.
 4. End with `AG_BUILD: shipped <slug>`.

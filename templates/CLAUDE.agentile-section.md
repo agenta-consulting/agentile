@@ -27,6 +27,27 @@ The backlog lives under one configurable **Agentile directory** (`docs/agentile/
 - Build on a short-lived branch/worktree; run the gates in `.agentile/gates.json`; a fresh-context reviewer critiques the diff before merge.
 - Integrate to trunk in small, reversible, flagged batches. Close the loop with `/ag-retro`.
 
+### Concurrent sessions
+
+Several sessions can run this loop against the same backlog at once — multiple
+`/ag-build` workers, a factory run, and an interactive session all claiming and
+shipping specs in parallel. That is a supported, expected mode, not an
+anomaly:
+
+- Another spec showing `in_progress` under a `claimed_by` that is not you, a
+  worktree under `.claude/worktrees/` you did not create, or — in a shared
+  checkout — uncommitted changes elsewhere in the tree that belong to
+  someone else's build in flight, are all normal. Do not flag any of this to
+  the user as if something is wrong, and do not stop to ask about it; just
+  proceed with your own claimed work. `/ag-wip` shows exactly what is in
+  flight and by whom, if you genuinely need to check.
+- The claim itself is race-safe (`ag-store claim`'s read → check → update →
+  re-read). Shipping is not automatically race-safe: two sessions merging to
+  the same trunk checkout at once can collide. If a merge is rejected because
+  trunk moved since you branched, pull/rebase and retry once before treating
+  it as a failure — a losing race is expected under concurrency, not an
+  error.
+
 ### Rules
 
 - Determinism over instruction: repeatable steps (build, test, lint, deploy) are commands in `.agentile/gates.json`, not hopeful sentences.
