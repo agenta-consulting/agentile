@@ -315,7 +315,7 @@ client = Airtable::Client.new(token: "t", transport: transport)
 adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
 checks = adapter.doctor
 raise "doctor outcomes table: #{checks.inspect}" unless checks["Outcomes table exists"] == false
-raise "doctor drift: #{checks.inspect}" unless checks["missing fields"].include?("Specs.Serves Outcome") && checks["missing fields"].include?("Specs.Tags") && checks["missing fields"].include?("Specs.Source Inbox Item")
+raise "doctor drift: #{checks.inspect}" unless checks["missing fields"].include?("Specs.Serves Outcome") && checks["missing fields"].include?("Specs.Tags") && checks["missing fields"].include?("Specs.Source Inbox Item") && checks["missing fields"].include?("Specs.Attachments") && checks["missing fields"].include?("Inbox.Attachments")
 
 # 13. spec_write accepts bracketed list strings from --set for tags and depends_on (the CLI hands strings, not arrays)
 transport = FakeTransport.new

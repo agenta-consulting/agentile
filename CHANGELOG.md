@@ -4,6 +4,15 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.18.0 — 2026-09-18
+
+- **Inbox and Specs both get an `Attachments` field** (Airtable's native
+  `multipleAttachments` type) for dragging in supporting files — screenshots,
+  docs — directly in the Airtable UI. No `ag-store` CLI or skill wiring: it's
+  human-driven only, not surfaced in `spec_read`/`inbox_list` output or
+  written by any skill. `provision` adds it to existing bases; `doctor`
+  reports the gap until it does.
+
 ## 0.17.0 — 2026-09-18
 
 - **Specs now remember which Inbox stub they came from.** A new `Source Inbox
