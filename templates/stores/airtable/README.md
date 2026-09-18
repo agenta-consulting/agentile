@@ -67,7 +67,10 @@ as the queue order. `Claimed By (Session)` is the resume handle (same
 meaning as `local`'s `claimed_by`); `Claimed By (Member)`, `Captured By`,
 and `Shaped By` are linked records into `Members` — attribution, not
 permissions. `Source Inbox Item` links into `Inbox` — it records which
-Inbox stub, if any, the spec was shaped from.
+Inbox stub, if any, the spec was shaped from. Both `Specs` and `Inbox` also
+have an `Attachments` field (a native multiple-attachments field) for
+dragging in supporting files — screenshots, docs — directly in the Airtable
+UI; nothing reads or writes it programmatically.
 
 The `Outcomes` table (since 0.12.0, `docs/agentile-outcomes.md`) holds the
 layer above specs: `Title` (primary), `Slug`, `Status` (`open`/`achieved`/
