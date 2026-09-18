@@ -271,6 +271,27 @@ sf = sc[:body]["records"][0]["fields"]
 raise "spec serves link: #{sf.inspect}" unless sf["Serves Outcome"] == ["recO1"]
 raise "spec tags: #{sf.inspect}" unless sf["Tags"] == %w[auth testing]
 
+# 10b. spec_create sends source_inbox straight through to Source Inbox Item — no lookup call, unlike serves
+transport = FakeTransport.new
+transport.push(200, records_page([])) # specs (depends_on resolution)
+transport.push(200, records_page([rec("recO1", { "Slug" => "identity", "Status" => "open" })])) # outcomes (serves resolution)
+transport.push(200, { "records" => [{ "id" => "recS1" }] })
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_create("sso", smd_with_inbox)
+sic = transport.calls.last
+sif = sic[:body]["records"][0]["fields"]
+raise "spec source_inbox link: #{sif.inspect}" unless sif["Source Inbox Item"] == ["recI1"]
+
+# 10c. spec_read resolves Source Inbox Item to the linked Inbox record's Title, for display only
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS9", { "Slug" => "sso", "Title" => "SSO", "Created" => "2026-06-10", "Source Inbox Item" => ["recI1"] })])) # specs_records, via spec_by_slug
+transport.push(200, rec("recI1", { "Title" => "Buyers want SSO" })) # get_record on Inbox
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+srv = Airtable::Schema.parse_spec_markdown(adapter.spec_read("sso"))
+raise "spec_read source_inbox: #{srv.inspect}" unless srv[:source_inbox] == "Buyers want SSO"
+
 # 11. map: groups specs by Serves Outcome, computes blocked from Depends On, indexes tags
 transport = FakeTransport.new
 transport.push(200, records_page([

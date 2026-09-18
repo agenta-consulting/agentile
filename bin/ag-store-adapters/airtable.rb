@@ -143,6 +143,17 @@ module Airtable
       (outcomes_records.find { |r| r["id"] == record_id } || {}).dig("fields", "Slug")
     end
 
+    # A single get_record, not a full inbox_records list — spec_read is a
+    # one-off read, and inbox_list already filters to Open items only (this
+    # needs Dropped ones too), so there's no cache to reuse here.
+    def inbox_title_of(record_id)
+      return nil if record_id.nil?
+
+      @client.get_record(@base_id, @inbox_table, record_id)["fields"]["Title"]
+    rescue Airtable::ApiError
+      nil
+    end
+
     # ---- whoami ----
 
     def whoami
@@ -240,6 +251,7 @@ module Airtable
       v[:depends_on] = (f["Depends On"] || []).map { |id| slug_of(id) }.compact
       v[:captured_by] = (f["Captured By"] || []).map { |id| member_name_of(id) }.compact
       v[:shaped_by] = (f["Shaped By"] || []).map { |id| member_name_of(id) }.compact
+      v[:source_inbox] = inbox_title_of(Array(f["Source Inbox Item"]).first)
       v[:claimed_by_member] = member_name_of(Array(f["Claimed By (Member)"]).first)
       # Legacy fallback: a spec written before 0.14.0 has only the `Created`
       # date. Without this, reading it back silently drops its creation date.
@@ -275,6 +287,7 @@ module Airtable
       fields["Captured By"] = Array(v[:captured_by]) if v.key?(:captured_by)
       fields["Shaped By"] = Array(v[:shaped_by]) if v.key?(:shaped_by)
       fields["Claimed By (Member)"] = Array(v[:claimed_by_member]) if v.key?(:claimed_by_member)
+      fields["Source Inbox Item"] = Array(v[:source_inbox]) if v.key?(:source_inbox)
       fields
     end
 
