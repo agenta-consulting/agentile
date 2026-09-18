@@ -43,6 +43,12 @@ module Airtable
       { type: "multipleSelects", options: { choices: [] } }
     end
 
+    # Drag-and-drop files (screenshots, docs) directly in the Airtable UI —
+    # no ag-store CLI/skill wiring, human-driven only.
+    def self.attachments
+      { type: "multipleAttachments" }
+    end
+
     # Non-link fields only — link fields (Depends On, the *By member fields)
     # are added in a second pass once every table's id is known; see airtable.rb#provision.
     SPECS_BASE_FIELDS = [
@@ -73,6 +79,7 @@ module Airtable
       { name: "Shipped At" }.merge(datetime),
       { name: "Abandoned Reason" }.merge(long_text),
       { name: "Abandoned At" }.merge(datetime),
+      { name: "Attachments" }.merge(attachments),
     ].freeze
 
     # Title is first so it becomes the primary field: a stub's Text is a
@@ -90,6 +97,7 @@ module Airtable
       { name: "Type" }.merge(select("feature", "bug", "chore", "spike")),
       { name: "Captured At" }.merge(date),
       { name: "Status" }.merge(select("Open", "Shaped", "Dropped")),
+      { name: "Attachments" }.merge(attachments),
     ].freeze
 
     MEMBERS_BASE_FIELDS = [
