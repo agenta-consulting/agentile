@@ -4,6 +4,18 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.19.0 — 2026-09-18
+
+- **`/ag-build`'s ship-approval step requires visual evidence for visual
+  changes.** If a spec's acceptance criteria, or the builder's or reviewer's
+  report, describe a visual/UI outcome, Step 5 now renders or screenshots the
+  actual result and shows it before asking for approval — a text description
+  of what something looks like isn't something a human can approve against.
+  Found the hard way: a ship-approval ask described a rendering fix in prose,
+  the human had to ask twice before actually seeing it, and the visual
+  evidence turned up a second real bug (uneven tile spacing) the prose
+  description had missed entirely.
+
 ## 0.18.0 — 2026-09-18
 
 - **Inbox and Specs both get an `Attachments` field** (Airtable's native
