@@ -48,13 +48,17 @@ existing base adds it there without touching any existing data.
 
 ### Write path (going forward)
 
-- `ag-store spec_create` gains an optional `--source-inbox <inbox-id>`
-  parameter, mirroring the existing `--serves <outcome-slug>` parameter,
-  setting the link at creation time.
-- `/ag-shape` Step 5 (currently `spec_create` → `inbox_drop`) passes the
-  shaped stub's id as `--source-inbox` on every `spec_create` call it makes,
-  including each call in the "Split" case — so every resulting spec links
-  back to the one stub, and the stub's `Specs` reciprocal shows all of them.
+- `spec_create` takes a full markdown document on stdin, not per-field CLI
+  flags — `serves` is a frontmatter key inside that markdown, not a
+  `--serves` flag. `source_inbox` follows the same shape: a new frontmatter
+  key holding the Inbox item's raw record id, resolved by `build_fields`
+  exactly like `captured_by`/`shaped_by` (passed straight through, no
+  lookup — unlike `serves`, which resolves a slug to a record id).
+- `/ag-shape` Step 5 (currently `spec_create` → `inbox_drop`) includes
+  `source_inbox: <id>` in the frontmatter of every spec markdown document it
+  writes, `<id>` being the stub's own id from `inbox_list` — including each
+  spec in the "Split" case, so every resulting spec links back to the one
+  stub, and the stub's `Specs` reciprocal shows all of them.
 - No other skill changes. `/ag-decompose`/`/ag-capture` only write Inbox
   items; `/ag-spec` never touches the Inbox table.
 
