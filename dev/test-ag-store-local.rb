@@ -503,4 +503,24 @@ Dir.mktmpdir do |root|
   raise "closed events kept for data: #{store('run_list', dir: dir).length}" unless store("run_list", dir: dir).length == 6
 end
 
+# 24. omitting --store falls back to .agentile/store.md's `store:` key, not a
+# silent `local` default — regression for the bug where a bare `ag-store
+# whoami` in an airtable project answered as `local` (git email as free
+# text) instead of attempting airtable resolution (a Members record id).
+# Proven here as a negative: with no token, the airtable path must fail
+# loudly on missing credentials rather than quietly succeed as local.
+Dir.mktmpdir do |root|
+  dir = scaffold(root)
+  FileUtils.mkdir_p(File.join(root, ".agentile"))
+  File.write(File.join(root, ".agentile", "store.md"), "---\nstore: airtable\nairtable_base: appTEST\n---\n")
+  Dir.chdir(root) do
+    out, err, st = Open3.capture3({ "AGENTILE_AIRTABLE_TOKEN" => "" }, "ruby", HELP, "whoami", "--dir", dir)
+    raise "bare whoami should attempt airtable (no --store passed) and fail on missing token, got success: #{out}" if st.success?
+    raise "expected the airtable adapter's own error, not a silent local fallback: #{err}" unless err.include?("AGENTILE_AIRTABLE_TOKEN")
+  end
+  # an explicit --store local still overrides the file, as documented
+  out = store("whoami", "--store", "local", dir: dir)
+  raise "explicit --store local still wins: #{out.inspect}" if out.to_s.start_with?("unknown") || out.to_s.include?("AGENTILE_AIRTABLE_TOKEN")
+end
+
 puts "ALL PASS"

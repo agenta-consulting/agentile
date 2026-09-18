@@ -181,6 +181,11 @@ module Airtable
           type: r["fields"]["Type"],
           captured_at: r["fields"]["Captured At"],
           captured_by: member_ids.map { |m| member_name_of(m) }.compact.first,
+          # Raw Members record id, not the display name above — /ag-shape
+          # carries this into the spec's own `captured_by` frontmatter key,
+          # which (per Schema's comment on FRONTMATTER_KEYS) expects an
+          # already-resolved record id, not free text.
+          captured_by_id: member_ids.first,
           serves: outcome_slug_of(Array(r["fields"]["Serves Outcome"]).first),
         }
       end
@@ -287,10 +292,15 @@ module Airtable
         fields["Serves Outcome"] = o ? [o["id"]] : []
       end
       fields["Tags"] = Schema.list_value(v[:tags]) if v.key?(:tags)
-      fields["Captured By"] = Array(v[:captured_by]) if v.key?(:captured_by)
-      fields["Shaped By"] = Array(v[:shaped_by]) if v.key?(:shaped_by)
-      fields["Claimed By (Member)"] = Array(v[:claimed_by_member]) if v.key?(:claimed_by_member)
-      fields["Source Inbox Item"] = Array(v[:source_inbox]).reject { |s| s.to_s.empty? } if v.key?(:source_inbox)
+      # Schema.list_value, not bare Array(): a `--set shaped_by=[recA,recB]`
+      # (re-shaping records more than one shaper) arrives as that literal
+      # bracketed string, same as depends_on/tags do — Array() on a String
+      # wraps the whole "[recA,recB]" as one bogus id instead of splitting it,
+      # which Airtable 422s on.
+      fields["Captured By"] = Schema.list_value(v[:captured_by]) if v.key?(:captured_by)
+      fields["Shaped By"] = Schema.list_value(v[:shaped_by]) if v.key?(:shaped_by)
+      fields["Claimed By (Member)"] = Schema.list_value(v[:claimed_by_member]) if v.key?(:claimed_by_member)
+      fields["Source Inbox Item"] = Schema.list_value(v[:source_inbox]).reject { |s| s.to_s.empty? } if v.key?(:source_inbox)
       fields
     end
 

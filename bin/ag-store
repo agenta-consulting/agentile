@@ -113,6 +113,25 @@ rescue StandardError
   nil
 end
 
+# Same fallback for the adapter choice itself. Without this, a caller that
+# omits --store (whoami's documented bare invocation is exactly this) silently
+# gets the `local` adapter even in a project whose .agentile/store.md says
+# `airtable` — `local`'s whoami just echoes `git config user.email` as
+# free text, which then fails the airtable adapter's `captured_by.to_s
+# .start_with?("rec")` checks elsewhere and attribution is silently dropped.
+# An explicit --store always wins.
+def store_md_store
+  path = ".agentile/store.md"
+  return nil unless File.exist?(path)
+
+  fm_text = File.read(path)[/\A---\n(.*?)\n---/m, 1]
+  return nil unless fm_text
+
+  YAML.safe_load(fm_text)&.dig("store")
+rescue StandardError
+  nil
+end
+
 # --set key=value may repeat (spec_write); pull every occurrence out before
 # the generic single-value flag parser runs.
 def extract_sets(argv)
@@ -137,7 +156,7 @@ abort "usage: ag-store <op> --dir <agentile-dir> [--store local|airtable] [args.
 
 rest, sets = extract_sets(ARGV[1..])
 positional, flags = parse_flags(rest)
-store = flags["store"] || "local"
+store = flags["store"] || store_md_store || "local"
 agentile_dir = flags["dir"]
 specs_dir = agentile_dir && File.join(agentile_dir, "specs")
 

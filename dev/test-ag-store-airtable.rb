@@ -515,4 +515,30 @@ adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
 adapter.checkpoint_open("alpha", "question", "?", by: "builder")
 raise "checkpoint_open uses typecast: #{transport.calls.last[:body].inspect}" unless transport.calls.last[:body]["typecast"] == true
 
+# 18. spec_write accepts bracketed list strings from --set for captured_by/shaped_by
+# too, same as tags/depends_on in #13 — regression for the bug where these two
+# used bare Array() and a bracketed "--set shaped_by=[recA,recB]" 422'd against
+# Airtable instead of splitting into two ids.
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recS2", { "Slug" => "sso2", "Status" => "ready" })]))
+transport.push(200, {})
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+adapter.spec_write("sso2", { captured_by: "recKeith", shaped_by: "[recKeith, recDanny]" })
+wc = transport.calls.last
+raise "spec_write captured_by from string: #{wc[:body].inspect}" unless wc[:body]["fields"]["Captured By"] == ["recKeith"]
+raise "spec_write shaped_by from bracketed string: #{wc[:body].inspect}" unless wc[:body]["fields"]["Shaped By"] == %w[recKeith recDanny]
+
+# 19. inbox_list exposes the raw Captured By record id (captured_by_id)
+# alongside the display name (captured_by) — /ag-shape carries the id, not
+# the name, into a promoted spec's own captured_by field.
+transport = FakeTransport.new
+transport.push(200, records_page([rec("recI1", { "Title" => "Idea", "Text" => "do the thing",
+                                                   "Captured By" => ["recKeith"] })]))
+transport.push(200, records_page([rec("recKeith", { "Name" => "Keith" })]))
+client = Airtable::Client.new(token: "t", transport: transport)
+adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
+stub = adapter.inbox_list.first
+raise "inbox_list captured_by_id: #{stub.inspect}" unless stub[:captured_by] == "Keith" && stub[:captured_by_id] == "recKeith"
+
 puts "ALL PASS"
