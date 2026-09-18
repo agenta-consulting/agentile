@@ -4,6 +4,18 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.17.0 — 2026-09-18
+
+- **Specs now remember which Inbox stub they came from.** A new `Source Inbox
+  Item` link on Specs (reciprocal `Specs` on Inbox, auto-maintained by
+  Airtable) records provenance — one stub can link to several specs, since
+  `/ag-shape`'s "Split" case can turn one stub into more than one. Written by
+  `/ag-shape` on every spec it creates via a new `source_inbox` frontmatter
+  key; `ag-store spec_create`/`spec_write` resolve it the same way as
+  `captured_by`/`shaped_by` (a raw record id, no lookup). `spec_read` shows
+  it back as the stub's Title, for readability. `provision` adds the field to
+  existing bases; `doctor` reports the gap until it does.
+
 ## 0.16.1 — 2026-09-16
 
 - `doctor` reports a **stale select**: a choice added to `schema.rb` after a base

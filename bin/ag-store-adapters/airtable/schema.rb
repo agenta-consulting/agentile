@@ -152,6 +152,7 @@ module Airtable
         ["Captured By", :members, false],
         ["Shaped By", :members, true],
         ["Serves Outcome", :outcomes, false],
+        ["Source Inbox Item", :inbox, false],
       ],
       inbox: [
         ["Captured By", :members, false],
@@ -175,15 +176,15 @@ module Airtable
 
     # ---- markdown <-> fields ----
     # `values` / the returned hash use these canonical (snake_case) keys.
-    # Anything airtable-only (rank, captured_by, shaped_by, claimed_by_member)
-    # is emitted as an additive frontmatter key — harmless extra YAML that
-    # every other skill's frontmatter reader already ignores if it doesn't
-    # need it.
+    # Anything airtable-only (rank, captured_by, shaped_by, claimed_by_member,
+    # source_inbox) is emitted as an additive frontmatter key — harmless extra
+    # YAML that every other skill's frontmatter reader already ignores if it
+    # doesn't need it.
 
     FRONTMATTER_KEYS = %i[
       title slug status depends_on type route business_value technical_certainty
       rank created_at serves tags outcome claimed_by label claimed_at claimed_by_member
-      abandoned_reason abandoned_at shipped_at captured_by shaped_by
+      abandoned_reason abandoned_at shipped_at captured_by shaped_by source_inbox
     ].freeze
 
     SECTION_HEADINGS = {
