@@ -116,7 +116,9 @@ At either pause, an answer that arrives in chat is recorded against the checkpoi
 
 ### Step 5 — Ship approval
 
-If `ship.md`'s `human_checkpoint` is `true` (default): checkpoint `ship_approval` (`--by ship`) whose ask has three lines — the spec slug and title, what was built (one sentence from the builder's report), and the verify outcome (one sentence from the reviewer's) — then `event=paused detail=ship_approval`, end the turn with those three lines, "Approve to ship `<slug>`?", and `AG_BUILD: paused <slug> ship_approval <path>`. An approval that comes back in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for `ship_approval`.
+If the spec's acceptance criteria, or the builder's or reviewer's report, describe a visual or UI outcome — a rendered image, a layout, a color, a screen — render or screenshot the actual result and show it before asking for approval, in whatever form the surface allows (an inline image, a screenshot, a published comparison page). A sentence describing what something looks like is not evidence a human can approve against; the human has to see it. Do this whether the caller is interactive or headless — headless still writes the checkpoint's ask with the evidence attached or linked, since whoever answers it later still needs to see it.
+
+If `ship.md`'s `human_checkpoint` is `true` (default): checkpoint `ship_approval` (`--by ship`) whose ask has three lines — the spec slug and title, what was built (one sentence from the builder's report), and the verify outcome (one sentence from the reviewer's) — plus the visual evidence above when it applies, then `event=paused detail=ship_approval`, end the turn with those three lines, "Approve to ship `<slug>`?", and `AG_BUILD: paused <slug> ship_approval <path>`. An approval that comes back in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for `ship_approval`.
 
 An answered `ship_approval` whose answer says anything other than approval (a note, "send back") is a bounce: go to Step 3 with the answer as the builder's instruction.
 
