@@ -152,6 +152,7 @@ module Airtable
         ["Captured By", :members, false],
         ["Shaped By", :members, true],
         ["Serves Outcome", :outcomes, false],
+        ["Source Inbox Item", :inbox, false],
       ],
       inbox: [
         ["Captured By", :members, false],
@@ -183,7 +184,7 @@ module Airtable
     FRONTMATTER_KEYS = %i[
       title slug status depends_on type route business_value technical_certainty
       rank created_at serves tags outcome claimed_by label claimed_at claimed_by_member
-      abandoned_reason abandoned_at shipped_at captured_by shaped_by
+      abandoned_reason abandoned_at shipped_at captured_by shaped_by source_inbox
     ].freeze
 
     SECTION_HEADINGS = {

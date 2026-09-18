@@ -229,6 +229,13 @@ raise "spec tags: #{sv.inspect}" unless sv[:tags] == %w[auth testing]
 sre = Airtable::Schema.parse_spec_markdown(Airtable::Schema.render_spec_markdown(sv))
 raise "spec serves/tags round-trip" unless sre[:serves] == "identity" && sre[:tags] == %w[auth testing]
 
+# 8b. spec markdown carries source_inbox as a raw record id (no lookup — same convention as captured_by/shaped_by)
+smd_with_inbox = smd.sub("outcome: no more", "source_inbox: recI1\noutcome: no more")
+siv = Airtable::Schema.parse_spec_markdown(smd_with_inbox)
+raise "spec source_inbox: #{siv.inspect}" unless siv[:source_inbox] == "recI1"
+sire = Airtable::Schema.parse_spec_markdown(Airtable::Schema.render_spec_markdown(siv))
+raise "spec source_inbox round-trip" unless sire[:source_inbox] == "recI1"
+
 # 9. Client sends typecast only when asked
 transport = FakeTransport.new
 transport.push(200, { "records" => [] })
@@ -287,7 +294,7 @@ client = Airtable::Client.new(token: "t", transport: transport)
 adapter = Airtable::Adapter.new(base_id: "appTEST", client: client)
 checks = adapter.doctor
 raise "doctor outcomes table: #{checks.inspect}" unless checks["Outcomes table exists"] == false
-raise "doctor drift: #{checks.inspect}" unless checks["missing fields"].include?("Specs.Serves Outcome") && checks["missing fields"].include?("Specs.Tags")
+raise "doctor drift: #{checks.inspect}" unless checks["missing fields"].include?("Specs.Serves Outcome") && checks["missing fields"].include?("Specs.Tags") && checks["missing fields"].include?("Specs.Source Inbox Item")
 
 # 13. spec_write accepts bracketed list strings from --set for tags and depends_on (the CLI hands strings, not arrays)
 transport = FakeTransport.new
