@@ -176,10 +176,10 @@ module Airtable
 
     # ---- markdown <-> fields ----
     # `values` / the returned hash use these canonical (snake_case) keys.
-    # Anything airtable-only (rank, captured_by, shaped_by, claimed_by_member)
-    # is emitted as an additive frontmatter key — harmless extra YAML that
-    # every other skill's frontmatter reader already ignores if it doesn't
-    # need it.
+    # Anything airtable-only (rank, captured_by, shaped_by, claimed_by_member,
+    # source_inbox) is emitted as an additive frontmatter key — harmless extra
+    # YAML that every other skill's frontmatter reader already ignores if it
+    # doesn't need it.
 
     FRONTMATTER_KEYS = %i[
       title slug status depends_on type route business_value technical_certainty

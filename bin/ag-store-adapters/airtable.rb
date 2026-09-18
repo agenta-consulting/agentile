@@ -146,10 +146,13 @@ module Airtable
     # A single get_record, not a full inbox_records list — spec_read is a
     # one-off read, and inbox_list already filters to Open items only (this
     # needs Dropped ones too), so there's no cache to reuse here.
+    # Display-only: resolves to the linked record's Title for a human to
+    # read. Never feed this back into build_fields — source_inbox there
+    # expects a raw record id, not a Title.
     def inbox_title_of(record_id)
       return nil if record_id.nil?
 
-      @client.get_record(@base_id, @inbox_table, record_id)["fields"]["Title"]
+      @client.get_record(@base_id, @inbox_table, record_id).dig("fields", "Title")
     rescue Airtable::ApiError
       nil
     end
@@ -287,7 +290,7 @@ module Airtable
       fields["Captured By"] = Array(v[:captured_by]) if v.key?(:captured_by)
       fields["Shaped By"] = Array(v[:shaped_by]) if v.key?(:shaped_by)
       fields["Claimed By (Member)"] = Array(v[:claimed_by_member]) if v.key?(:claimed_by_member)
-      fields["Source Inbox Item"] = Array(v[:source_inbox]) if v.key?(:source_inbox)
+      fields["Source Inbox Item"] = Array(v[:source_inbox]).reject { |s| s.to_s.empty? } if v.key?(:source_inbox)
       fields
     end
 

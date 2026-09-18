@@ -13,7 +13,8 @@ here. See the Versioning section in [README.md](./README.md) for why.
   `/ag-shape` on every spec it creates via a new `source_inbox` frontmatter
   key; `ag-store spec_create`/`spec_write` resolve it the same way as
   `captured_by`/`shaped_by` (a raw record id, no lookup). `spec_read` shows
-  it back as the stub's Title, for readability.
+  it back as the stub's Title, for readability. `provision` adds the field to
+  existing bases; `doctor` reports the gap until it does.
 
 ## 0.16.1 — 2026-09-16
 
