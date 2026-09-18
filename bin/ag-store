@@ -64,6 +64,7 @@
 # go to stderr with a non-zero exit, same convention as bin/ag-claim.
 
 require "json"
+require "yaml"
 
 require_relative "ag-store-adapters/local"
 require_relative "ag-store-adapters/airtable"
@@ -91,6 +92,25 @@ def parse_flags(argv)
     end
   end
   [positional, flags]
+end
+
+# --airtable-base is required for the airtable store, but every skill's
+# documented invocation passes only --dir/--store (the base id lives in
+# .agentile/store.md, which the skill already read once to learn store:
+# airtable in the first place). Rather than require every caller to thread
+# it through by hand, fall back to reading it straight from that file
+# (relative to cwd, same as every other project-relative path here). An
+# explicit --airtable-base always wins.
+def store_md_airtable_base
+  path = ".agentile/store.md"
+  return nil unless File.exist?(path)
+
+  fm_text = File.read(path)[/\A---\n(.*?)\n---/m, 1]
+  return nil unless fm_text
+
+  YAML.safe_load(fm_text)&.dig("airtable_base")
+rescue StandardError
+  nil
 end
 
 # --set key=value may repeat (spec_write); pull every occurrence out before
@@ -136,7 +156,8 @@ end
 
 adapter = if store == "airtable"
             Airtable::Adapter.new(
-              base_id: flags["airtable-base"], inbox_table: flags["airtable-inbox-table"] || "Inbox",
+              base_id: flags["airtable-base"] || store_md_airtable_base,
+              inbox_table: flags["airtable-inbox-table"] || "Inbox",
               specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members",
               outcomes_table: flags["airtable-outcomes-table"] || "Outcomes",
               checkpoints_table: flags["airtable-checkpoints-table"] || "Checkpoints",

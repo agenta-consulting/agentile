@@ -16,7 +16,7 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
    Also run `ag-store run_list --status active --dir "<dir>" --store "<store>"` — the runs still live, on any machine. A spec listed `in_progress` with **no** active run is a claim whose worker is gone: say so, and point at `ag-store release` rather than leaving it looking busy.
 
-3. For each in-progress spec, classify `claimed_by`: a Claude session id (a UUID), a factory worker (starts with `factory/`), or another named runner (anything else, e.g. `ag-run@host/12345`, set via `AGENTILE_RUNNER_ID`). Then run `ag-checkpoint list "<spec-dir>"` (the spec's directory under `<dir>/specs/`; skip if it has no directory yet) and note the newest checkpoint's `reason` and `status` — the list is oldest first, so the newest is the **last** element of its output. Every branch below ends with the same trailing `[…]` column reporting that checkpoint; when the spec has a directory but no checkpoints in it (or has no directory yet), the column reads `[running]`. Print:
+3. For each in-progress spec, classify `claimed_by`: a Claude session id (a UUID), a factory worker (starts with `factory/`), or another named runner (anything else, e.g. `ag-run@host/12345`, set via `AGENTILE_RUNNER_ID`). Then run `ag-store checkpoint_list "<slug>" --dir "<dir>" --store "<store>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"` — **not** the deprecated `ag-checkpoint` script, which only reads local files and silently returns `[]` on a non-`local` store) and note the newest checkpoint's `reason` and `status` — the list is oldest first, so the newest is the **last** element of its output. Every branch below ends with the same trailing `[…]` column reporting that checkpoint; when the list comes back empty, the column reads `[running]`. Print:
 
    ```
    <slug>  in_progress  <label if present, otherwise claimed_by>  (claimed <relative age>)  [waiting: <reason> since <asked_at> | answered: <reason>]
@@ -27,7 +27,7 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
    ```
    <slug>  in_progress  factory worker <claimed_by>  (claimed <relative age>)  [waiting: <reason> | running]
-     → managed by the Agentile Factory — answer it on the console, or `ag-checkpoint answer <path>`
+     → managed by the Agentile Factory — answer it on the console, or `ag-store checkpoint_answer <checkpoint-id> --dir "<dir>" --store "<store>"`
    ```
 
    for a factory worker; and
