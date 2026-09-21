@@ -4,13 +4,11 @@ This file tailors Agentile for **this project**. The methodology (the skills, th
 
 ## Paths
 
-Where the loop keeps its backlog. Change **Agentile directory** if you want it somewhere other than `docs/agentile/` — the internal layout under it is fixed:
+Where the loop keeps its repo-side artefacts. The backlog itself (stubs, specs, Outcomes, checkpoints, runs, the brief) lives in Agentile Projects — see `store.md`. Change **Agentile directory** if you want the artefacts somewhere other than `docs/agentile/`; the layout under it is fixed:
 
-- `inbox.md` — captured stubs awaiting shaping
-- `outcomes/` — the Outcomes (falsifiable bets) specs may serve; flat, status in frontmatter
-- `specs/` — active specs (`ready` / `in_progress`)
-- `specs/done/` — shipped specs
-- `specs/abandoned/` — abandoned specs
+- `brief.md` — read-only copy of the store's brief, refreshed by every `/ag-*` skill
+- `specs/<slug>/` — one directory per planned spec: `plan.md`, the `SPEC.md` snapshot, findings, supporting files
+- `deploys.md` — the append-only deploy log `/ag-deploy` writes
 
 The settings:
 

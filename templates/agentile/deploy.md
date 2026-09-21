@@ -35,5 +35,5 @@ a freeze window, a migration that has to run first.
 ## Rollback
 
 Write down how to undo this deploy, and who decides. `/ag-deploy` records the
-deployed sha in `runs.md` precisely so the previous one is always recoverable —
+deployed sha in `deploys.md` precisely so the previous one is always recoverable —
 but the command to go back is project-specific, so put it here.
