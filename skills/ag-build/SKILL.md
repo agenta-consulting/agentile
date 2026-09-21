@@ -138,7 +138,7 @@ Dispatch the `ag-reviewer` agent. Its first line is one of:
 
 - `VERDICT: pass` → continue.
 - `VERDICT: question` → checkpoint `question` exactly as in Step 3, but `--by reviewer`, which is how Step 0 sends the answer back here.
-- `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` (`--by build`) with the findings as the ask, record `run_event paused --detail gate_failure`, and end with `AG_BUILD: paused <slug> gate_failure <checkpoint-id>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, record `run_event failed --detail gate_failure` and end with `AG_BUILD: failed <slug> gate_failure`.
+- `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` (`--by build`) with the findings as the ask, record `run_event paused --detail gate_failure`, and end with `AG_BUILD: paused <slug> gate_failure <checkpoint-id>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, record `run_event failed --detail gate_failure`, then `ag-store run_close --spec "<slug>" --runner "<identity>" --detail gate_failure` (the claim is kept on purpose — see **Closing the run**), and end with `AG_BUILD: failed <slug> gate_failure`.
 
 If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` (`--by verify`) with the reviewer's findings summary; record `run_event paused --detail verify_checkpoint`; end with `AG_BUILD: paused <slug> verify_checkpoint <checkpoint-id>`.
 
