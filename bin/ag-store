@@ -1,311 +1,329 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
-# ag-store — the backlog store dispatcher. Every skill that touches the Inbox
-# or a spec goes through here instead of reading/writing files (or an
-# Airtable base, etc.) itself; which backend answers is decided by --store,
-# so the skill's own instructions stay adapter-agnostic.
+# ag-store — the backlog store CLI. Since 0.20.0 the only store is Agentile
+# Projects (the web app); this file is a thin HTTP client over its JSON API.
+# Every skill that touches the Inbox, a spec, an Outcome, a checkpoint or a
+# run goes through here instead of talking to the API itself, so a skill's
+# instructions name one command and one output shape.
 #
-# Usage: ag-store <op> --dir <agentile-dir> [--store local|airtable] [args...]
-#   --dir   the resolved Agentile directory (default docs/agentile/), i.e.
-#           the value skills already read from .agentile/config.md.
-#   --store which adapter answers this call (default: local — today's file
-#           behaviour, unchanged). A project's actual choice lives in
-#           .agentile/store.md; the SKILL reads that and passes it here.
+# Usage: ag-store <op> [args...] [--dir <agentile-dir>]
 #
-# Ops (see bin/ag-store-adapters/local.rb for the local adapter's exact
-# semantics — this dispatcher does no business logic of its own):
-#   inbox_list                                        --dir <dir>
-#   inbox_add    <text> [--title "<label>"] [--type feature|bug|chore|spike]  --dir <dir>
-#   inbox_drop   <id>                                 --dir <dir>
-#   spec_list    [--status s] [--pool active|done|abandoned] --dir <dir>
-#   spec_read    <id>                                 --dir <dir>
-#   spec_create  <slug>            (markdown on stdin) --dir <dir>
-#   spec_write   <id> --set k=v [--set k=v ...]         --dir <dir>
-#   rank         <slug> [<slug>...]                    --dir <dir>
-#   claim        <identity> [label] [wip] [--spec <slug>]  --dir <dir>
-#   release      <id>                                  --dir <dir>
-#   ship         <id>                                  --dir <dir>
-#   abandon      <id> --reason "<text>"                --dir <dir>
-#   promote      <id>            (flat spec -> directory form) --dir <dir>
-#   deps         <id>                                  --dir <dir>
-#   dependents   <slug>                                --dir <dir>
-#   attach       <id> <plan-path>                      --dir <dir>
-#   outcome_list [--status open|achieved|abandoned]    --dir <dir>
-#   outcome_read <slug>                                --dir <dir>
-#   outcome_create <slug>          (markdown on stdin) --dir <dir>
-#   outcome_write <slug> --set k=v [--set k=v ...]     --dir <dir>
-#   outcome_rank <slug> [<slug>...]                    --dir <dir>
-#   outcome_achieve <slug>                             --dir <dir>
-#   outcome_abandon <slug> --reason "<text>"           --dir <dir>
-#   map                                                --dir <dir>
-#   flow         [<slug>]   cycle time + agent/human split  --dir <dir>
-#   checkpoint_open <slug> <reason> [--by <stage>] [--session <id>]  (ask on stdin) --dir <dir>
-#   checkpoint_list <slug>                             --dir <dir>
-#   checkpoint_open_count <slug>                       --dir <dir>
-#   checkpoint_answer <id> [--by <who>]   (answer on stdin) --dir <dir>
-#   run_event <event> [--spec <slug>] [--runner <id>] [--detail "<text>"]  --dir <dir>
-#   run_list  [--spec <slug>] [--status active|closed] --dir <dir>
-#   run_close [--spec <slug>] [--runner <id>] [--detail "<text>"]  --dir <dir>
-#   brief_sync                                         --dir <dir>
-#   whoami
-#   doctor                                              --dir <dir>
+# Config — .agentile/store.md frontmatter, written by /ag-init:
+#   url:     https://agentile-projects.agentaconsulting.com   (AGENTILE_PROJECTS_URL overrides)
+#   project: <slug>
+# Auth — AGENTILE_PROJECTS_TOKEN in the environment only, never a tracked file.
+# --dir (default docs/agentile) is used by promote and brief_sync, which touch
+# the repo; every other op ignores it.
 #
-# airtable-only:
-#   create_base  <name> --airtable-workspace <id>       (no --airtable-base yet — creates one)
-#   provision                                           --dir <dir> --store airtable --airtable-base <id>
+# Ops (all output one JSON value on stdout; errors to stderr, exit 1 for an API
+# or usage error, exit 2 for a configuration/connectivity error):
+#   inbox_list [--status open|shaped|dropped]
+#   inbox_add <text> [--title "<label>"] [--type feature|bug|chore|spike] [--serves <outcome-slug>]
+#   inbox_drop <id>
+#   inbox_assist <text>                          tidy + classify; returns
+#     {title, text, kind, serves_outcome_slug, duplicate_of, duplicate_of_type,
+#      duplicate_probability, judgment_id} — saves nothing
+#   inbox_shape <id>            (markdown on stdin)  create the spec, mark the stub shaped
+#   spec_list [--status s] [--pool active|done|abandoned]
+#   spec_read <slug>                              canonical markdown
+#   spec_create <slug>          (markdown on stdin)
+#   spec_write <slug> --set k=v [--set k=v ...]   list fields accept "[a, b]"
+#     (the app rejects status/rank here — 422 — they are set via their own endpoints)
+#   rank <slug> [<slug>...]                       ready specs only, dense ranks in this order
+#   claim <identity> [label] [wip] [--spec <slug>]   slug, or WIP_FULL|BLOCKED|UNPRIORITISED|NONE|NOT_FOUND|TAKEN
+#   release <slug> | ship <slug> | abandon <slug> --reason "<text>" [--cascade "[a, b]"]
+#   promote <slug> --dir <dir>                    ensures <dir>/specs/<slug>/ exists; prints it
+#   deps <slug> | dependents <slug>
+#   map | flow [<slug>]
+#   outcome_list [--status s] | outcome_read <slug> | outcome_create <slug> (stdin) | outcome_write <slug> --set k=v
+#   outcome_rank <slug>... | outcome_achieve <slug> | outcome_abandon <slug> --reason "<text>"
+#   checkpoint_open <slug> <reason> --session <id> --by <who>   (ask on stdin) -> checkpoint id
+#   checkpoint_list <slug> | checkpoint_open_count <slug>
+#   checkpoint_answer <id> --by <who>             (answer on stdin)
+#   run_event <event> --spec <slug> --runner <id> [--detail "<text>"]   -> ISO8601 stamp
+#   run_list [--spec <slug>] [--status active|closed]
+#   run_close --spec <slug> --runner <id> [--detail "<text>"]
+#   brief_sync --dir <dir>                        writes <dir>/brief.md from the store; prints the path
+#   whoami | doctor
 #
-# --store airtable also needs --airtable-base <id> (except create_base, which
-# makes one) and, on ENV, AGENTILE_AIRTABLE_TOKEN. Table names default to
-# Inbox/Specs/Members/Outcomes/Checkpoints/Runs; override with --airtable-inbox-table / --airtable-specs-table
-# / --airtable-members-table / --airtable-outcomes-table if a project renamed them.
-#
-# All output is one JSON value on stdout (a string, array, object, or bool) —
-# a skill reads it with a JSON parser, never by scraping stdout text. Errors
-# go to stderr with a non-zero exit, same convention as bin/ag-claim.
+# Runs belong to a spec. checkpoint_open, run_event and run_close resolve the
+# run themselves: the active run for <spec> whose runner_id is the identity
+# (--runner, else AGENTILE_RUNNER_ID, else CLAUDE_SESSION_ID), else the newest
+# active run; run_event creates one when none exists. `claim` opens the run
+# server-side, so no skill ever handles a run id.
 
 require "json"
 require "yaml"
+require "net/http"
+require "uri"
+require "fileutils"
 
-require_relative "ag-store-adapters/local"
-require_relative "ag-store-adapters/airtable"
+module AgStore
+  class Error < StandardError; end        # exit 1
+  class ConfigError < StandardError; end  # exit 2
 
-def parse_flags(argv)
-  positional = []
-  flags = {}
-  i = 0
-  while i < argv.length
-    arg = argv[i]
-    if arg.start_with?("--")
-      key = arg[2..]
-      # A boolean-style flag has no following value (either end-of-args or the
-      # next token is itself a --flag); otherwise consume the next token as its value.
-      if i + 1 < argv.length && !argv[i + 1].start_with?("--")
-        flags[key] = argv[i + 1]
-        i += 2
+  CHECKPOINT_REASONS = %w[plan_review build_blocked build_checkpoint gate_failure
+                          verify_checkpoint ship_approval question].freeze
+  RUN_EVENTS = %w[started claimed shipped paused failed idle deployed closed].freeze
+  LIST_FIELDS = %w[depends_on tags shaped_by cascade].freeze
+  STORE_MD = ".agentile/store.md"
+
+  def self.parse_flags(argv)
+    positional = []
+    flags = {}
+    i = 0
+    while i < argv.length
+      arg = argv[i]
+      if arg.start_with?("--")
+        key = arg[2..]
+        if i + 1 < argv.length && !argv[i + 1].start_with?("--")
+          flags[key] = argv[i + 1]
+          i += 2
+        else
+          flags[key] = true
+          i += 1
+        end
       else
-        flags[key] = true
+        positional << arg
         i += 1
       end
-    else
-      positional << arg
-      i += 1
+    end
+    [positional, flags]
+  end
+
+  # --set key=value may repeat; pull every occurrence out before the generic parser runs.
+  def self.extract_sets(argv)
+    sets = {}
+    rest = []
+    i = 0
+    while i < argv.length
+      if argv[i] == "--set" && argv[i + 1]
+        k, v = argv[i + 1].split("=", 2)
+        sets[k] = v
+        i += 2
+      else
+        rest << argv[i]
+        i += 1
+      end
+    end
+    [rest, sets]
+  end
+
+  # "[a, b]" -> ["a", "b"]; "[]" -> []; anything else unchanged.
+  def self.coerce_list(key, val)
+    return val unless LIST_FIELDS.include?(key) && val.is_a?(String)
+
+    s = val.strip
+    return val unless s.start_with?("[") && s.end_with?("]")
+
+    s[1..-2].split(",").map(&:strip).reject(&:empty?)
+  end
+
+  class Config
+    attr_reader :url, :project, :token, :dir
+
+    def initialize(flags)
+      fm = self.class.read_store_md
+      env_url = ENV["AGENTILE_PROJECTS_URL"].to_s
+      @url = (env_url.empty? ? fm["url"] : env_url).to_s.sub(%r{/+\z}, "")
+      @project = (flags["project"] || fm["project"]).to_s
+      @token = ENV["AGENTILE_PROJECTS_TOKEN"].to_s
+      @dir = (flags["dir"] || "docs/agentile").to_s.sub(%r{/+\z}, "")
+    end
+
+    def self.read_store_md
+      return {} unless File.exist?(STORE_MD)
+
+      fm = File.read(STORE_MD)[/\A---\n(.*?)\n---/m, 1]
+      fm ? (YAML.safe_load(fm) || {}) : {}
+    rescue StandardError
+      {}
+    end
+
+    def validate!(needs_project: true)
+      if url.empty?
+        raise ConfigError, "no store url — #{STORE_MD} has no `url:` (run /ag-init to link this project) and AGENTILE_PROJECTS_URL is unset"
+      end
+      raise ConfigError, "AGENTILE_PROJECTS_TOKEN is not set — create a token in Agentile Projects (Settings → API tokens) and export it" if token.empty?
+      raise ConfigError, "no project — #{STORE_MD} has no `project:` (run /ag-init to link this project)" if needs_project && project.empty?
     end
   end
-  [positional, flags]
-end
 
-# --airtable-base is required for the airtable store, but every skill's
-# documented invocation passes only --dir/--store (the base id lives in
-# .agentile/store.md, which the skill already read once to learn store:
-# airtable in the first place). Rather than require every caller to thread
-# it through by hand, fall back to reading it straight from that file
-# (relative to cwd, same as every other project-relative path here). An
-# explicit --airtable-base always wins.
-def store_md_airtable_base
-  path = ".agentile/store.md"
-  return nil unless File.exist?(path)
+  class Client
+    def initialize(config)
+      @config = config
+    end
 
-  fm_text = File.read(path)[/\A---\n(.*?)\n---/m, 1]
-  return nil unless fm_text
+    def get(path, params = {})   = request(:get, path, params: params)
+    def post(path, body = nil)   = request(:post, path, body: body)
+    def patch(path, body)        = request(:patch, path, body: body)
+    def put(path, body)          = request(:put, path, body: body)
+    def post_markdown(path, md)  = request(:post, path, body: md, content_type: "text/markdown")
 
-  YAML.safe_load(fm_text)&.dig("airtable_base")
-rescue StandardError
-  nil
-end
+    def project_path(rest) = "/projects/#{@config.project}#{rest}"
 
-# Same fallback for the adapter choice itself. Without this, a caller that
-# omits --store (whoami's documented bare invocation is exactly this) silently
-# gets the `local` adapter even in a project whose .agentile/store.md says
-# `airtable` — `local`'s whoami just echoes `git config user.email` as
-# free text, which then fails the airtable adapter's `captured_by.to_s
-# .start_with?("rec")` checks elsewhere and attribution is silently dropped.
-# An explicit --store always wins.
-def store_md_store
-  path = ".agentile/store.md"
-  return nil unless File.exist?(path)
+    private
 
-  fm_text = File.read(path)[/\A---\n(.*?)\n---/m, 1]
-  return nil unless fm_text
+    def request(method, path, body: nil, params: {}, content_type: "application/json")
+      uri = URI.parse("#{@config.url}/api/v1#{path}")
+      clean = params.reject { |_, v| v.nil? || v.to_s.empty? }
+      uri.query = URI.encode_www_form(clean) unless clean.empty?
+      req = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch, put: Net::HTTP::Put }.fetch(method).new(uri)
+      req["Authorization"] = "Bearer #{@config.token}"
+      req["Accept"] = "application/json, text/markdown"
+      unless body.nil?
+        req["Content-Type"] = content_type
+        req.body = content_type == "application/json" ? JSON.generate(body) : body
+      end
+      res = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 60) do |http|
+        http.request(req)
+      end
+      parse(res)
+    rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError, Net::OpenTimeout => e
+      raise ConfigError, "cannot reach #{@config.url} (#{e.class}) — is Agentile Projects running, and is the url in #{STORE_MD} (or AGENTILE_PROJECTS_URL) right?"
+    end
 
-  YAML.safe_load(fm_text)&.dig("store")
-rescue StandardError
-  nil
-end
+    def parse(res)
+      text = res.body.to_s
+      json = res["content-type"].to_s.include?("json") || text.start_with?("{", "[", "\"") ? (JSON.parse(text) rescue text) : text
+      json = json.strip if json.is_a?(String) && !res["content-type"].to_s.include?("markdown")
+      return json if res.is_a?(Net::HTTPSuccess)
 
-# --set key=value may repeat (spec_write); pull every occurrence out before
-# the generic single-value flag parser runs.
-def extract_sets(argv)
-  sets = {}
-  rest = []
-  i = 0
-  while i < argv.length
-    if argv[i] == "--set" && argv[i + 1]
-      k, v = argv[i + 1].split("=", 2)
-      sets[k] = v
-      i += 2
-    else
-      rest << argv[i]
-      i += 1
+      detail = json.is_a?(Hash) ? (json["detail"] || json["error"] || text) : text
+      raise ConfigError, "#{res.code} #{detail} — check AGENTILE_PROJECTS_TOKEN" if res.code == "401"
+      raise Error, "#{res.code} #{detail}"
     end
   end
-  [rest, sets]
+
+  class Ops
+    def initialize(config, client)
+      @c = config
+      @api = client
+    end
+
+    def identity(flag = nil)
+      return flag.to_s unless flag.to_s.empty?
+      return ENV["AGENTILE_RUNNER_ID"].to_s unless ENV["AGENTILE_RUNNER_ID"].to_s.empty?
+
+      ENV["CLAUDE_SESSION_ID"].to_s
+    end
+
+    def active_run_for(slug, runner)
+      runs = Array(@api.get(@api.project_path("/runs"), spec: slug, status: "active"))
+      runs.find { |r| r["runner_id"] == runner } || runs.max_by { |r| r["started_at"].to_s }
+    end
+
+    def ensure_run(slug, runner, session)
+      active_run_for(slug, runner) ||
+        @api.post(@api.project_path("/runs"), { spec: slug, runner_id: runner, session_id: session })
+    end
+
+    def require_spec!(flags, op)
+      raise Error, "#{op} needs --spec <slug> — since 0.20.0 a run belongs to a spec" if flags["spec"].to_s.empty?
+
+      flags["spec"].to_s
+    end
+
+    def run(op, positional, flags, sets)
+      p = ->(rest) { @api.project_path(rest) }
+      case op
+      when "inbox_list" then @api.get(p["/inbox"], status: flags["status"])
+      when "inbox_add"
+        @api.post(p["/inbox"], { text: positional[0].to_s, title: flags["title"], kind: flags["type"], serves: flags["serves"] }.compact)
+        true
+      when "inbox_drop" then @api.post(p["/inbox/#{positional[0]}/drop"]); true
+      when "inbox_assist" then @api.post(p["/inbox/assist"], { text: positional[0].to_s })
+      when "inbox_shape" then @api.post_markdown(p["/inbox/#{positional[0]}/shape"], $stdin.read)
+      when "spec_list" then @api.get(p["/specs"], status: flags["status"], pool: flags["pool"] || "active")
+      when "spec_read" then @api.get(p["/specs/#{positional[0]}.md"])
+      when "spec_create" then @api.post_markdown(p["/specs"], $stdin.read)
+      when "spec_write" then @api.patch(p["/specs/#{positional[0]}"], sets.to_h { |k, v| [k, AgStore.coerce_list(k, v)] })
+      when "rank" then @api.put(p["/specs/rank"], { slugs: positional })
+      when "claim"
+        body = { identity: positional[0].to_s, label: positional[1].to_s, wip: positional[2].to_i }
+        body[:slug] = flags["spec"] if flags["spec"]
+        res = @api.post(p["/specs/claim"], body)
+        res.is_a?(Hash) ? res["result"] : res
+      when "release" then @api.post(p["/specs/#{positional[0]}/release"])
+      when "ship" then @api.post(p["/specs/#{positional[0]}/ship"])
+      when "abandon"
+        body = { reason: flags["reason"].to_s }
+        body[:cascade] = AgStore.coerce_list("cascade", flags["cascade"]) if flags["cascade"]
+        @api.post(p["/specs/#{positional[0]}/abandon"], body)
+      when "promote"
+        path = File.join(@c.dir, "specs", positional[0].to_s)
+        FileUtils.mkdir_p(path)
+        path
+      when "deps" then @api.get(p["/specs/#{positional[0]}/deps"])
+      when "dependents" then @api.get(p["/specs/#{positional[0]}/dependents"])
+      when "map" then @api.get(p["/map"])
+      when "flow" then positional[0].to_s.empty? ? @api.get(p["/flow"]) : @api.get(p["/flow/#{positional[0]}"])
+      when "outcome_list" then @api.get(p["/outcomes"], status: flags["status"])
+      when "outcome_read" then @api.get(p["/outcomes/#{positional[0]}.md"])
+      when "outcome_create" then @api.post_markdown(p["/outcomes"], $stdin.read)
+      when "outcome_write" then @api.patch(p["/outcomes/#{positional[0]}"], sets.to_h { |k, v| [k, AgStore.coerce_list(k, v)] })
+      when "outcome_rank" then @api.put(p["/outcomes/rank"], { slugs: positional })
+      when "outcome_achieve" then @api.post(p["/outcomes/#{positional[0]}/achieve"])
+      when "outcome_abandon" then @api.post(p["/outcomes/#{positional[0]}/abandon"], { reason: flags["reason"].to_s })
+      when "checkpoint_open"
+        slug, reason = positional
+        raise Error, "unknown checkpoint reason #{reason.inspect} (#{CHECKPOINT_REASONS.join('|')})" unless CHECKPOINT_REASONS.include?(reason.to_s)
+
+        session = flags["session"].to_s.empty? ? ENV["CLAUDE_SESSION_ID"].to_s : flags["session"].to_s
+        run = ensure_run(slug, identity, session)
+        res = @api.post(p["/runs/#{run['id']}/checkpoints"],
+                        { reason: reason, asked_by: flags["by"].to_s, session_id: session, ask: $stdin.read.to_s.strip })
+        res.is_a?(Hash) ? res["id"] : res
+      when "checkpoint_list" then @api.get(p["/specs/#{positional[0]}/checkpoints"])
+      when "checkpoint_open_count"
+        Array(@api.get(p["/specs/#{positional[0]}/checkpoints"])).count { |c| c["status"].to_s != "answered" }
+      when "checkpoint_answer"
+        @api.post(p["/checkpoints/#{positional[0]}/answer"], { answer: $stdin.read.to_s.strip, by: flags["by"].to_s })
+      when "run_event"
+        event = positional[0].to_s
+        raise Error, "unknown run event #{event.inspect} (#{RUN_EVENTS.join('|')})" unless RUN_EVENTS.include?(event)
+
+        slug = require_spec!(flags, "run_event")
+        run = ensure_run(slug, identity(flags["runner"]), ENV["CLAUDE_SESSION_ID"].to_s)
+        @api.post(p["/runs/#{run['id']}/events"], { event: event, detail: flags["detail"].to_s })
+      when "run_list" then @api.get(p["/runs"], spec: flags["spec"], status: flags["status"])
+      when "run_close"
+        slug = require_spec!(flags, "run_close")
+        run = active_run_for(slug, identity(flags["runner"]))
+        raise Error, "no active run for #{slug} — nothing to close" unless run
+
+        @api.post(p["/runs/#{run['id']}/close"], { detail: (flags["detail"].to_s.empty? ? "run closed" : flags["detail"].to_s) })
+      when "brief_sync"
+        md = @api.get(p["/brief"])
+        path = File.join(@c.dir, "brief.md")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, md.to_s)
+        path
+      when "whoami" then @api.get("/me")
+      when "doctor" then @api.get(p["/doctor"])
+      else raise Error, "unknown op '#{op}'"
+      end
+    end
+  end
 end
 
 op = ARGV[0]
-abort "usage: ag-store <op> --dir <agentile-dir> [--store local|airtable] [args...]" if op.nil?
+abort "usage: ag-store <op> [args...] [--dir <agentile-dir>]" if op.nil?
 
-rest, sets = extract_sets(ARGV[1..])
-positional, flags = parse_flags(rest)
-store = flags["store"] || store_md_store || "local"
-agentile_dir = flags["dir"]
-specs_dir = agentile_dir && File.join(agentile_dir, "specs")
+rest, sets = AgStore.extract_sets(ARGV[1..])
+positional, flags = AgStore.parse_flags(rest)
+warn "ag-store: --store is obsolete since 0.20.0 (Agentile Projects is the only store) — ignoring it" if flags.key?("store")
+warn "ag-store: --airtable-base is obsolete since 0.20.0 — ignoring it" if flags.key?("airtable-base")
 
-# create_base has no base yet, so it can't go through an Adapter instance
-# (every other airtable op needs an existing --airtable-base).
-if op == "create_base"
-  base_id = Airtable.create_base(
-    token: ENV.fetch("AGENTILE_AIRTABLE_TOKEN", nil), workspace_id: flags["airtable-workspace"],
-    name: positional[0], inbox_table: flags["airtable-inbox-table"] || "Inbox",
-    specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members",
-    outcomes_table: flags["airtable-outcomes-table"] || "Outcomes"
-  )
-  puts JSON.generate(base_id)
-  exit 0
+begin
+  config = AgStore::Config.new(flags)
+  config.validate!(needs_project: !%w[whoami promote].include?(op))
+  result = AgStore::Ops.new(config, AgStore::Client.new(config)).run(op, positional, flags, sets)
+  puts JSON.generate(result)
+rescue AgStore::ConfigError => e
+  warn "ag-store: #{e.message}"
+  exit 2
+rescue AgStore::Error => e
+  warn "ag-store: #{e.message}"
+  exit 1
 end
-
-adapter = if store == "airtable"
-            Airtable::Adapter.new(
-              base_id: flags["airtable-base"] || store_md_airtable_base,
-              inbox_table: flags["airtable-inbox-table"] || "Inbox",
-              specs_table: flags["airtable-specs-table"] || "Specs", members_table: flags["airtable-members-table"] || "Members",
-              outcomes_table: flags["airtable-outcomes-table"] || "Outcomes",
-              checkpoints_table: flags["airtable-checkpoints-table"] || "Checkpoints",
-              runs_table: flags["airtable-runs-table"] || "Runs"
-            )
-          elsif store != "local"
-            abort "ag-store: unknown adapter '#{store}'"
-          end
-
-result =
-  if store == "airtable"
-    case op
-    when "inbox_list" then adapter.inbox_list
-    when "inbox_add" then adapter.inbox_add(positional[0], flags["by"], flags["title"], flags["type"], flags["serves"])
-    when "inbox_drop" then adapter.inbox_drop(positional[0])
-    when "spec_list" then adapter.spec_list(status: flags["status"], pool: flags["pool"] || "active")
-    when "spec_read" then adapter.spec_read(positional[0])
-    when "spec_create" then adapter.spec_create(positional[0], $stdin.read)
-    when "spec_write" then adapter.spec_write(positional[0], sets.transform_keys(&:to_sym))
-    when "rank" then adapter.rank(positional)
-    when "claim" then adapter.claim(positional[0], positional[1], positional[2], flags["spec"])
-    when "release" then adapter.release(positional[0])
-    when "ship" then adapter.ship(positional[0])
-    when "abandon" then adapter.abandon(positional[0], reason: flags["reason"].to_s)
-    when "deps" then adapter.deps(positional[0])
-    when "dependents" then adapter.dependents(positional[0])
-    when "promote" then adapter.promote(positional[0], agentile_dir)
-    when "attach" then adapter.attach(positional[0], positional[1])
-    when "outcome_list" then adapter.outcome_list(status: flags["status"])
-    when "outcome_read" then adapter.outcome_read(positional[0])
-    when "outcome_create" then adapter.outcome_create(positional[0], $stdin.read, flags["by"])
-    when "outcome_write" then adapter.outcome_write(positional[0], sets.transform_keys(&:to_sym))
-    when "outcome_rank" then adapter.outcome_rank(positional)
-    when "outcome_achieve" then adapter.outcome_achieve(positional[0])
-    when "outcome_abandon" then adapter.outcome_abandon(positional[0], reason: flags["reason"].to_s)
-    when "map" then adapter.map
-    when "flow" then adapter.flow(nil, positional[0])
-    when "checkpoint_open"
-      adapter.checkpoint_open(positional[0], positional[1], $stdin.read, session: flags["session"], by: flags["by"])
-    when "checkpoint_list" then adapter.checkpoint_list(positional[0])
-    when "checkpoint_open_count" then adapter.checkpoint_open_count(positional[0])
-    when "checkpoint_answer" then adapter.checkpoint_answer(positional[0], $stdin.read, by: flags["by"])
-    when "run_event"
-      adapter.run_event(positional[0], spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
-    when "run_list" then adapter.run_list(spec: flags["spec"], status: flags["status"])
-    when "run_close" then adapter.run_close(spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
-    when "whoami" then adapter.whoami
-    when "doctor" then adapter.doctor
-    when "provision" then adapter.provision
-    when "brief_sync" then Local.brief_sync(agentile_dir, adapter.outcome_list)
-    else abort "ag-store: unknown op '#{op}'"
-    end
-  else
-  case op
-  when "inbox_list"
-    Local.inbox_list(agentile_dir).map { |s| s.reject { |k, _| k == :line_index } }
-  when "inbox_add"
-    Local.inbox_add(agentile_dir, positional[0], flags["by"], flags["title"], flags["type"], flags["serves"])
-  when "inbox_drop"
-    Local.inbox_drop(agentile_dir, positional[0])
-  when "spec_list"
-    Local.spec_list(specs_dir, status: flags["status"], pool: flags["pool"] || "active")
-  when "spec_read"
-    Local.spec_read(specs_dir, positional[0])
-  when "spec_write"
-    Local.spec_write(specs_dir, positional[0], sets)
-  when "spec_create"
-    markdown = $stdin.read
-    Local.spec_create(specs_dir, positional[0], markdown)
-  when "rank"
-    Local.rank(specs_dir, positional)
-  when "claim"
-    Local.claim(specs_dir, positional[0], positional[1], positional[2], flags["spec"])
-  when "release"
-    Local.release(specs_dir, positional[0])
-  when "ship"
-    Local.ship(specs_dir, positional[0])
-  when "abandon"
-    Local.abandon(specs_dir, positional[0], reason: flags["reason"].to_s)
-  when "promote"
-    Local.promote(specs_dir, positional[0])
-  when "deps"
-    Local.deps(specs_dir, positional[0])
-  when "dependents"
-    Local.dependents(specs_dir, positional[0])
-  when "attach"
-    Local.attach(specs_dir, positional[0], positional[1])
-  when "outcome_list"
-    Local.outcome_list(agentile_dir, status: flags["status"])
-  when "outcome_read"
-    Local.outcome_read(agentile_dir, positional[0])
-  when "outcome_create"
-    Local.outcome_create(agentile_dir, positional[0], $stdin.read)
-  when "outcome_write"
-    Local.outcome_write(agentile_dir, positional[0], sets)
-  when "outcome_rank"
-    Local.outcome_rank(agentile_dir, positional)
-  when "outcome_achieve"
-    Local.outcome_achieve(agentile_dir, positional[0])
-  when "outcome_abandon"
-    Local.outcome_abandon(agentile_dir, positional[0], reason: flags["reason"].to_s)
-  when "map"
-    Local.map(agentile_dir)
-  when "brief_sync"
-    Local.brief_sync(agentile_dir, Local.outcome_list(agentile_dir))
-  when "flow"
-    Local.flow(specs_dir, positional[0])
-  when "checkpoint_open"
-    Local.checkpoint_open(specs_dir, positional[0], positional[1], $stdin.read,
-                          session: flags["session"], by: flags["by"])
-  when "checkpoint_list"
-    Local.checkpoint_list(specs_dir, positional[0])
-  when "checkpoint_open_count"
-    Local.checkpoint_open_count(specs_dir, positional[0])
-  when "checkpoint_answer"
-    Local.checkpoint_answer(specs_dir, positional[0], $stdin.read, by: flags["by"])
-  when "run_event"
-    Local.run_event(agentile_dir, positional[0], spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
-  when "run_list"
-    Local.run_list(agentile_dir, spec: flags["spec"], status: flags["status"])
-  when "run_close"
-    Local.run_close(agentile_dir, spec: flags["spec"], runner: flags["runner"], detail: flags["detail"])
-  when "whoami"
-    Local.whoami
-  when "doctor"
-    Local.doctor(agentile_dir)
-  else
-    abort "ag-store: unknown op '#{op}'"
-  end
-  end
-
-puts JSON.generate(result)
