@@ -299,7 +299,8 @@ with_project(api.url) do |root|
 end
 
 # 18. brief_sync writes <dir>/brief.md from GET /brief and prints the path
-api.route("GET", "#{P}/brief") { [200, "# Brief\n\n## Prioritised outcomes\n\n1. **O1** (`o1`)\n"] }
+# (the app renders each prioritised outcome by title, in bold, with no slug — match that shape)
+api.route("GET", "#{P}/brief") { [200, "# Brief\n\n## Prioritised outcomes\n\n1. **Ship faster checkout** — Customers abandon checkout when it feels slow.\n"] }
 with_project(api.url) do |root|
   out = store!("brief_sync", "--dir", "docs/agentile", env: ENV_OK, chdir: root)
   raise "brief_sync path: #{out.inspect}" unless out == "docs/agentile/brief.md"
@@ -447,9 +448,15 @@ Dir.mktmpdir do |root|
   listed = store!("spec_list", "--status", "ready", env: env, chdir: root).select { |s| s["slug"].start_with?(tag) }
   raise "online rank order: #{listed.map { |s| [s['slug'], s['prefix']] }.inspect}" unless listed.map { |s| s["slug"] } == [slug_b, slug_a]
 
-  claimed = store!("claim", env["AGENTILE_RUNNER_ID"], "online", "0", env: env, chdir: root)
-  raise "online claim should skip the blocked B and take A: #{claimed.inspect}" unless claimed == slug_a
-  raise "online claim again should be BLOCKED (B waits on A): " unless store!("claim", env["AGENTILE_RUNNER_ID"], "", "0", env: env, chdir: root) == "BLOCKED"
+  # Every claim below is named (--spec) and targets only slugs this run created, so the
+  # result is deterministic regardless of whatever else is in tekmore's shared queue
+  # (other agents in this session use the same demo project concurrently).
+  claimed = store!("claim", env["AGENTILE_RUNNER_ID"], "online", "0", "--spec", slug_a, env: env, chdir: root)
+  raise "online claim should take our own A: #{claimed.inspect}" unless claimed == slug_a
+  raise "online named claim on our own blocked dependent (B waits on unshipped A) should be BLOCKED" \
+    unless store!("claim", env["AGENTILE_RUNNER_ID"], "", "0", "--spec", slug_b, env: env, chdir: root) == "BLOCKED"
+  raise "online named claim by another identity on our already-claimed A should be TAKEN" \
+    unless store!("claim", "#{env['AGENTILE_RUNNER_ID']}-rival", "", "0", "--spec", slug_a, env: env, chdir: root) == "TAKEN"
   inprog = store!("spec_list", "--status", "in_progress", env: env, chdir: root).find { |s| s["slug"] == slug_a }
   raise "online in_progress listing" unless inprog && inprog["claimed_by"] == env["AGENTILE_RUNNER_ID"]
   raise "online claim should have opened a run" unless store!("run_list", "--spec", slug_a, "--status", "active", env: env, chdir: root).any?
@@ -463,7 +470,8 @@ Dir.mktmpdir do |root|
   store!("run_event", "shipped", "--spec", slug_a, "--runner", env["AGENTILE_RUNNER_ID"], env: env, chdir: root)
   store!("ship", slug_a, env: env, chdir: root)
   raise "online ship" unless store!("spec_list", "--pool", "done", env: env, chdir: root).any? { |s| s["slug"] == slug_a }
-  raise "online claim B after A shipped" unless store!("claim", env["AGENTILE_RUNNER_ID"], "", "0", env: env, chdir: root) == slug_b
+  raise "online named claim on B after A shipped" \
+    unless store!("claim", env["AGENTILE_RUNNER_ID"], "", "0", "--spec", slug_b, env: env, chdir: root) == slug_b
   store!("release", slug_b, env: env, chdir: root)
   flow = store!("flow", slug_a, env: env, chdir: root)
   raise "online flow: #{flow.inspect}" unless flow["checkpoint_count"] == 1 && flow["lead_seconds"].is_a?(Integer)
@@ -472,11 +480,13 @@ Dir.mktmpdir do |root|
 
   # outcomes + map + brief
   o = "#{tag}-o"
-  store!("outcome_create", o, env: env, stdin: "---\ntitle: Outcome #{tag}\nslug: #{o}\nstatus: open\n---\n\n# Outcome #{tag}\n\n## Claim\n\nc\n\n## Measure\n\nm\n\n## Stop rule\n\ns\n\n## Notes\n\n", chdir: root)
+  outcome_title = "Outcome #{tag}"
+  store!("outcome_create", o, env: env, stdin: "---\ntitle: #{outcome_title}\nslug: #{o}\nstatus: open\n---\n\n# #{outcome_title}\n\n## Claim\n\nc\n\n## Measure\n\nm\n\n## Stop rule\n\ns\n\n## Notes\n\n", chdir: root)
   raise "online outcome_read" unless store!("outcome_read", o, env: env, chdir: root).include?("## Measure")
   store!("outcome_rank", o, env: env, chdir: root)
   raise "online map" unless store!("map", env: env, chdir: root)["outcomes"].any? { |x| x["slug"] == o }
-  raise "online brief_sync" unless File.read(File.join(root, store!("brief_sync", "--dir", "docs/agentile", env: env, chdir: root))).include?(o)
+  # the app's brief renders outcomes by title, not slug — assert on the title we gave it
+  raise "online brief_sync" unless File.read(File.join(root, store!("brief_sync", "--dir", "docs/agentile", env: env, chdir: root))).include?(outcome_title)
   store!("outcome_abandon", o, "--reason", "online test cleanup", env: env, chdir: root)
 end
 puts "ONLINE PASS"
