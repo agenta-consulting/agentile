@@ -11,6 +11,10 @@ Take **one** spec through plan → implement → verify → ship, then stop. The
 
 **Stay thin.** This skill is an orchestrator, not a reader. Never `Read` a spec body, `plan.md`, a diff, or gate output yourself: `/ag-plan`, `ag-builder` and `ag-reviewer` read those in their own context and hand back a one-line verdict plus a terse summary. If you are about to `Read` a spec or plan file "just to check", stop — that check belongs in the subagent.
 
+## Head every message with the slug
+
+From the moment a spec is claimed or a resume discovers one (Step 0/1) through Step 6, prefix every piece of narrative text you write this run with `[<slug>] ` — the one-sentence "about to do X" before a tool call, progress updates, checkpoint-pause messages, everything. This is what lets someone glance at any console running a build, mid-turn or between turns, and immediately see which spec it's on without reading scrollback. Do not prefix the exit-contract line itself (`AG_BUILD: ...` already names the slug in its own fixed format, and the factory daemon matches it verbatim). Before a spec is claimed — Step 0's fresh-start path, Step 1 before the claim resolves — there is no slug yet; write normally until one exists, then head everything from there on.
+
 ## Identity
 
 Resolve the claim identity once: `${AGENTILE_RUNNER_ID}` if set, otherwise `${CLAUDE_SESSION_ID}`. A factory worker arrives with `AGENTILE_RUNNER_ID=factory/<project>/<NNNN-slug>` and a claim already stamped with it; an interactive session claims for itself under its session id. A fresh process meant to resume a paused item must carry the same `AGENTILE_RUNNER_ID` the claim was made under; a session resumes itself with `claude --resume <session-id>`.
