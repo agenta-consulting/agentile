@@ -19,8 +19,8 @@ The files to copy live in this plugin's `templates/` directory, one level up fro
 
 1. Check the token: `[ -n "$AGENTILE_PROJECTS_TOKEN" ]`. If it is unset, stop and tell the user: sign in to Agentile Projects, create a token on the app's `/account/api_tokens` page, export it as `AGENTILE_PROJECTS_TOKEN` in their shell profile (never in a tracked file), and re-run `/ag-init`.
 2. Resolve the app url: `AGENTILE_PROJECTS_URL` if set, else an existing `.agentile/store.md` `url:`, else the default `https://agentile-projects.agentaconsulting.com`. Ask (`AskUserQuestion`) only if the user is running the app somewhere else.
-3. If `.agentile/store.md` already has `url:` and `project:`, the project is linked — run `ag-store doctor` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`), confirm `reachable: true`, and skip to Step 3. If it has a `store:` key instead (`local`/`airtable`, pre-0.20.0), say it is being replaced and continue.
-4. Otherwise run `AGENTILE_PROJECTS_URL="<url>" ag-store whoami`. It returns `{user_id, name, email, projects: [{slug, role}]}`. Ask (`AskUserQuestion`) which project this repo is — offer the listed slugs (owner/member roles only; a `viewer` cannot capture or claim), plus "it isn't there yet". If it isn't there yet, tell the user to create the project in the app (Projects → New) and add themselves as owner, then re-run; project creation is not available from the CLI.
+3. If `.agentile/store.md` already has `url:` and `project:`, the project is linked — run `ag-store doctor` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`). If it returns `reachable: true`, skip to Step 3. If it does not, print the `detail` it returns, tell the user to check `AGENTILE_PROJECTS_TOKEN`, the `url:` in `.agentile/store.md`, and that the app is up, and stop. If `.agentile/store.md` has a `store:` key instead (`local`/`airtable`, pre-0.20.0), say it is being replaced and continue. If it exists but has neither `url:`+`project:` nor a `store:` key, show its contents, confirm with the user that it's safe to replace, then treat it as not yet linked and continue to point 4 below.
+4. Otherwise run `AGENTILE_PROJECTS_URL="<url>" ag-store whoami`. It returns `{user_id, name, email, projects: [{slug, role}]}`. If `projects` is empty, tell the user an admin must create the project (or add them as a member) in the app's web UI — `<url>/projects/new`, or via Members on an existing project — then stop; re-run once that's done. Otherwise ask (`AskUserQuestion`) which project this repo is — offer the listed slugs (owner/member roles only; a `viewer` cannot capture or claim), plus "it isn't there yet". If it isn't there yet, tell the user to create the project in the app (Projects → New) and add themselves as owner, then re-run; project creation is not available from the CLI.
 5. Write `.agentile/store.md` from `templates/agentile/store.md`, replacing the `url:` line with the resolved url and `<project-slug>` with the chosen slug. Then run `ag-store doctor` and stop on anything but `reachable: true`.
 
 ## Step 2a — Project brief (fresh projects)
@@ -65,9 +65,8 @@ Use `AskUserQuestion` to gather (one compact round):
 
 - **Gate commands** — the project's `format`, `lint`, `test`, `build`, and `deploy` commands (any may be left blank). These populate `.agentile/gates.json`: `test`, `lint` and `build` run at verify and ship, `deploy` at `/ag-deploy`, and `format` after each edit via the `format-on-edit` hook. Every gate no-ops while its command is blank.
 - **Protected branches** — branches agents must not commit to directly (default `main`, `master`).
-- **Concurrency safety** (only if `test` and/or `build` were filled in) — can two invocations of that command run safely at the same time? Treat "not sure" as *unsafe*. If unsafe, wrap the affected command with the plugin's `ag-lock` (on `PATH` while the plugin is enabled): `"test": "ag-lock tmp/.test.lock 'bin/rails test'"`, pointing the lockfile at an ignored runtime path and confirming `.gitignore` covers it.
 
-If the user is mid-flow and does not want questions, accept defaults, leave `gates.json` blank, and skip the concurrency question.
+If the user is mid-flow and does not want questions, accept defaults and leave `gates.json` blank.
 
 ## Step 5 — Standing context
 
@@ -93,6 +92,8 @@ The methodology's precondition is "first be agile, then agentic" — a working t
 - **CI** — is there a CI config (`.github/workflows/`, etc.)?
 - **Trunk** — is there a default branch the team integrates to? Any long-lived divergent branches?
 - **Store** — `ag-store doctor` reachable, and this user's role in the project (from `whoami`).
+
+If your test/build command can't run twice at once (shared SQLite file, fixed port, single build cache), wrap it with `ag-lock` in `.agentile/gates.json` — see the `$comment` there.
 
 Phrase each as an observation ("No test command configured — verify and ship will have nothing to run").
 
