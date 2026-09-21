@@ -24,7 +24,7 @@ claimed_at:                   # ISO8601, e.g. 2026-06-10T12:04:00Z
 ---
 
 <!-- A spec may be a flat file (specs/NNNN-<slug>.md) or a directory
-     (specs/NNNN-<slug>/SPEC.md). The plan stage promotes a flat spec to a
+     (specs/<slug>/SPEC.md). The plan stage promotes a flat spec to a
      directory so plan.md and supporting files (designs, notes, findings)
      can live beside it. -->
 
