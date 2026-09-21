@@ -109,4 +109,4 @@ Based on the conversation, do **one** of:
 
 ## Step 6 — Report
 
-Confirm what you wrote (path), the recommended route, and the next step (usually `/ag-plan <slug>`). Do not start building.
+Confirm what you wrote (slug) — the spec now lives in the store, viewable at `<url>/p/<project>/specs` (`url:`/`project:` from `.agentile/store.md`) — the recommended route, and the next step (usually `/ag-plan <slug>`). Do not start building.
