@@ -19,9 +19,9 @@ An **Outcome** is a bet: a claim about what becomes true, a measure a human can 
 
 ## Step 1 — Resolve the store
 
-Read `.agentile/config.md` for the **Agentile directory** (default `docs/agentile/`) and `store:` from `.agentile/store.md` (default `local`). Every operation goes through `ag-store --dir "<dir>" --store "<store>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`). Read `<dir>/brief.md` — an Outcome should sit inside the brief's constraints and non-goals, and usually elaborates one of its prioritised outcomes.
+Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — it refreshes `<dir>/brief.md` from the store; exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Every `ag-store` call below is the bare command with the same fallback; none takes `--store`. Read `<dir>/brief.md` — an Outcome should sit inside the brief's constraints and non-goals, and usually elaborates one of its prioritised outcomes.
 
-Run `ag-store outcome_list ...` and show the existing Outcomes (slug, title, status, rank) so the user does not create a duplicate.
+Run `ag-store outcome_list` and show the existing Outcomes (slug, title, status, rank) so the user does not create a duplicate.
 
 ## Step 2 — Interview (create mode)
 
@@ -38,21 +38,19 @@ Optional, only if it comes up: notes (evidence already in hand, links).
 
 Build the markdown from `.agentile/outcome-template.md` (fallback `"${CLAUDE_PLUGIN_ROOT}/templates/agentile/outcome-template.md"`): frontmatter `title`, `slug`, `status: open`, `rank:` blank, `created:` today; body sections **Claim**, **Measure**, **Stop rule**, **Notes**. Keep every frontmatter value valid YAML.
 
-Run `ag-store whoami ...` for attribution, then:
-
 ```
-ag-store outcome_create <slug> --by "<whoami>" --dir "<dir>" --store "<store>"
+ag-store outcome_create <slug>
 ```
 
-piping the markdown on stdin. The Outcome is created **unranked**; `/ag-prioritise` ranks it. Then run `ag-store brief_sync ...` so the brief's "Prioritised outcomes" list shows it.
+piping the markdown on stdin; the store records you as its creator from the token. The Outcome is created **unranked**; `/ag-prioritise` ranks it, and the app regenerates the brief's "Prioritised outcomes" list from ranked Outcomes.
 
 ## Step 2b — Edit mode (`/ag-outcome <slug>`)
 
-`ag-store outcome_read <slug> ...`, show it, ask what changed (one question). Patch frontmatter with `ag-store outcome_write <slug> --set key=value ...`. Body sections (claim, measure, stop rule, notes) are edited in place: `<dir>/outcomes/<slug>.md` for the `local` store (offer to make the edit), or the `Outcomes` table for `airtable` (tell the user which field).
+`ag-store outcome_read <slug>`, show it, ask what changed (one question). Patch frontmatter with `ag-store outcome_write <slug> --set key=value ...`. Body sections (claim, measure, stop rule, notes) are edited with `ag-store outcome_write <slug> --set claim="..."` (keys `claim`, `measure`, `stop_rule`, `notes`), or in the app.
 
 ## Step 2c — Achieve mode (`/ag-outcome achieve <slug>`)
 
-Read the Outcome and `ag-store map ...` for the specs serving it. Ask one question: *what evidence shows the measure is met?* Record the answer in Notes where the store allows it, then `ag-store outcome_achieve <slug> ...` and `ag-store brief_sync ...`. If serving specs are still `ready`/`in_progress`, say so — achieving does not abandon them, and the user may want `/ag-abandon` on leftovers.
+Read the Outcome and `ag-store map` for the specs serving it. Ask one question: *what evidence shows the measure is met?* Record the answer in Notes where the store allows it, then `ag-store outcome_achieve <slug>`. If serving specs are still `ready`/`in_progress`, say so — achieving does not abandon them, and the user may want `/ag-abandon` on leftovers.
 
 ## Step 4 — Report
 

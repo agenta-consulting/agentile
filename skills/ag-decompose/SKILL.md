@@ -13,10 +13,10 @@ The reason Outcomes exist. An Outcome with a sharp claim, a measure and constrai
 
 ## Step 1 — Load context
 
-- Resolve the **Agentile directory** and store as every skill does (`.agentile/config.md`, `.agentile/store.md`; `ag-store --dir "<dir>" --store "<store>"`, fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`).
-- The target is `$outcome-slug` (or `$ARGUMENTS`). If absent or ambiguous, run `ag-store outcome_list --status open ...` and ask which.
-- Read the Outcome (`ag-store outcome_read <slug> ...`), the brief (`<dir>/brief.md`), the project's `CLAUDE.md`, and skim `docs/adr/` — the constraints and non-goals bound what you may propose.
-- Run `ag-store map ...` and note the specs **already serving this Outcome** (any status) and the current Inbox (`ag-store inbox_list ...`). You are adding to existing work, not restarting it.
+- Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — it refreshes `<dir>/brief.md` from the store; exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Every `ag-store` call below is the bare command with the same fallback; none takes `--store`.
+- The target is `$outcome-slug` (or `$ARGUMENTS`). If absent or ambiguous, run `ag-store outcome_list --status open` and ask which.
+- Read the Outcome (`ag-store outcome_read <slug>`), the brief (`<dir>/brief.md`), the project's `CLAUDE.md`, and skim `docs/adr/` — the constraints and non-goals bound what you may propose.
+- Run `ag-store map` and note the specs **already serving this Outcome** (any status) and the current Inbox (`ag-store inbox_list`). You are adding to existing work, not restarting it.
 
 ## Step 2 — Propose
 
@@ -31,11 +31,10 @@ Present the proposals as a numbered list. Then, with `AskUserQuestion` (multi-se
 For each accepted stub:
 
 ```
-ag-store whoami ...
-ag-store inbox_add "<stub text>" --title "<title>" --type "<type>" --serves "<outcome-slug>" --by "<whoami>" --dir "<dir>" --store "<store>"
+ag-store inbox_add "<stub text>" --title "<title>" --type "<type>" --serves "<outcome-slug>"
 ```
 
-Quote the text so the shell cannot eat an apostrophe. The `local` store drops `--serves` (its inbox is a flat list); the `airtable` store links the stub to the Outcome so provenance survives to `/ag-shape`, which will offer the link as the default `serves`.
+Quote the text so the shell cannot eat an apostrophe. The store links the stub to the Outcome so provenance survives to `/ag-shape`, which offers the link as the default `serves`, and records you as the capturer from the token.
 
 ## Step 4 — Report
 

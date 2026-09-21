@@ -1,13 +1,13 @@
 ---
 name: ag-prioritise
-description: Interactively order the ready Agentile specs by assigning dense NNNN- filename prefixes that encode priority rank. Trigger phrases include "/ag-prioritise", "prioritise the backlog", "order the ready work", "re-rank specs".
+description: Interactively order the ready Agentile specs — the rank is a field in the store; the claim always takes the lowest-ranked claimable spec. Trigger phrases include "/ag-prioritise", "prioritise the backlog", "order the ready work", "re-rank specs".
 allowed-tools: AskUserQuestion, Bash, Read
 disable-model-invocation: true
 ---
 
 # ag-prioritise
 
-Prioritisation encodes rank directly in the filename: `0001-<slug>.md` is first in the queue, `0002-<slug>.md` is second, and so on (an `airtable` store instead uses a `Rank` field with the same meaning — `ag-store rank` handles the difference). The claim helper always picks the lowest-numbered ready spec whose dependencies are shipped, so the order *is* the work order. This skill is a short interactive conversation that produces that ordering.
+Prioritisation writes a dense rank onto each ready spec in the store (`ag-store rank`). The claim always picks the lowest-ranked ready spec whose dependencies are shipped, so the order *is* the work order. This skill is a short interactive conversation that produces that ordering.
 
 ## Apply this project's playbook
 
@@ -27,25 +27,19 @@ If the file is absent, use the baseline below unchanged.
 
 ### Step 0 — Rank the Outcomes first
 
-Run `ag-store outcome_list --status open --dir "<dir>" --store "<store>"`. If there are none, skip to Step 1. If any open Outcome has a null `rank`, show the open Outcomes (slug, title, rank) and ask for their order (`AskUserQuestion`, or plain language), then apply it:
+Run `ag-store outcome_list --status open`. If there are none, skip to Step 1. If any open Outcome has a null `rank`, show the open Outcomes (slug, title, rank) and ask for their order (`AskUserQuestion`, or plain language), then apply it:
 
 ```
-ag-store outcome_rank <slug-1> <slug-2> ... --dir "<dir>" --store "<store>"
+ag-store outcome_rank <slug-1> <slug-2> ...
 ```
 
-Outcome rank is **authored**; spec rank below is **derived** from it and materialised — that is the one prioritisation authority, made practical. Run `ag-store brief_sync ...` after ranking so the brief's list matches.
+Outcome rank is **authored**; spec rank below is **derived** from it and materialised — that is the one prioritisation authority, made practical. The app regenerates the brief's "Prioritised outcomes" list from this order.
 
 ### Step 1 — Read the active set
 
-Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`).
-(If the project still uses the old `Specs directory:` key or a root-level `specs/` with
-no `Agentile directory` key, honour that path and note `/ag-init` can migrate.) Resolve
-which store answers this project: read `store:` from `.agentile/store.md` if it exists,
-default `local`. Read `<dir>/brief.md` if present — rank Business Value against its
-prioritised outcomes rather than gut feel.
+Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — it refreshes `<dir>/brief.md` from the store; exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Every `ag-store` call below is the bare command with the same fallback; none takes `--store`. Read `<dir>/brief.md` — rank Business Value against its prioritised outcomes rather than gut feel.
 
-Run `ag-store spec_list --dir "<dir>" --store "<store>"` (bare command; fallback
-`"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) and parse the JSON array. Each entry already
+Run `ag-store spec_list` and parse the JSON array. Each entry already
 carries `slug`, `prefix` (null if unprioritised), `status`, `business_value`,
 `technical_certainty`, `depends_on`, `serves` (the Outcome slug, or null), and claim fields — classify into three groups from
 that, no file reading required:
@@ -102,17 +96,14 @@ make more changes?").
 Once the user confirms, apply it in one call:
 
 ```
-ag-store rank <slug-1> <slug-2> ... --dir "<dir>" --store "<store>"
+ag-store rank <slug-1> <slug-2> ...
 ```
 
 passing every **ready** slug (previously prioritised and unprioritised alike) in the
-final confirmed order. `ag-store` assigns dense sequential ranks by position —
-`0001-<slug>.md`, `0002-<slug>.md`, and so on for the `local` store, or the `Rank`
-field for `airtable` — using `git mv`'s collision-safe two-step under the hood so an
-in-flight reorder (e.g. swapping `0001`↔`0002`) never collides. **Never pass an
-in-progress slug** — `ag-store rank` only reorders `status: ready` specs and leaves
-anything else untouched, but omit them from the list regardless so the intent is
-explicit in what you asked for.
+final confirmed order. The store assigns dense sequential ranks by position in one
+transaction. **Never pass an in-progress slug** — `ag-store rank` only reorders
+`status: ready` specs and rejects anything else (409), but omit them from the list
+regardless so the intent is explicit in what you asked for.
 
 ### Step 6 — Report
 
@@ -131,5 +122,5 @@ final order:
 - **Dependency cycle** — two or more specs depend on each other, directly or
   transitively.
 
-Finish with a one-line summary: how many specs were renamed, how many were left
+Finish with a one-line summary: how many specs were ranked, how many were left
 untouched (in-progress), and how many are immediately claimable.

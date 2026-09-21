@@ -10,7 +10,7 @@ The higher-level view. Everything shown is **computed** from Outcomes and specs 
 
 ## Steps
 
-1. Resolve the **Agentile directory** and store (`.agentile/config.md`, `.agentile/store.md`). Run `ag-store map --dir "<dir>" --store "<store>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) and parse the JSON object: `outcomes` (rank-ordered, each with `specs` bucketed by `ready`/`in_progress`/`shipped`/`abandoned` and a `blocked` list), `unlinked` (specs serving no Outcome, same buckets), `orphaned` (specs whose `serves` names no known Outcome), and `tags`.
+1. Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — it refreshes `<dir>/brief.md` from the store; exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Every `ag-store` call below is the bare command with the same fallback; none takes `--store`. Run `ag-store map` and parse the JSON object: `outcomes` (rank-ordered, each with `specs` bucketed by `ready`/`in_progress`/`shipped`/`abandoned` and a `blocked` list), `unlinked` (specs serving no Outcome, same buckets), `orphaned` (specs whose `serves` names no known Outcome), and `tags`.
 
 2. Render, in this order:
 
