@@ -12,8 +12,7 @@
 # This is opt-in, per-project: not every stack needs it (a real RDBMS with
 # per-worker test databases, or anything stateless, is already safe under
 # concurrent runs, and wrapping it here would only add pointless queueing).
-# /ag-init asks whether a project's test/build command needs this and wires
-# it into .agentile/gates.json when it does. Since 0.11.0 no hook runs the
+# /ag-init no longer asks; add it by hand when a suite needs it. Since 0.11.0 no hook runs the
 # test command, so this is the only protection against concurrent runs: it
 # wraps the gate command itself, covering verify, ship, a human, and parallel
 # ag-builder subagents alike.
