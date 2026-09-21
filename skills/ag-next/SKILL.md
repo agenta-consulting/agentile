@@ -6,7 +6,7 @@ allowed-tools: Bash, Read
 
 # ag-next
 
-Atomically claim the highest-priority unclaimed ready spec for this session and report it. Safe for concurrent loops — the lock in `ag-claim` prevents double-claiming.
+Atomically claim the highest-priority unclaimed ready spec for this session and report it. Safe for concurrent loops — the store claims in one transaction, so two sessions can never take the same spec.
 
 ## Apply this project's playbook
 
@@ -26,17 +26,15 @@ If the file is absent, use the baseline below unchanged.
 
 1. Resolve the claim identity: use `${AGENTILE_RUNNER_ID}` if it is set, otherwise `${CLAUDE_SESSION_ID}` — Claude Code substitutes the real session id here when the skill runs. `AGENTILE_RUNNER_ID` lets an unattended driver (e.g. `bin/ag-run`) claim under a stable name of its own rather than a session id, so a fresh headless process per item does not orphan the previous one's claim. Use whichever value resolves directly as the claim's `claimed_by` handle. When it came from `CLAUDE_SESSION_ID`, it is also a `claude --resume <id>` handle; when it came from `AGENTILE_RUNNER_ID`, it is not a session and does not resume that way — see `/ag-wip`. (If both are empty, fall back to `echo "$(whoami)@$(hostname -s)/$(date +%s)"` and note that this fallback is not a resume handle either.)
 
-2. Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`). (If the project still uses the old `Specs directory:` key or a root-level `specs/` with no `Agentile directory` key, honour that path and note `/ag-init` can migrate.) Resolve which store answers this project: read `store:` from `.agentile/store.md` if it exists, default `local`. Read `wip_limit` from `.agentile/prioritise.md` (default: unlimited if the file or field is absent).
+2. Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Read `wip_limit` from `.agentile/prioritise.md`: when it sets a limit, that is what Step 3 passes as the third positional; when it is absent, omit the positional entirely and let the app apply the project's own `wip_limit` (passing `0` explicitly means unlimited — only do that if `.agentile/prioritise.md` says unlimited outright).
 
-3. `ag-store` ships in this plugin's `bin/`, which is on your PATH while the plugin is enabled — call it as the bare command `ag-store`. (Fallback only if it is not found: `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`.)
-
-4. Run it:
+3. Run:
 
    ```
-   ag-store claim "<claim-identity from step 1>" "<optional label from $ARGUMENTS>" "<wip_limit>" --dir "<dir>" --store "<store>"
+   ag-store claim "<claim-identity from step 1>" "<optional label from $ARGUMENTS>" ["<wip_limit>"]
    ```
 
-5. Parse the JSON string result. On success it is a **spec identifier** — for the `local` store, the spec's `.md` file path (its `SPEC.md` for a directory spec); for `airtable`, a bare slug. Treat it as opaque either way: it's exactly what every other `ag-store` op's `<id>` argument expects, and what `/ag-plan` expects as `$spec`. Report: claimed `<id>` as `<claim-identity>`. If the identity is `${CLAUDE_SESSION_ID}`, tell the user that to resume this loop later they can run `claude --resume <claim-identity>`; if it is `${AGENTILE_RUNNER_ID}`, say instead that it is a named runner, not a session, and point at `/ag-wip` for how to continue it.
+4. Parse the JSON string result. On success it is the claimed spec's **slug** — what every other `ag-store` op's `<slug>` argument expects, and what `/ag-plan` expects. The store has also opened a run for it. Report: claimed `<slug>` as `<claim-identity>`. If the identity is `${CLAUDE_SESSION_ID}`, tell the user that to resume this loop later they can run `claude --resume <claim-identity>`; if it is `${AGENTILE_RUNNER_ID}`, say instead that it is a named runner, not a session, and point at `/ag-wip` for how to continue it.
 
    Otherwise:
    - **`NONE`** — no ready work is available. Suggest running `/ag-shape` to shape inbox items or `/ag-prioritise` to rank the backlog.
@@ -44,4 +42,4 @@ If the file is absent, use the baseline below unchanged.
    - **`BLOCKED`** — all prioritised ready specs are waiting on unshipped dependencies; no work can be claimed right now. Suggest running `/ag-prioritise` to see which items are blocked and what each is waiting on.
    - **`UNPRIORITISED`** — there is shaped work in the backlog but none of it has been prioritised yet (no rank set). Suggest running `/ag-prioritise` to rank the ready specs so they can be claimed.
 
-6. **v1 behaviour: claim and report only — do NOT auto-start the build cycle.** Tell the user they can now run `/ag-plan <id>` to begin planning the claimed spec.
+5. **v1 behaviour: claim and report only — do NOT auto-start the build cycle.** Tell the user they can now run `/ag-plan <slug>` to begin planning the claimed spec.
