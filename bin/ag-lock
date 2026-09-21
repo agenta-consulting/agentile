@@ -4,9 +4,10 @@
 # that touches shared mutable state (a file-based test database like SQLite,
 # a fixed dev port, a single build cache). Two concurrent invocations against
 # the same lockfile queue instead of colliding: the second waits for the
-# first to finish rather than both erroring out. Same primitive ag-claim uses
-# for its atomic spec claim (File#flock) — works identically on Linux and
-# macOS, no dependency on the platform flock(1) CLI (which macOS lacks).
+# first to finish rather than both erroring out. Uses File#flock, which works
+# identically on Linux and macOS, with no dependency on the platform flock(1)
+# CLI (which macOS lacks). (Claiming a spec no longer needs a lock: since
+# 0.20.0 the store claims transactionally, server-side.)
 #
 # This is opt-in, per-project: not every stack needs it (a real RDBMS with
 # per-worker test databases, or anything stateless, is already safe under

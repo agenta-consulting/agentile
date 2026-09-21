@@ -4,9 +4,10 @@
 # `claude -p` process per item, so a long unattended drain never lets one
 # session's context fill up across many items. Stops cleanly at the first
 # pause a human needs to answer — a detached process can't answer a
-# checkpoint; answer it with `ag-checkpoint answer <path>` and re-run with
-# the same AGENTILE_RUNNER_ID. For parallel workers, chosen models, and a
-# console for what needs you, see docs/agentile-factory.md.
+# checkpoint; answer it in Agentile Projects (or with `printf 'reply' |
+# ag-store checkpoint_answer <id> --by <you>`) and re-run with the same
+# AGENTILE_RUNNER_ID. For parallel workers, chosen models, and the app's
+# dashboards, see docs/agentile-factory.md.
 #
 # Usage: ag-run [--limit N] [-- <claude flags>]
 #   --limit N   stop after N items even if more are ready (default: unlimited —
@@ -18,7 +19,7 @@
 #               answer a permission prompt.
 #
 #   Recommended invocation:
-#     ag-run -- --permission-mode acceptEdits --permission-prompts none --allowedTools "Bash(ag-store:*)" "Bash(ag-checkpoint:*)" "Bash(git:*)"
+#     ag-run -- --permission-mode acceptEdits --permission-prompts none --allowedTools "Bash(ag-store:*)" "Bash(git:*)"
 #   Add this project's gates.json commands to that --allowedTools list too.
 #
 # AGENTILE_RUNNER_ID, if already set in the environment, names this driver's
@@ -100,8 +101,8 @@ loop do
     reason, checkpoint = arg3.to_s.split(/\s+/, 2)
     puts "[ag-run] paused on #{arg2} (#{reason}) — a human checkpoint needs an answer."
     puts "[ag-run] checkpoint: #{checkpoint}" unless checkpoint.to_s.empty?
-    puts "[ag-run] to resume: answer it (ag-checkpoint answer <path>, or reply in a session with"
-    puts "[ag-run] AGENTILE_RUNNER_ID=#{runner_id} and /ag-build), then re-run ag-run with the same AGENTILE_RUNNER_ID."
+    puts "[ag-run] to resume: answer it in Agentile Projects (or: printf 'reply' | ag-store checkpoint_answer #{checkpoint} --by you),"
+    puts "[ag-run] then re-run ag-run with the same AGENTILE_RUNNER_ID=#{runner_id}."
     exit 0
   when "failed"
     warn "[ag-run] failed on #{arg2} (#{arg3}). Stopping."

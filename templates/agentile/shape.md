@@ -27,7 +27,7 @@ This is the single most useful file to tailor. Add a question and every future s
 
 ## Frontmatter hygiene
 
-- **No unquoted colons in frontmatter values.** `title: Foo: bar` is invalid YAML; the claim tooling (`bin/ag-claim`) parses the frontmatter with a real YAML parser and fails, so the spec can never be pulled. Prefer rewording the title with a dash or comma ("Foo — bar"); quoting the value also works. The same applies to `outcome:` and every other field, and to ADR frontmatter.
+- **No unquoted colons in frontmatter values.** `title: Foo: bar` is invalid YAML; the store parses the frontmatter with a real YAML parser and rejects the spec, so it can never be created. Prefer rewording the title with a dash or comma ("Foo — bar"); quoting the value also works. The same applies to `outcome:` and every other field, and to ADR frontmatter.
 
 ## House additions
 

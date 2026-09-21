@@ -31,8 +31,8 @@
 # structural side effect of Agentile encouraging parallel subagents, not a
 # per-project bug. So every run here is serialized per project directory (see
 # TEST_LOCK_PATH below) regardless of which session or subagent triggered it.
-# This is separate from, and stacks with, the opt-in `ag-lock` wrapper
-# /ag-init can add around gates.json's own `test` command: that one also
+# This is separate from, and stacks with, the opt-in `ag-lock` wrapper a
+# project can put around gates.json's own `test` command: that one also
 # covers a human or ag-builder invoking the gate command directly, outside
 # this hook.
 
@@ -98,14 +98,14 @@ end
 allow if File.exist?(counter) && File.read(counter).strip == 'capped'
 
 # Serialize concurrent hook-triggered test runs for this project directory (see
-# header comment) — same File#flock primitive ag-claim uses, portable and
+# header comment) — the same File#flock primitive ag-lock uses, portable and
 # dependency-free. A second overlapping invocation just waits its turn here
 # instead of racing the first against shared test state.
 test_lock_path = File.join(Dir.tmpdir, "agentile-testgate-lock-#{Digest::SHA1.hexdigest(cwd)}")
-# Interactive Bash tool calls get this plugin's bin/ (ag-claim, ag-lock, ...)
+# Interactive Bash tool calls get this plugin's bin/ (ag-store, ag-lock, ...)
 # on PATH automatically; a hook subprocess spawned via Open3 does not inherit
 # that. A gates.json command may reference ag-lock as a bare command (the same
-# convention skills use for ag-claim), so guarantee it resolves here too by
+# convention skills use for ag-store), so guarantee it resolves here too by
 # prepending this plugin's own bin/ — derived from this file's own location,
 # not from CLAUDE_PLUGIN_ROOT, which is likewise not guaranteed to reach this
 # subprocess's environment.

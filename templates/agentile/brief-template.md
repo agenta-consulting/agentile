@@ -1,3 +1,4 @@
+<!-- READ-ONLY COPY — edit the brief in Agentile Projects; every /ag-* skill overwrites this file from the store. -->
 # Project Brief — <project name>
 
 The living context the loop steers by. `/ag-shape`, `/ag-spec`, `/ag-prioritise`,
@@ -16,8 +17,8 @@ yardstick for "high business value".>
 
 ## Prioritised outcomes
 
-<Once Outcomes exist, this list is regenerated from them by `ag-store brief_sync`
-(rank order, open only) — edit them with `/ag-outcome`, not here. Until then:>
+<Once Outcomes exist, the app regenerates this list from them by rank; `ag-store brief_sync`
+pulls the result into this read-only copy (rank order, open only) — edit them with `/ag-outcome`, not here. Until then:>
 
 1. <outcome>
 2. <outcome>
