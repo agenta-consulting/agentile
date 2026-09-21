@@ -26,13 +26,21 @@ If the file is absent, use the baseline below unchanged.
 
 1. Resolve the claim identity: use `${AGENTILE_RUNNER_ID}` if it is set, otherwise `${CLAUDE_SESSION_ID}` — Claude Code substitutes the real session id here when the skill runs. `AGENTILE_RUNNER_ID` lets an unattended driver (e.g. `bin/ag-run`) claim under a stable name of its own rather than a session id, so a fresh headless process per item does not orphan the previous one's claim. Use whichever value resolves directly as the claim's `claimed_by` handle. When it came from `CLAUDE_SESSION_ID`, it is also a `claude --resume <id>` handle; when it came from `AGENTILE_RUNNER_ID`, it is not a session and does not resume that way — see `/ag-wip`. (If both are empty, fall back to `echo "$(whoami)@$(hostname -s)/$(date +%s)"` and note that this fallback is not a resume handle either.)
 
-2. Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Read `wip_limit` from `.agentile/prioritise.md`: when it sets a limit, that is what Step 3 passes as the third positional; when it is absent, omit the positional entirely and let the app apply the project's own `wip_limit` (passing `0` explicitly means unlimited — only do that if `.agentile/prioritise.md` says unlimited outright).
+2. Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Read `wip_limit` from `.agentile/prioritise.md`.
 
-3. Run:
+3. If `.agentile/prioritise.md` sets a `wip_limit`, pass it as the third positional to `claim`:
 
    ```
-   ag-store claim "<claim-identity from step 1>" "<optional label from $ARGUMENTS>" ["<wip_limit>"]
+   ag-store claim "<claim-identity from step 1>" "<optional label from $ARGUMENTS>" "<wip_limit>"
    ```
+
+   Otherwise, omit the positional entirely and let the app apply the project's own `wip_limit`:
+
+   ```
+   ag-store claim "<claim-identity from step 1>" "<optional label from $ARGUMENTS>"
+   ```
+
+   (Passing `0` explicitly means unlimited; only use the first form with `0` if `.agentile/prioritise.md` says unlimited outright — never pass `0` as a default.)
 
 4. Parse the JSON string result. On success it is the claimed spec's **slug** — what every other `ag-store` op's `<slug>` argument expects, and what `/ag-plan` expects. The store has also opened a run for it. Report: claimed `<slug>` as `<claim-identity>`. If the identity is `${CLAUDE_SESSION_ID}`, tell the user that to resume this loop later they can run `claude --resume <claim-identity>`; if it is `${AGENTILE_RUNNER_ID}`, say instead that it is a named runner, not a session, and point at `/ag-wip` for how to continue it.
 

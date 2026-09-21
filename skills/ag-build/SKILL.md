@@ -37,7 +37,7 @@ Before anything else, resolve the **Agentile directory** from `.agentile/config.
 
 ## Run log
 
-The run log is the store's: `claim` opens a run for this spec and identity — that already is the run's record of having started, so this skill never calls `run_event started` or `run_event claimed` — and every event below is `ag-store run_event <event> --spec "<slug>" --runner "<identity>" --detail "<free text>"` (`shipped`, `paused`, `failed`). A run belongs to a spec, so there is nothing to log before a claim succeeds or when the queue is idle — the `AG_BUILD:` line carries those.
+The run log is the store's: `claim` opens a run for this spec and identity — that already is the run's record of having started, so this skill never calls `run_event started` or `run_event claimed` — and every pause or failure below is `ag-store run_event <event> --spec "<slug>" --runner "<identity>" --detail "<free text>"` (`paused`, `failed`). A ship, release or abandon closes the run itself — that transition *is* the run's terminal record, so this skill never calls `run_event shipped` either; the only events it ever sends are `paused` and `failed`, and only while the run is still active. A run belongs to a spec, so there is nothing to log before a claim succeeds or when the queue is idle — the `AG_BUILD:` line carries those.
 
 ## Policy
 
@@ -77,24 +77,32 @@ then proceed exactly as Step 0's routing for an answered checkpoint of that reas
 Run `ag-store spec_list --status in_progress`. If no entry's `claimed_by` equals this identity, nothing of yours is in flight: go to Step 1. Otherwise that entry is your spec and you claim nothing this run — take its `slug` (the `<slug>` every run-event and status line uses, and the `<id>` for every later `ag-store` call) and its `route` from the listing; `<spec-dir>` is `<dir>/specs/<slug>/`. Then:
 
 - If `<spec-dir>/plan.md` is absent, go to Step 2.
-- Otherwise run `ag-store checkpoint_list "<slug>"`. If it lists no checkpoints, go to Step 3.
+- Otherwise run `ag-store checkpoint_list "<slug>"`. It returns an array of checkpoint objects — `{id, seq, reason, status, asked_by, ask, answer, ...}` — oldest first, so the newest is the **last** element; take that element's `id` as `<checkpoint-id>` for the rest of this resume (it is the same id `checkpoint_open` printed when the checkpoint was written, and what a `checkpoint_answer` on it was addressed to). If the array is empty, go to Step 3.
 - If the newest checkpoint is `answered`, read its `answer` field from the `list` output — that is the human's decision — and resume by the checkpoint's reason, which is the only rule for where to go:
   - `plan_review` → Step 3.
   - `build_blocked` → Step 3, re-dispatching the builder with the answer as its instruction.
   - `build_checkpoint` → Step 3, re-dispatching the builder with the answer as its instruction; if the answer is a bare approval, go to Step 4 instead of rebuilding.
   - `question` → the step that asked, read off the checkpoint's `asked_by` field in the `ag-store checkpoint_list` output: `builder` → Step 3, `reviewer` → Step 4. Pass the answer to the agent you re-dispatch.
-  - `gate_failure` → Step 3 with the answer as the builder's instruction — unless the answer says to release or abandon the spec, in which case run `ag-store release "<slug>"` or point at `/ag-abandon <slug>`, record `run_event failed --detail gate_failure`, and end with `AG_BUILD: failed <slug> gate_failure`.
+  - `gate_failure` → Step 3 with the answer as the builder's instruction — unless the answer says to release or abandon the spec, in which case record `run_event failed --detail gate_failure` first (the run is still active — `release`/`abandon` would close it before the event could attach), *then* run `ag-store release "<slug>"` or point at `/ag-abandon <slug>`, and end with `AG_BUILD: failed <slug> gate_failure`.
   - `verify_checkpoint` → Step 5 on approval; otherwise Step 3 with the answer as the builder's instruction.
   - `ship_approval` → Step 6 on approval; otherwise Step 3 with the answer as the builder's instruction.
 - If the newest checkpoint is still `open`, never open a second one for the same ask. In an interactive session, relay its `ask` with `AskUserQuestion`, record the reply against that checkpoint (see **Tools**), and continue by the routing above for its reason. Headless, report that it is waiting and end with `AG_BUILD: paused <slug> <reason> <checkpoint-id>`.
 
 ### Step 1 — Claim
 
-Read `wip_limit` from `.agentile/prioritise.md`. When it sets a limit, pass it as the third positional to `claim`; when it is absent, omit the positional entirely — the app applies the project's own `wip_limit`. (Passing `0` explicitly means unlimited; only pass it if `.agentile/prioritise.md` says unlimited outright.) Run:
+Read `wip_limit` from `.agentile/prioritise.md`. If it sets a limit, pass it as the third positional to `claim`:
 
 ```
-ag-store claim "<identity>" "" ["<wip_limit>"] [--spec "<slug from $ARGUMENTS>"]
+ag-store claim "<identity>" "" "<wip_limit>" [--spec "<slug from $ARGUMENTS>"]
 ```
+
+Otherwise, omit the positional entirely — the app applies the project's own `wip_limit` — and run:
+
+```
+ag-store claim "<identity>" "" [--spec "<slug from $ARGUMENTS>"]
+```
+
+(Passing `0` explicitly means unlimited; only use the first form with `0` if `.agentile/prioritise.md` says unlimited outright — never pass `0` as a default.)
 
 - A slug → the claim succeeded, and the store has opened this run — no `run_event claimed` call needed, that is what the open run already records. Use the slug as `<slug>` and `<id>` everywhere below (run events, status lines, `/ag-plan <slug>`, every other `ag-store` call). Establish the spec's fields now — run `ag-store spec_list --status in_progress` and take the entry whose `claimed_by` is this identity: its `route` is what Step 2 reads; `<spec-dir>` is `<dir>/specs/<slug>/`. Continue.
 - `NONE`, `WIP_FULL`, `BLOCKED`, `UNPRIORITISED` → explain in one line (`/ag-prioritise` for `UNPRIORITISED` or `BLOCKED`, `/ag-wip` for `WIP_FULL`, `/ag-shape` for `NONE`), and end with `AG_BUILD: idle <code>`. Nothing is logged: there is no spec to log against.
@@ -147,23 +155,23 @@ An answered `ship_approval` whose answer says anything other than approval (a no
 ### Step 6 — Ship
 
 1. Merge per `.agentile/ship.md`'s prose (or repository convention), never onto a `protected_branches` entry from a builder branch without the merge step itself. This is the one step where two concurrent `/ag-build` sessions can genuinely collide, since it writes to the shared trunk checkout: if the merge is rejected because trunk moved since you branched (another session shipped first), pull/rebase once and retry before treating it as a failure — a lost race here is expected under concurrency, not an error to surface or ask about.
-2. `ag-store ship "<slug>"` — sets `status: shipped`, stamps `shipped_at`, keeps the claim fields; the store closes the run.
-3. Record `run_event shipped` and commit the spec directory (`plan.md`, `SPEC.md` snapshot, findings) with the ship if it is not already committed.
+2. `ag-store ship "<slug>"` — sets `status: shipped`, stamps `shipped_at`, keeps the claim fields, and closes the spec's live run server-side (the `shipped` status is the run's terminal record; there is nothing left to log with `run_event` after this — never call it here).
+3. Commit the spec directory (`plan.md`, `SPEC.md` snapshot, findings) with the ship if it is not already committed.
 4. End with `AG_BUILD: shipped <slug>`.
 
 ## Unrecoverable errors
 
-Any error you cannot recover from — a required file missing, an agent that returns no verdict line, a tool that fails repeatedly, a denied permission you cannot work around — ends the run: when a spec was claimed, record `run_event failed --detail <short-code>`; end with `AG_BUILD: failed <slug-or-'-'> <short-code>`. The code is one lowercase snake_case word or short phrase naming the cause (`no_verdict_line`, `checkpoint_write_denied`, `run_ended`); use `-` for the slug when no spec was claimed (nothing is logged then — there is no spec or run to log against). Do not invent new checkpoint reasons for these — the seven reasons are fixed, and an error is a failure, not a pause.
+Any error you cannot recover from — a required file missing, an agent that returns no verdict line, a tool that fails repeatedly, a denied permission you cannot work around — ends the run: when a spec was claimed, record `run_event failed --detail <short-code>`, then close the run (see **Closing the run** — nothing else will, since this path never calls `ship`/`release`/`abandon`), and end with `AG_BUILD: failed <slug-or-'-'> <short-code>`. The code is one lowercase snake_case word or short phrase naming the cause (`no_verdict_line`, `checkpoint_write_denied`, `run_ended`); use `-` for the slug when no spec was claimed (nothing is logged and there is no run to close then — there is no spec at all to log against). Do not invent new checkpoint reasons for these — the seven reasons are fixed, and an error is a failure, not a pause.
 
 ## Closing the run
 
-When the spec ships, fails unrecoverably, or you release the claim, close the run so it drops out of the active view while its history is kept for the flow metrics:
+`ship`, `release` and `abandon` already close the spec's live run server-side as part of that transition — never call `run_close` after any of them, it has nothing left to do and nothing to close.
+
+`run_close` is only for a worker that stops **without** a spec transition — the run is still active but no `ship`/`release`/`abandon` call is coming this turn: a hand-off to someone else, an idle worker that claimed nothing further, or a `failed` ending where the claim is being kept on purpose rather than released. In those cases, close the run explicitly so it drops out of the active view while its history is kept for the flow metrics:
 
 ```
 ag-store run_close --spec "<slug>" --runner "<identity>" --detail "<why>"
 ```
-
-A `shipped` or `failed` event already closes the run on its own; `run_close` is for the cases those do not cover — a released claim, an abandoned spec, or a worker that stopped for good.
 
 ## Exit contract
 
