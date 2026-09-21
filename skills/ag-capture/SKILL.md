@@ -1,7 +1,7 @@
 ---
 name: ag-capture
-description: Append a one-line stub to the Agentile inbox with today's date. Instant capture — no questions, no work, safe to run mid-build. Trigger phrases include "/ag-capture", "capture this idea", "drop a stub", "add to the inbox", "note this down for later".
-allowed-tools: Bash, Read
+description: Add a stub to the Agentile inbox — tidied and classified by the store's assist, confirmed in one glance (or saved instantly with --yes). Safe to run mid-build. Trigger phrases include "/ag-capture", "capture this idea", "drop a stub", "add to the inbox", "note this down for later".
+allowed-tools: AskUserQuestion, Bash, Read
 ---
 
 # ag-capture
@@ -24,53 +24,33 @@ If the file is absent, use the baseline below unchanged.
 
 ## Rules
 
-- **Do not ask follow-up questions.** Whatever the user gave you is the stub.
+- **Do not interview.** The only questions allowed are the one-line ask when `$ARGUMENTS` is empty and the single confirmation in step 4.
 - **Do not start work, plan, or shape.** That is what `/ag-shape` is for.
-- **Do not estimate, triage, or add acceptance criteria.** A stub is one line.
+- **Do not estimate, triage, or add acceptance criteria.** A stub is one line; the store's assist may classify it, you do not.
+
+## Refresh the brief
+
+Before anything else, resolve the **Agentile directory** from `.agentile/config.md` under "## Paths" (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`). It rewrites `<dir>/brief.md` from the store so this session reads the current brief, and prints the path. If it exits 2 because the project is not linked (no `.agentile/store.md`, or no token), tell the user to run `/ag-init` (or export `AGENTILE_PROJECTS_TOKEN`) and stop. Every `ag-store` call below is the bare command with the same fallback; none takes `--store`.
 
 ## Steps
 
-1. The stub text is `$ARGUMENTS`. If it is empty, ask the user for the one line (this is the only question allowed) and stop until they answer.
-2. Resolve the **Agentile directory** from `.agentile/config.md` under "## Paths" (default `docs/agentile/`). If the project still has the old `Inbox:` key or a root-level `inbox.md` and no `Agentile directory` key, honour that path for this run and tell the user `/ag-init` can migrate the layout.
-3. Resolve which store answers this project: read `store:` from `.agentile/store.md` if it exists, default `local` if it does not.
-4. Resolve who is capturing it: run `ag-store whoami --dir "<Agentile directory>" --store "<store>"` (bare op name, but always with the `--store` resolved in step 3 explicitly passed — omitting it silently answers as the `local` adapter, which just echoes `git config user.email` as free text instead of a Members record id, and that text then fails step 7's `--by` resolution on a shared store; fallback binary `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`). This is how a team-mode Inbox knows *who added it* — for the `local` store this is informational only (git blame already gives attribution for free); for a shared store it stamps the record — but only if `--store` was passed here.
-5. Write a **title** for the stub: a very short label (aim for 3-6 words, hard
-   cap ~60 characters) derived from the stub text — what it *is*, not a summary
-   of the whole thing. No trailing full stop. This is the record's name in the
-   Airtable UI and in every linked-record chip, so it has to read at a glance:
-
-   - "Register a core marker and make the conftest lazy…" → `Core marker + lazy conftest`
-   - "Cache renders and rasters by content hash…" → `Content-hash render cache`
-
-   Deriving it is not a question — never ask the user to confirm a title, that
-   would break the no-interruption rule above. If the user gave one explicitly
-   (`--title "..."`, or an obvious "call it X"), use theirs verbatim instead.
-
-6. Pick a **type** — `feature`, `bug`, `chore`, or `spike` — from what the text
-   plainly says, defaulting to `feature` when it gives no signal. "This is a
-   bug", a broken behaviour described as wrong, or a repro ⇒ `bug`. Housekeeping
-   with no user-visible change (dependency bumps, renames, cleanup) ⇒ `chore`.
-   An open question to be explored rather than a change to be made ⇒ `spike`.
-
-   This is describing the stub, not triaging it: never ask the user to confirm
-   a type, and never infer urgency, value, or size — those belong to `/ag-shape`
-   and `/ag-prioritise`. Type earns its place by routing the shaping interview
-   (a `bug` gets the short repro interview), so when genuinely torn, `feature`
-   is the safe default because it gets the fuller interview.
-
-7. Add the stub (quote the text so the shell cannot eat an apostrophe or a
-   backtick — the stub must reach the store **verbatim**, never reworded to
-   make quoting easier):
+1. The stub text is `$ARGUMENTS`, minus a trailing `--yes` if present. If it is empty, ask the user for the one line (this is the only question allowed here) and stop until they answer.
+2. Ask the store for suggestions (quote the text so the shell cannot eat an apostrophe or a backtick — the text must reach the store **verbatim**):
 
    ```
-   ag-store inbox_add "<stub text>" --title "<title>" --type "<type>" [--serves "<outcome-slug>"] --by "<whoami output>" --dir "<Agentile directory>" --store "<store>"
+   ag-store inbox_assist "<stub text>"
    ```
 
-   The `local` store accepts `--title`/`--type`/`--serves` and ignores them
-   (its inbox is a flat markdown list); the `airtable` store stores the title
-   as the primary field, the type as a select, and `serves` as a link to the
-   Outcome. Pass `--serves` only when the user named an Outcome explicitly
-   ("for the identity outcome") — never ask.
+   It returns `{title, text, kind, serves_outcome_slug, duplicate_of, duplicate_of_type, duplicate_probability, judgment_id}` — a tidied title and text, a `kind` (`feature`/`bug`/`chore`/`spike`, or null when the store was not confident), the open Outcome it seems to serve (or null), and a possible duplicate (an existing inbox stub or a ready spec — `duplicate_of_type` is `"inbox"` or `"spec"`) when `duplicate_probability` is 0.5 or more. Nothing is saved yet.
+3. If the assist call failed for any reason other than "not linked" (the store's assist is a convenience, never a gate): skip straight to saving with the **raw** text and a `--title` derived as a very short label (3–6 words, no trailing full stop; the user's own `--title "..."` wins) and `--type` from what the text plainly says (default `feature`; a described defect or repro ⇒ `bug`; housekeeping with no user-visible change ⇒ `chore`; an open question to explore ⇒ `spike`). Pass `--serves` only when the user named an Outcome explicitly. Go to step 5.
+4. Otherwise, if the user passed `--yes`: save immediately using the assist's suggestions (`--title`, `--type` from `kind`, `--serves` from `serves_outcome_slug` when set), then — when `duplicate_of` is set — print the duplicate warning below the confirmation, without asking. Go to step 5.
 
-   A non-zero exit means the inbox doesn't exist yet (project not initialised, or a path mismatch) — tell the user to run `/ag-init` first rather than working around it.
-8. Reply with one short line confirming the stub was captured (and by whom, if the store records it). Nothing more.
+   Otherwise show the suggestion in one `AskUserQuestion`: the tidied title and text, the kind, the Outcome, and — when `duplicate_of` is set — the duplicate warning, framed by `duplicate_of_type`: "looks like inbox item #`<duplicate_of>`: `<title>`" for `"inbox"`, or "looks like the ready spec `` `<duplicate_of>` ``" for `"spec"`. Options: **Save as suggested**, **Save my original text** (keeps the user's wording, still uses the suggested title/kind), **Don't save** (a duplicate, or second thoughts) — and when `duplicate_of_type` is `"inbox"`, add **Shape the existing one instead** (hand off to `/ag-shape <duplicate_of>` and stop here rather than saving). One question, then act.
+5. Save:
+
+   ```
+   ag-store inbox_add "<text>" --title "<title>" --type "<kind>" [--serves "<outcome-slug>"]
+   ```
+
+   The store records who captured it from the token — there is no `--by`. A non-zero exit 2 means the project is not linked — tell the user to run `/ag-init` rather than working around it.
+6. Reply with one short line confirming the stub was captured, its title and kind, and (if any) the Outcome it serves. Nothing more.

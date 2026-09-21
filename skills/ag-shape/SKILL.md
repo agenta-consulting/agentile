@@ -24,22 +24,24 @@ from the project root). If it exists, honour it:
 
 If the file is absent, use the baseline below unchanged.
 
+## Refresh the brief
+
+Before anything else, resolve the **Agentile directory** from `.agentile/config.md` under "## Paths" (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`). It rewrites `<dir>/brief.md` from the store so this session reads the current brief, and prints the path. If it exits 2 because the project is not linked (no `.agentile/store.md`, or no token), tell the user to run `/ag-init` (or export `AGENTILE_PROJECTS_TOKEN`) and stop. Every `ag-store` call below is the bare command with the same fallback; none takes `--store`.
+
 ## Step 1 — Load the project's definitions
 
 - Read `.agentile/shape.md` — this is **this project's Definition of Ready**: the exact questions a stub must answer, plus any house additions. Drive the interview against *this* list, not a generic one.
-- Read `.agentile/config.md` for the **Agentile directory** (default `docs/agentile/`) and the two-axis triage table. If the project still uses the old `Inbox:` / `Specs directory:` keys (or root-level `inbox.md` / `specs/`) with no `Agentile directory` key, honour those paths and note that `/ag-init` can migrate the layout.
-- Resolve which store answers this project: read `store:` from `.agentile/store.md` if it exists, default `local`. Every inbox/spec operation below goes through `ag-store --dir "<Agentile directory>" --store "<store>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) rather than touching files directly.
-- Read `<dir>/brief.md` if present — the project's users and constraints. Run `ag-store outcome_list --status open ...`; if any Outcomes exist, Business Value is scored as **contribution to the Outcome this spec serves** (Step 3); with none, score against the brief's prose outcomes as before. Let both inform the shaping questions.
+- Read `.agentile/config.md` for the two-axis triage table.
+- Read `<dir>/brief.md` (just refreshed) — the project's users, constraints and prioritised outcomes. Run `ag-store outcome_list --status open`; if any Outcomes exist, Business Value is scored as **contribution to the Outcome this spec serves** (Step 3); with none, score against the brief's prose outcomes. Let both inform the shaping questions.
 - Read the project's `CLAUDE.md` (and `docs/adr/`) for standing context so your questions fit the architecture.
 
 ## Step 2 — Pick the stub
 
-- Run `ag-store inbox_list ...` and parse the JSON array of `{id, title, type, text, captured_at, captured_by, captured_by_id}` (`airtable` store only; `captured_by_id` is the raw Members record id behind the display name in `captured_by` — carry it into Step 5's spec attribution, never the display name).
+- Run `ag-store inbox_list` and parse the JSON array of `{id, title, type, text, captured_at, captured_by, serves, suggested_kind, duplicate_of}`. Attribution is carried by the store when the stub is shaped — nothing to copy by hand.
 - The stub's `type` selects which interview runs below. Treat it as a starting
   point, not a verdict: if the conversation shows the stub was mistyped at
   capture (a "bug" that is really a missing feature), say so in one line and
-  switch interviews. A null `type` (the `local` store, or a stub captured
-  before the field existed) means re-derive it from the text.
+  switch interviews. A null `type` (a stub captured before the field existed) means re-derive it from the text.
 - The user may name the stub by id or text (`$ARGUMENTS`). If they did not, present the numbered list (by `id`) and ask which one to shape.
 
 ## Step 3 — Interview
@@ -69,7 +71,7 @@ full interview below.
 - Ask **one or two questions at a time**, using `AskUserQuestion` where the choices are discrete. Let each answer shape the next question.
 - Work through every required item in `.agentile/shape.md` — typically problem/who/why-now, acceptance criteria, the observable **outcome** (the one metric or check that will prove the change worked — written to the `outcome:` frontmatter field), edge cases and failure paths, scope boundary, affected areas, open questions, and dependencies — plus any house additions.
 - Prefer concrete examples over abstractions. Push back gently on vague acceptance criteria.
-- **Dependencies**: ask whether this item depends on any other specs being shipped first. Run `ag-store spec_list ...` and offer the existing slugs as candidates. Write the chosen slugs to `depends_on` in the spec's frontmatter; default is `[]`. Note that newly shaped specs are written **unprefixed** (they are Ready but not yet prioritised).
+- **Dependencies**: ask whether this item depends on any other specs being shipped first. Run `ag-store spec_list` and offer the existing slugs as candidates. Write the chosen slugs to `depends_on` in the spec's frontmatter; default is `[]`. Newly shaped specs are Ready but **unranked** until `/ag-prioritise` places them.
 - **Serves**: ask which Outcome this spec serves, offering the open slugs from `outcome_list` plus "none — free-standing". A stub that arrived from `/ag-decompose` already carries `serves` (shown by `inbox_list`); offer it as the default. Write the slug to `serves:`; blank means free-standing and is always allowed — a parent never gates a spec. If the conversation surfaced natural themes (an area, a layer), write two or three as `tags: [...]`; never invent tags to fill the field.
 
 ## Step 4 — Triage
@@ -89,15 +91,22 @@ full interview below.
 
 Based on the conversation, do **one** of:
 
-- **Graduate to a spec** — build the markdown from `.agentile/spec-template.md`, filling every field from the interview, and set `type` (carried from the stub), `route`, `business_value`, `technical_certainty` (the last two left unset for a bug), `serves`, and `tags` (both blank when the interview gave none). Keep every frontmatter value valid YAML: no unquoted colons in `title`, `outcome` or any other field (quote `created_at`, which contains them) (`title: Foo: bar` breaks the claim tooling); reword with a dash or comma, or quote the value. Write it with `ag-store spec_create <slug> --dir "<dir>" --store "<store>"`, piping the markdown on stdin — on the `airtable` store, include `source_inbox: <id>` in the frontmatter, `<id>` being the stub's own `id` from `inbox_list` (the `local` store's ids are positional, not stable, so omit it there), so the spec keeps a record of which stub it came from. Newly shaped specs are always unprefixed; the plan stage promotes one to a directory (`NNNN-<slug>/SPEC.md`) when `plan.md` is written. If the shaping session itself produced supporting material (a sketch, a data sample), that still belongs on disk beside where the spec will live once planning promotes it — note it in the spec body for `/ag-plan` to pick up.
-  - **Attribution (`airtable` store only, fill whenever resolvable):** run `ag-store whoami --dir "<dir>" --store "<store>"` — with `--store` passed explicitly (never rely on a bare `ag-store whoami`, which silently answers as the `local` adapter and returns a plain email instead of a Members record id even in an `airtable` project). A `rec...` id means include `shaped_by: <id>` in the new spec's frontmatter (who ran this shaping). If the stub being promoted has a `captured_by_id` (Step 2), also include `captured_by: <that id>` (who originated the idea) — these are separate people when a shaping session promotes someone else's stub. If `whoami` instead returns `unknown: ...` (no Members row matches the git email), leave both fields out of the frontmatter and say so in Step 6's report rather than guessing or blocking the shape on it.
-- **Spike** — same as above with `type: spike` and `status: ready`, framing the open questions as the timeboxed exploration goal. A spike's deliverable is a written answer, not code: its build is the timeboxed exploration, its verify is 'question answered within the timebox', and on ship its findings (`findings.md` in the spec's directory, or an ADR) move to `done/` — satisfying dependencies like any spec.
-- **Split** — capture multiple new stubs (`ag-store inbox_add`) or write multiple specs. If writing multiple specs from one stub on the `airtable` store, every one of them gets the same `source_inbox: <id>` — the store's `Source Inbox Item`/`Specs` link is many-specs-per-stub by design.
+- **Graduate to a spec** — build the markdown from `.agentile/spec-template.md`, filling every field from the interview, and set `type` (carried from the stub), `route`, `business_value`, `technical_certainty` (the last two left unset for a bug), `serves`, and `tags` (both blank when the interview gave none). Keep every frontmatter value valid YAML: no unquoted colons in `title`, `outcome` or any other field (quote `created_at`, which contains them) (`title: Foo: bar` breaks the claim tooling); reword with a dash or comma, or quote the value. Write it in one call that also retires the stub and records provenance and attribution:
+
+  ```
+  ag-store inbox_shape <stub-id>
+  ```
+
+  piping the markdown on stdin. The store creates the spec (`slug` from the frontmatter), links it to the stub, marks the stub `shaped`, copies `captured_by` from the stub and records you as `shaped_by` from the token. Newly shaped specs are unranked; the plan stage creates the spec's directory (`<dir>/specs/<slug>/`) when `plan.md` is written. If the shaping session itself produced supporting material (a sketch, a data sample), it belongs on disk in that directory — note it in the spec body for `/ag-plan` to pick up.
+
+  If the call fails with a 422 (a validation error — e.g. a `depends_on` slug that doesn't exist), show the response's `detail` to the user and fix the markdown accordingly before calling `inbox_shape` again; don't retry blindly.
+- **Spike** — same as above with `type: spike` and `status: ready`, framing the open questions as the timeboxed exploration goal. A spike's deliverable is a written answer, not code: its build is the timeboxed exploration, its verify is 'question answered within the timebox', and on ship its findings (`findings.md` in the spec's directory, or an ADR) stay in the repo and the spec is `shipped` in the store — satisfying dependencies like any spec.
+- **Split** — capture the extra stubs with `ag-store inbox_add "<text>" --title "<title>" --type "<kind>"`, or shape several specs from one stub: use `inbox_shape <stub-id>` for the first and `ag-store spec_create <slug>` (markdown on stdin, with `source_inbox: <stub-id>` in the frontmatter) for the rest — one stub may link to several specs by design.
 - **Merge** — fold the stub into an existing stub or spec.
 - **Drop** — just drop the stub, with a one-line note to the user on why.
 
-Always **drop the original stub** (`ag-store inbox_drop <id> --dir "<dir>" --store "<store>"`) once its fate is decided — the inbox is the list of what still needs shaping.
+`inbox_shape` retires the stub itself. For **Merge** and **Drop**, retire it with `ag-store inbox_drop <id>` — the inbox is the list of what still needs shaping.
 
 ## Step 6 — Report
 
-Confirm what you wrote (path), the recommended route, and the next step (usually `/ag-plan <dir>/specs/<slug>.md`). Do not start building.
+Confirm what you wrote (path), the recommended route, and the next step (usually `/ag-plan <slug>`). Do not start building.
