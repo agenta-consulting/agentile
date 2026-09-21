@@ -16,7 +16,16 @@ class FakeApi
     @requests = []
     @routes = {}
     @server = TCPServer.new("127.0.0.1", 0)
-    @thread = Thread.new { loop { handle(@server.accept) } }
+    @thread = Thread.new do
+      loop do
+        sock = begin
+          @server.accept
+        rescue IOError, Errno::EBADF
+          break # #close ran: the accept loop's own socket op, not a request — nothing to warn about
+        end
+        handle(sock)
+      end
+    end
   end
 
   def port = @server.addr[1]
@@ -48,11 +57,23 @@ class FakeApi
     sock.close
   end
 
-  def close = @server.close
+  def close
+    @server.close
+    @thread.join
+  end
 end
 
+# Every subcommand call gets a clean slate for the online-vs-offline env vars:
+# nil deletes a key from the child's environment even when it's set (e.g.
+# exported) in the process running this test file, so a developer running the
+# online suite with AGENTILE_PROJECTS_URL/TOKEN exported doesn't leak them into
+# the offline section's calls against the fake API — each call's own `env:`
+# hash still layers on top and can re-set any of these deliberately.
+ISOLATE = { "AGENTILE_PROJECTS_URL" => nil, "AGENTILE_PROJECTS_TOKEN" => nil,
+            "AGENTILE_RUNNER_ID" => nil, "CLAUDE_SESSION_ID" => nil }.freeze
+
 def run_store(*args, env: {}, stdin: nil, chdir: Dir.pwd)
-  out, err, st = Open3.capture3(env, "ruby", HELP, *args, stdin_data: stdin.to_s, chdir: chdir)
+  out, err, st = Open3.capture3(ISOLATE.merge(env), "ruby", HELP, *args, stdin_data: stdin.to_s, chdir: chdir)
   [out, err, st]
 end
 
@@ -123,25 +144,28 @@ with_project(api.url) do |root|
 end
 
 # 7. inbox_assist passes the text; inbox_shape posts markdown from stdin with text/markdown
+#    and unwraps the app's full created-spec object down to its slug
 api.route("POST", "#{P}/inbox/assist") { |r| [200, { "title" => "T", "text" => JSON.parse(r[:body])["text"], "kind" => "feature" }] }
-api.route("POST", "#{P}/inbox/3/shape") { |r| [201, "my-slug"] } # app returns the slug as JSON string; fake returns text — client must accept both
+api.route("POST", "#{P}/inbox/3/shape") { |r| [201, { "slug" => "my-slug", "title" => "My slug", "status" => "ready" }] }
 with_project(api.url) do |root|
   out = store!("inbox_assist", "make login faster", env: ENV_OK, chdir: root)
   raise "inbox_assist: #{out.inspect}" unless out["text"] == "make login faster"
   md = "---\ntitle: My slug\nslug: my-slug\nstatus: ready\n---\n\n# My slug\n"
-  run_store("inbox_shape", "3", env: ENV_OK, stdin: md, chdir: root)
+  out = store!("inbox_shape", "3", env: ENV_OK, stdin: md, chdir: root)
+  raise "inbox_shape should unwrap the app's object to a slug string: #{out.inspect}" unless out == "my-slug"
   req = api.requests.last
   raise "inbox_shape body/type: #{req.inspect}" unless req[:body] == md && req[:headers]["content-type"].start_with?("text/markdown")
 end
 
-# 8. spec_read returns the markdown body as a JSON string; spec_create posts markdown
+# 8. spec_read returns the markdown body as a JSON string; spec_create posts markdown and
+#    unwraps the app's full created-spec object down to its slug
 api.route("GET", "#{P}/specs/my-slug.md") { [200, "---\nslug: my-slug\n---\n\n# My slug\n"] }
-api.route("POST", "#{P}/specs") { |r| [201, "my-slug"] }
+api.route("POST", "#{P}/specs") { |r| [201, { "slug" => "my-slug", "title" => "X", "status" => "ready" }] }
 with_project(api.url) do |root|
   out = store!("spec_read", "my-slug", env: ENV_OK, chdir: root)
   raise "spec_read: #{out.inspect}" unless out.start_with?("---\nslug: my-slug")
   out = store!("spec_create", "my-slug", env: ENV_OK, stdin: "---\nslug: my-slug\n---\n# x\n", chdir: root)
-  raise "spec_create: #{out.inspect}" unless out == "my-slug"
+  raise "spec_create should unwrap the app's object to a slug string: #{out.inspect}" unless out == "my-slug"
   raise "spec_create content-type" unless api.requests.last[:headers]["content-type"].start_with?("text/markdown")
 end
 
@@ -163,14 +187,22 @@ with_project(api.url) do |root|
   raise "outcome_rank" unless store!("outcome_rank", "o2", "o1", env: ENV_OK, chdir: root) == %w[o2 o1]
 end
 
-# 11. claim posts identity/label/wip/slug and prints only the result string (slug or code)
+# 11. claim posts identity/label[/wip]/slug and prints only the result string (slug or code);
+#     wip is included only when the third positional was actually given — omitted means "let
+#     the project's own wip_limit apply", an explicit 0 is sent through as "unlimited"
 api.route("POST", "#{P}/specs/claim") { |r| b = JSON.parse(r[:body]); [200, { "result" => (b["slug"] || "WIP_FULL"), "run_id" => 42 }] }
 with_project(api.url) do |root|
   raise "claim slug" unless store!("claim", "runner-1", "my label", "2", "--spec", "a", env: ENV_OK, chdir: root) == "a"
   body = JSON.parse(api.requests.last[:body])
-  raise "claim body: #{body.inspect}" unless body == { "identity" => "runner-1", "label" => "my label", "wip" => 2, "slug" => "a" }
-  raise "claim code" unless store!("claim", "runner-1", "", "1", env: ENV_OK, chdir: root) == "WIP_FULL"
-  raise "claim omits slug when absent" if JSON.parse(api.requests.last[:body]).key?("slug")
+  raise "claim body wip=2: #{body.inspect}" unless body == { "identity" => "runner-1", "label" => "my label", "wip" => 2, "slug" => "a" }
+
+  store!("claim", "runner-1", "", "0", env: ENV_OK, chdir: root)
+  body = JSON.parse(api.requests.last[:body])
+  raise "claim body explicit wip=0 (unlimited): #{body.inspect}" unless body == { "identity" => "runner-1", "label" => "", "wip" => 0 }
+
+  raise "claim code" unless store!("claim", "runner-1", "", env: ENV_OK, chdir: root) == "WIP_FULL"
+  body = JSON.parse(api.requests.last[:body])
+  raise "claim omits wip and slug when neither given: #{body.inspect}" unless body == { "identity" => "runner-1", "label" => "" }
 end
 
 # 12. release/ship/abandon (with --reason and optional --cascade)
@@ -207,33 +239,35 @@ with_project(api.url) do |root|
   raise "flow one" unless store!("flow", "a", env: ENV_OK, chdir: root)["cycle_seconds"] == 10
 end
 
-# 15. outcomes: list/read/create/write/achieve/abandon
+# 15. outcomes: list/read/create/write/achieve/abandon; outcome_create unwraps the app's
+#     full created-outcome object down to its slug
 api.route("GET", "#{P}/outcomes") { |r| [200, [{ "slug" => "o1", "status" => "open", "q" => r[:query] }]] }
 api.route("GET", "#{P}/outcomes/o1.md") { [200, "---\nslug: o1\n---\n\n# O1\n"] }
-api.route("POST", "#{P}/outcomes") { [201, "o1"] }
+api.route("POST", "#{P}/outcomes") { [201, { "slug" => "o1", "title" => "O1", "status" => "open" }] }
 api.route("PATCH", "#{P}/outcomes/o1") { |r| [200, JSON.parse(r[:body])] }
 api.route("POST", "#{P}/outcomes/o1/achieve") { [200, "o1"] }
 api.route("POST", "#{P}/outcomes/o1/abandon") { |r| [200, JSON.parse(r[:body])] }
 with_project(api.url) do |root|
   raise "outcome_list" unless store!("outcome_list", "--status", "open", env: ENV_OK, chdir: root)[0]["q"] == "status=open"
   raise "outcome_read" unless store!("outcome_read", "o1", env: ENV_OK, chdir: root).start_with?("---\nslug: o1")
-  raise "outcome_create" unless store!("outcome_create", "o1", env: ENV_OK, stdin: "---\nslug: o1\n---\n", chdir: root) == "o1"
+  raise "outcome_create should unwrap the app's object to a slug string" unless store!("outcome_create", "o1", env: ENV_OK, stdin: "---\nslug: o1\n---\n", chdir: root) == "o1"
   raise "outcome_write" unless store!("outcome_write", "o1", "--set", "rank=2", env: ENV_OK, chdir: root) == { "rank" => "2" }
   raise "outcome_achieve" unless store!("outcome_achieve", "o1", env: ENV_OK, chdir: root) == "o1"
   raise "outcome_abandon" unless store!("outcome_abandon", "o1", "--reason", "stop rule fired", env: ENV_OK, chdir: root) == { "reason" => "stop rule fired" }
 end
 
-# 16. run resolution: run_event with no active run creates one, then posts the event;
-#     checkpoint_open resolves the run by (spec, runner) and posts the ask from stdin
+# 16. run resolution: run_event with no active run creates one, then posts the event and
+#     unwraps the app's full run object down to last_event_at; checkpoint_open resolves the
+#     run by (spec, runner) and posts the ask from stdin
 runs = []
 api.route("GET", "#{P}/runs") { |r| q = r[:query]; [200, runs.select { |x| (!q.include?("spec=") || q.include?("spec=#{x['spec']}")) && (!q.include?("status=active") || x["status"] == "active") }] }
 api.route("POST", "#{P}/runs") { |r| b = JSON.parse(r[:body]); run = { "id" => runs.size + 1, "spec" => b["spec"], "runner_id" => b["runner_id"], "session_id" => b["session_id"], "status" => "active", "started_at" => "2026-09-21T00:00:00Z" }; runs << run; [201, run] }
-api.route("POST", "#{P}/runs/1/events") { |r| [201, "2026-09-21T00:00:01Z"] }
+api.route("POST", "#{P}/runs/1/events") { |r| [201, { "id" => 1, "spec" => "a", "status" => "active", "last_event_at" => "2026-09-21T00:00:01Z" }] }
 api.route("POST", "#{P}/runs/1/checkpoints") { |r| b = JSON.parse(r[:body]); [201, { "id" => 500, "seq" => 1, "ref" => "a #001 #{b['reason']}", "echo" => b }] }
 api.route("POST", "#{P}/runs/1/close") { |r| [200, true] }
 with_project(api.url) do |root|
   out = store!("run_event", "claimed", "--spec", "a", "--runner", "runner-1", "--detail", "hi", env: ENV_OK, chdir: root)
-  raise "run_event stamp: #{out.inspect}" unless out == "2026-09-21T00:00:01Z"
+  raise "run_event should unwrap the app's run object to last_event_at: #{out.inspect}" unless out == "2026-09-21T00:00:01Z"
   created = api.requests.find { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" }
   raise "run_event should create the run first" unless created && JSON.parse(created[:body]) == { "spec" => "a", "runner_id" => "runner-1", "session_id" => "sess-1" }
   ev = api.requests.last
@@ -286,6 +320,39 @@ with_project(api.url) do |root|
   raise "--store should warn but succeed: #{st.exitstatus} #{err}" unless st.success? && err.include?("obsolete") && JSON.parse(out).is_a?(Array)
   _o, err, st = run_store("frobnicate", env: ENV_OK, chdir: root)
   raise "unknown op: #{err}" unless st.exitstatus == 1 && err.include?("unknown op")
+end
+
+# 21. error paths: 401 exits 2, names AGENTILE_PROJECTS_TOKEN, never the token value;
+#     403/409 exit 1 with the app's detail on stderr; a non-JSON 5xx body (an HTML error
+#     page, say) exits 1 with stderr truncated to a sane length instead of dumped whole
+api.route("POST", "#{P}/inbox/401/drop") { [401, { "error" => "unauthorized", "detail" => "missing or invalid bearer token" }] }
+api.route("POST", "#{P}/inbox/403/drop") { [403, { "error" => "forbidden", "detail" => "not a member of this project" }] }
+api.route("POST", "#{P}/inbox/409/drop") { [409, { "error" => "conflict", "detail" => "already dropped" }] }
+api.route("POST", "#{P}/inbox/555/drop") { [500, "<html><body>#{'Internal Server Error. ' * 30}</body></html>"] }
+with_project(api.url) do |root|
+  _o, err, st = run_store("inbox_drop", "401", env: ENV_OK, chdir: root)
+  raise "401 should exit 2, name the token env var, never the token value: #{st.exitstatus} #{err}" \
+    unless st.exitstatus == 2 && err.include?("AGENTILE_PROJECTS_TOKEN") && !err.include?("tok_test")
+
+  _o, err, st = run_store("inbox_drop", "403", env: ENV_OK, chdir: root)
+  raise "403 should exit 1 with the detail on stderr: #{st.exitstatus} #{err}" unless st.exitstatus == 1 && err.include?("not a member of this project")
+
+  _o, err, st = run_store("inbox_drop", "409", env: ENV_OK, chdir: root)
+  raise "409 should exit 1 with the detail on stderr: #{st.exitstatus} #{err}" unless st.exitstatus == 1 && err.include?("already dropped")
+
+  _o, err, st = run_store("inbox_drop", "555", env: ENV_OK, chdir: root)
+  raise "non-JSON 5xx should exit 1 with a truncated stderr message: #{st.exitstatus} #{err.length}" unless st.exitstatus == 1 && err.length < 400
+end
+
+# 22. path segments (project, slugs, ids) are URL-encoded — a project slug with a space
+#     must reach the fake API already percent-encoded in the request path
+api.route("GET", "/api/v1/projects/p%202/inbox") { [200, []] }
+Dir.mktmpdir do |root|
+  FileUtils.mkdir_p(File.join(root, ".agentile"))
+  File.write(File.join(root, ".agentile", "store.md"), "---\nurl: #{api.url}\nproject: p 2\n---\n")
+  FileUtils.mkdir_p(File.join(root, "docs", "agentile"))
+  out = store!("inbox_list", env: ENV_OK, chdir: root)
+  raise "project slug should be url-encoded in the request path" unless out == []
 end
 
 api.close

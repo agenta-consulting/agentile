@@ -24,27 +24,37 @@
 #     {title, text, kind, serves_outcome_slug, duplicate_of, duplicate_of_type,
 #      duplicate_probability, judgment_id} — saves nothing
 #   inbox_shape <id>            (markdown on stdin)  create the spec, mark the stub shaped
+#                                                  -> slug string (the app's full spec object, unwrapped)
 #   spec_list [--status s] [--pool active|done|abandoned]
 #   spec_read <slug>                              canonical markdown
-#   spec_create <slug>          (markdown on stdin)
+#   spec_create <slug>          (markdown on stdin)          -> slug string (unwrapped, as above)
 #   spec_write <slug> --set k=v [--set k=v ...]   list fields accept "[a, b]"
 #     (the app rejects status/rank here — 422 — they are set via their own endpoints)
 #   rank <slug> [<slug>...]                       ready specs only, dense ranks in this order
 #   claim <identity> [label] [wip] [--spec <slug>]   slug, or WIP_FULL|BLOCKED|UNPRIORITISED|NONE|NOT_FOUND|TAKEN
+#     (wip omitted -> the project's own wip_limit applies; wip 0 -> unlimited, sent explicitly)
 #   release <slug> | ship <slug> | abandon <slug> --reason "<text>" [--cascade "[a, b]"]
 #   promote <slug> --dir <dir>                    ensures <dir>/specs/<slug>/ exists; prints it
 #   deps <slug> | dependents <slug>
 #   map | flow [<slug>]
-#   outcome_list [--status s] | outcome_read <slug> | outcome_create <slug> (stdin) | outcome_write <slug> --set k=v
+#   outcome_list [--status s] | outcome_read <slug> | outcome_write <slug> --set k=v
+#   outcome_create <slug>       (markdown on stdin)          -> slug string (unwrapped, as above)
 #   outcome_rank <slug>... | outcome_achieve <slug> | outcome_abandon <slug> --reason "<text>"
 #   checkpoint_open <slug> <reason> --session <id> --by <who>   (ask on stdin) -> checkpoint id
 #   checkpoint_list <slug> | checkpoint_open_count <slug>
 #   checkpoint_answer <id> --by <who>             (answer on stdin)
-#   run_event <event> --spec <slug> --runner <id> [--detail "<text>"]   -> ISO8601 stamp
+#   run_event <event> --spec <slug> --runner <id> [--detail "<text>"]
+#                                                  -> ISO8601 stamp (the run's last_event_at, unwrapped)
 #   run_list [--spec <slug>] [--status active|closed]
 #   run_close --spec <slug> --runner <id> [--detail "<text>"]
 #   brief_sync --dir <dir>                        writes <dir>/brief.md from the store; prints the path
 #   whoami | doctor
+#
+# The app's create/event endpoints return the full resource (spec/outcome/run)
+# object, not the bare string the CLI prints; ag-store unwraps `slug` (create
+# ops) or `last_event_at` (run_event) client-side so every skill's documented
+# "-> slug string" / "-> ISO8601 stamp" contract holds regardless of how much
+# detail the app's JSON response carries.
 #
 # Runs belong to a spec. checkpoint_open, run_event and run_close resolve the
 # run themselves: the active run for <spec> whose runner_id is the identity
@@ -56,6 +66,7 @@ require "json"
 require "yaml"
 require "net/http"
 require "uri"
+require "erb"
 require "fileutils"
 
 module AgStore
@@ -109,6 +120,11 @@ module AgStore
     [rest, sets]
   end
 
+  # Percent-encode one path segment (a slug, an id, the project). Never call
+  # this on a whole path — only on the interpolated piece — so literal
+  # separators ("/", and a trailing ".md") stay untouched.
+  def self.enc(segment) = ERB::Util.url_encode(segment.to_s)
+
   # "[a, b]" -> ["a", "b"]; "[]" -> []; anything else unchanged.
   def self.coerce_list(key, val)
     return val unless LIST_FIELDS.include?(key) && val.is_a?(String)
@@ -160,7 +176,7 @@ module AgStore
     def put(path, body)          = request(:put, path, body: body)
     def post_markdown(path, md)  = request(:post, path, body: md, content_type: "text/markdown")
 
-    def project_path(rest) = "/projects/#{@config.project}#{rest}"
+    def project_path(rest) = "/projects/#{AgStore.enc(@config.project)}#{rest}"
 
     private
 
@@ -189,9 +205,16 @@ module AgStore
       json = json.strip if json.is_a?(String) && !res["content-type"].to_s.include?("markdown")
       return json if res.is_a?(Net::HTTPSuccess)
 
-      detail = json.is_a?(Hash) ? (json["detail"] || json["error"] || text) : text
+      detail = truncate(json.is_a?(Hash) ? (json["detail"] || json["error"] || text) : text)
       raise ConfigError, "#{res.code} #{detail} — check AGENTILE_PROJECTS_TOKEN" if res.code == "401"
       raise Error, "#{res.code} #{detail}"
+    end
+
+    # A non-JSON error body (an HTML 500 page, a proxy's plaintext error, …)
+    # can be arbitrarily large; keep stderr readable instead of dumping it whole.
+    def truncate(text, max = 300)
+      text = text.to_s
+      text.length > max ? "#{text[0, max]}…" : text
     end
   end
 
@@ -231,68 +254,82 @@ module AgStore
       when "inbox_add"
         @api.post(p["/inbox"], { text: positional[0].to_s, title: flags["title"], kind: flags["type"], serves: flags["serves"] }.compact)
         true
-      when "inbox_drop" then @api.post(p["/inbox/#{positional[0]}/drop"]); true
+      when "inbox_drop" then @api.post(p["/inbox/#{AgStore.enc(positional[0])}/drop"]); true
       when "inbox_assist" then @api.post(p["/inbox/assist"], { text: positional[0].to_s })
-      when "inbox_shape" then @api.post_markdown(p["/inbox/#{positional[0]}/shape"], $stdin.read)
+      when "inbox_shape"
+        res = @api.post_markdown(p["/inbox/#{AgStore.enc(positional[0])}/shape"], $stdin.read)
+        res.is_a?(Hash) ? res["slug"] : res
       when "spec_list" then @api.get(p["/specs"], status: flags["status"], pool: flags["pool"] || "active")
-      when "spec_read" then @api.get(p["/specs/#{positional[0]}.md"])
-      when "spec_create" then @api.post_markdown(p["/specs"], $stdin.read)
-      when "spec_write" then @api.patch(p["/specs/#{positional[0]}"], sets.to_h { |k, v| [k, AgStore.coerce_list(k, v)] })
+      when "spec_read" then @api.get(p["/specs/#{AgStore.enc(positional[0])}.md"])
+      when "spec_create"
+        res = @api.post_markdown(p["/specs"], $stdin.read)
+        res.is_a?(Hash) ? res["slug"] : res
+      when "spec_write" then @api.patch(p["/specs/#{AgStore.enc(positional[0])}"], sets.to_h { |k, v| [k, AgStore.coerce_list(k, v)] })
       when "rank" then @api.put(p["/specs/rank"], { slugs: positional })
       when "claim"
-        body = { identity: positional[0].to_s, label: positional[1].to_s, wip: positional[2].to_i }
+        body = { identity: positional[0].to_s, label: positional[1].to_s }
+        unless positional[2].nil?
+          begin
+            body[:wip] = Integer(positional[2])
+          rescue ArgumentError, TypeError
+            raise Error, "claim: invalid wip #{positional[2].inspect} (must be an integer)"
+          end
+        end
         body[:slug] = flags["spec"] if flags["spec"]
         res = @api.post(p["/specs/claim"], body)
         res.is_a?(Hash) ? res["result"] : res
-      when "release" then @api.post(p["/specs/#{positional[0]}/release"])
-      when "ship" then @api.post(p["/specs/#{positional[0]}/ship"])
+      when "release" then @api.post(p["/specs/#{AgStore.enc(positional[0])}/release"])
+      when "ship" then @api.post(p["/specs/#{AgStore.enc(positional[0])}/ship"])
       when "abandon"
         body = { reason: flags["reason"].to_s }
         body[:cascade] = AgStore.coerce_list("cascade", flags["cascade"]) if flags["cascade"]
-        @api.post(p["/specs/#{positional[0]}/abandon"], body)
+        @api.post(p["/specs/#{AgStore.enc(positional[0])}/abandon"], body)
       when "promote"
         path = File.join(@c.dir, "specs", positional[0].to_s)
         FileUtils.mkdir_p(path)
         path
-      when "deps" then @api.get(p["/specs/#{positional[0]}/deps"])
-      when "dependents" then @api.get(p["/specs/#{positional[0]}/dependents"])
+      when "deps" then @api.get(p["/specs/#{AgStore.enc(positional[0])}/deps"])
+      when "dependents" then @api.get(p["/specs/#{AgStore.enc(positional[0])}/dependents"])
       when "map" then @api.get(p["/map"])
-      when "flow" then positional[0].to_s.empty? ? @api.get(p["/flow"]) : @api.get(p["/flow/#{positional[0]}"])
+      when "flow" then positional[0].to_s.empty? ? @api.get(p["/flow"]) : @api.get(p["/flow/#{AgStore.enc(positional[0])}"])
       when "outcome_list" then @api.get(p["/outcomes"], status: flags["status"])
-      when "outcome_read" then @api.get(p["/outcomes/#{positional[0]}.md"])
-      when "outcome_create" then @api.post_markdown(p["/outcomes"], $stdin.read)
-      when "outcome_write" then @api.patch(p["/outcomes/#{positional[0]}"], sets.to_h { |k, v| [k, AgStore.coerce_list(k, v)] })
+      when "outcome_read" then @api.get(p["/outcomes/#{AgStore.enc(positional[0])}.md"])
+      when "outcome_create"
+        res = @api.post_markdown(p["/outcomes"], $stdin.read)
+        res.is_a?(Hash) ? res["slug"] : res
+      when "outcome_write" then @api.patch(p["/outcomes/#{AgStore.enc(positional[0])}"], sets.to_h { |k, v| [k, AgStore.coerce_list(k, v)] })
       when "outcome_rank" then @api.put(p["/outcomes/rank"], { slugs: positional })
-      when "outcome_achieve" then @api.post(p["/outcomes/#{positional[0]}/achieve"])
-      when "outcome_abandon" then @api.post(p["/outcomes/#{positional[0]}/abandon"], { reason: flags["reason"].to_s })
+      when "outcome_achieve" then @api.post(p["/outcomes/#{AgStore.enc(positional[0])}/achieve"])
+      when "outcome_abandon" then @api.post(p["/outcomes/#{AgStore.enc(positional[0])}/abandon"], { reason: flags["reason"].to_s })
       when "checkpoint_open"
         slug, reason = positional
         raise Error, "unknown checkpoint reason #{reason.inspect} (#{CHECKPOINT_REASONS.join('|')})" unless CHECKPOINT_REASONS.include?(reason.to_s)
 
         session = flags["session"].to_s.empty? ? ENV["CLAUDE_SESSION_ID"].to_s : flags["session"].to_s
         run = ensure_run(slug, identity, session)
-        res = @api.post(p["/runs/#{run['id']}/checkpoints"],
+        res = @api.post(p["/runs/#{AgStore.enc(run['id'])}/checkpoints"],
                         { reason: reason, asked_by: flags["by"].to_s, session_id: session, ask: $stdin.read.to_s.strip })
         res.is_a?(Hash) ? res["id"] : res
-      when "checkpoint_list" then @api.get(p["/specs/#{positional[0]}/checkpoints"])
+      when "checkpoint_list" then @api.get(p["/specs/#{AgStore.enc(positional[0])}/checkpoints"])
       when "checkpoint_open_count"
-        Array(@api.get(p["/specs/#{positional[0]}/checkpoints"])).count { |c| c["status"].to_s != "answered" }
+        Array(@api.get(p["/specs/#{AgStore.enc(positional[0])}/checkpoints"])).count { |c| c["status"].to_s != "answered" }
       when "checkpoint_answer"
-        @api.post(p["/checkpoints/#{positional[0]}/answer"], { answer: $stdin.read.to_s.strip, by: flags["by"].to_s })
+        @api.post(p["/checkpoints/#{AgStore.enc(positional[0])}/answer"], { answer: $stdin.read.to_s.strip, by: flags["by"].to_s })
       when "run_event"
         event = positional[0].to_s
         raise Error, "unknown run event #{event.inspect} (#{RUN_EVENTS.join('|')})" unless RUN_EVENTS.include?(event)
 
         slug = require_spec!(flags, "run_event")
         run = ensure_run(slug, identity(flags["runner"]), ENV["CLAUDE_SESSION_ID"].to_s)
-        @api.post(p["/runs/#{run['id']}/events"], { event: event, detail: flags["detail"].to_s })
+        res = @api.post(p["/runs/#{AgStore.enc(run['id'])}/events"], { event: event, detail: flags["detail"].to_s })
+        res.is_a?(Hash) ? res["last_event_at"] : res
       when "run_list" then @api.get(p["/runs"], spec: flags["spec"], status: flags["status"])
       when "run_close"
         slug = require_spec!(flags, "run_close")
         run = active_run_for(slug, identity(flags["runner"]))
         raise Error, "no active run for #{slug} — nothing to close" unless run
 
-        @api.post(p["/runs/#{run['id']}/close"], { detail: (flags["detail"].to_s.empty? ? "run closed" : flags["detail"].to_s) })
+        @api.post(p["/runs/#{AgStore.enc(run['id'])}/close"], { detail: (flags["detail"].to_s.empty? ? "run closed" : flags["detail"].to_s) })
       when "brief_sync"
         md = @api.get(p["/brief"])
         path = File.join(@c.dir, "brief.md")
