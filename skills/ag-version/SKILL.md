@@ -49,13 +49,17 @@ source but is not in the snapshot does not apply to the current session.
    `git log -1 --format=%h\ %s`, and note whether its HEAD sha differs from
    the installed `version` sha.
 
-4. Check for retired configuration in the current project: if `.agentile/loop.md`
-   exists, the project predates 0.13.0. Its keys moved: `pause_at_plan` →
-   `human_checkpoint` on `.agentile/plan.md`, `pause_before_ship` →
-   `human_checkpoint` on `.agentile/ship.md`, `verify_retry_limit` and
-   `stop_on_gate_failure` → `.agentile/verify.md`; `max_iterations`, `on_empty`
-   and `watch` have no replacement (scheduling belongs to the factory). Add a
-   fourth line to the report when this applies.
+4. Check for retired configuration in the current project:
+   - If `.agentile/loop.md` exists, the project predates 0.13.0. Its keys moved:
+     `pause_at_plan` → `human_checkpoint` on `.agentile/plan.md`,
+     `pause_before_ship` → `human_checkpoint` on `.agentile/ship.md`,
+     `verify_retry_limit` and `stop_on_gate_failure` → `.agentile/verify.md`;
+     `max_iterations`, `on_empty` and `watch` have no replacement (scheduling
+     belongs to the factory).
+   - If `.agentile/store.md` has a `store:` key (`local` or `airtable`) instead
+     of `url:` and `project:`, the project predates 0.20.0, when Agentile
+     Projects became the only store. Run `/ag-init` to link it.
+   Add a fourth line to the report for each that applies.
 
 5. Report in three short lines (four with the retired-config warning), and
    nothing else:
@@ -65,6 +69,7 @@ source but is not in the snapshot does not apply to the current session.
    installed: <sha> · <lastUpdated date> · <dev-linked | snapshot>
    source:    <version> @ <sha> — <in sync | AHEAD: run `claude plugin update agentile@agentile` and restart>
    retired:   .agentile/loop.md is no longer read — move its keys to plan.md / ship.md / verify.md and delete it
+   store:     .agentile/store.md still selects a local/airtable store — run /ag-init to link this project to Agentile Projects
    ```
 
    Drop the `source:` line entirely if the source repo is not on this machine.
