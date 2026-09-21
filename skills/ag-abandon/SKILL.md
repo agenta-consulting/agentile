@@ -9,44 +9,40 @@ arguments: [slug]
 # ag-abandon
 
 Abandoning is the deliberate counterpart to shipping: a spec that failed review, lost its
-rationale, or simply isn't worth doing moves out of the active queue into
-`specs/abandoned/`, with the reason recorded. Because specs can depend on each other,
-abandoning one can strand its dependents — so this skill **walks the dependency chain** and
-lets you cascade the abandonment, capturing why each downstream spec was dropped.
+rationale, or simply isn't worth doing becomes `abandoned` in the store, with the reason
+recorded. Because specs can depend on each other, abandoning one can strand its
+dependents — so this skill **walks the dependency chain** and lets you cascade the
+abandonment, capturing why each downstream spec was dropped.
 
-**You do not write or revert any code in this skill.** You only move specs and edit their
-frontmatter. Shipping/merging is out of scope; this is purely backlog hygiene.
+**You do not write or revert any code in this skill.** You only change spec status and
+dependencies in the store. Shipping/merging is out of scope; this is purely backlog
+hygiene.
 
-## Step 1 — Resolve paths
+## Step 1 — Resolve the store
 
-Read **Agentile directory** from `.agentile/config.md` under "## Paths" (default
-`docs/agentile/`). If the project still uses the old `Specs directory:` key or a
-root-level `specs/` with no `Agentile directory` key, honour that path and note that
-`/ag-init` can migrate the layout. Resolve which store answers this project: read
-`store:` from `.agentile/store.md` if it exists, default `local`.
+Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — it refreshes `<dir>/brief.md` from the store; exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Every `ag-store` call below is the bare command with the same fallback; none takes `--store`.
 
 ## Step 2 — Identify the target spec
 
 The target may be named as `$slug` (or in `$ARGUMENTS`) (a slug, or text matching a title). If it is not,
-or is ambiguous, run `ag-store spec_list --dir "<dir>" --store "<store>"`, filter to `status: ready` or
+or is ambiguous, run `ag-store spec_list`, filter to `status: ready` or
 `in_progress`, and ask which one to abandon.
 
 If the target is `in_progress`, note who holds it (`claimed_by`) — abandoning will clear
 that claim. If it is owned by another active session, surface that so the user is aware
 before proceeding.
 
-If the target is an **Outcome** (its slug appears in `ag-store outcome_list ...` and not in
+If the target is an **Outcome** (its slug appears in `ag-store outcome_list` and not in
 `spec_list`), the cascade candidates are the specs serving it — every `ready`/`in_progress`
-slug under that Outcome in `ag-store map ...` — plus *their* dependents from Step 3. Run
+slug under that Outcome in `ag-store map` — plus *their* dependents from Step 3. Run
 Steps 4–6 for each of those specs as usual, then close the Outcome itself with
-`ag-store outcome_abandon <slug> --reason "<reason>" --dir "<dir>" --store "<store>"` and
-`ag-store brief_sync ...`. Shipped specs are untouched — the work happened; the bet is what
-is being closed.
+`ag-store outcome_abandon <slug> --reason "<reason>"`. Shipped specs are untouched — the
+work happened; the bet is what is being closed.
 
 ## Step 3 — Find the dependent chain
 
 ```
-ag-store dependents "<target-slug>" --dir "<dir>" --store "<store>"
+ag-store dependents "<target-slug>"
 ```
 
 (bare command `ag-store`, ships in this plugin's `bin/`, on your PATH while the plugin
@@ -71,25 +67,22 @@ defaulting to your recommendation). The user chooses per dependent.
 For every dependent the user chooses to **keep active**: warn that it will become `BLOCKED`
 (its dependency is now abandoned, not shipped, so the claim tooling will not pick it up), and
 **offer to strip** the abandoned slug from that spec's `depends_on`. If the user accepts,
-run `ag-store spec_write <dependent-slug> --set depends_on="[<remaining slugs>]" --dir "<dir>" --store "<store>"`
+run `ag-store spec_write <dependent-slug> --set depends_on="[<remaining slugs>]"`
 with the abandoned slug removed from the list; if not, leave it (it stays BLOCKED until
 they fix it). Apply this per dependent.
 
 ## Step 6 — Apply the abandonment
 
-For each spec being abandoned — the target plus every dependent the user chose to cascade —
-run:
+Run one call for the target, listing every dependent the user chose to cascade:
 
 ```
-ag-store abandon "<slug>" --reason "<reason>" --dir "<dir>" --store "<store>"
+ag-store abandon "<slug>" --reason "<reason>" [--cascade "[<dependent-slug>, ...]"]
 ```
 
-using the user's Step 4 reason for the target, and for each cascaded dependent an
-automatic reason referencing it: `Abandoned as a consequence of abandoning <target-slug>:
-<target-reason>`. `ag-store abandon` sets `status: abandoned`, stamps `abandoned_at`,
-records the reason, clears the claim fields, and moves the spec into `<dir>/specs/abandoned/`
-(collision-safe, preserving its name as a record) — the order across the batch doesn't
-matter.
+using the user's Step 4 reason. The store sets `status: abandoned`, stamps
+`abandoned_at`, records the reason, clears the claim fields and closes any active run;
+each cascaded dependent gets the automatic reason `Abandoned as a consequence of
+abandoning <target-slug>: <target-reason>`.
 
 ## Step 7 — Report
 
@@ -99,5 +92,5 @@ Summarise:
 - Any dependents kept active, flagged as now-`BLOCKED`, and whether their `depends_on` link
   to the target was stripped.
 - A pointer to re-rank if needed: abandoning removes specs from the active queue, so the
-  remaining numbers may be sparse — suggest `/ag-prioritise` if the user wants them dense
+  remaining ranks may be sparse — suggest `/ag-prioritise` if the user wants them dense
   again.

@@ -40,15 +40,7 @@ checklist is configured (`/ag-customise deploy` writes one).
 
 ## Steps
 
-1. **Establish what would go out.** Read the run log (`<Agentile
-   directory>/runs.md`) for the most recent `event=deployed` line; every
-   `event=shipped` line after it is in this batch. If there is no
-   `event=deployed` line, say so — this is the first recorded deploy, so list
-   the shipped specs and let the user confirm the starting point rather than
-   claiming the whole history is undeployed.
-
-   Cross-check against the store (`ag-store spec_list --status shipped ...`) so
-   a spec shipped outside the loop is not silently missed.
+1. **Establish what would go out.** Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Read the deploy log `<dir>/deploys.md` (create it from `templates/agentile/deploys.md` if missing) for its last line; the batch is every spec in `ag-store spec_list --pool done` whose `shipped_at` is after that line's timestamp. If the log has no lines, say so — this is the first recorded deploy, so list the shipped specs and let the user confirm the starting point rather than claiming the whole history is undeployed.
 
 2. **Refuse to deploy something you cannot name.** Stop and report, rather than
    continuing, when:
@@ -88,15 +80,15 @@ checklist is configured (`/ag-customise deploy` writes one).
    deployed because the project has not configured a deploy command. Do not
    invent one, and do not substitute a build or a push you found in a Makefile.
 
-7. **Record it.** Append one line to `<Agentile directory>/runs.md`:
+7. **Record it.** Append one line to `<dir>/deploys.md`:
 
    ```
-   ts=<ISO8601> event=deployed runner=<identity> detail=<n> specs target=<target> ref=<git sha>
+   - <ISO8601> runner=<identity> target=<target> ref=<git sha> specs=<n> detail=<slugs, comma-separated>
    ```
 
    The sha is what makes this auditable: the next deploy's batch is computed
    from this line, and a rollback needs to know exactly what went out. Commit
-   `runs.md` as part of the deploy.
+   `deploys.md` as part of the deploy.
 
 8. **Report** what went out, the sha, and — if the project's specs name an
    `outcome` — the outcomes now worth watching. Shipping records that work
@@ -106,6 +98,6 @@ checklist is configured (`/ag-customise deploy` writes one).
 ## When something fails after deploy
 
 Do not improvise a fix forward. Report the failing signal, name the sha and the
-previous deployed sha from `runs.md`, and let the human choose between revert
-and roll forward. Record whichever happens as a new `event=deployed` line — the
+previous deployed sha from `deploys.md`, and let the human choose between revert
+and roll forward. Record whichever happens as a new line in `deploys.md` — the
 log is a history of what was live, not a list of successes.

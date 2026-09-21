@@ -28,11 +28,11 @@ If the file is absent, use the baseline below unchanged.
 
 ## Step 1 — Gather the window
 
-Default to the last 7 days (or a window the user names). First resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and which store answers this project (`store:` in `.agentile/store.md`, default `local`). Collect, read-only:
+Default to the last 7 days (or a window the user names). First Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — it refreshes `<dir>/brief.md` from the store; exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Every `ag-store` call below is the bare command with the same fallback; none takes `--store`. Collect, read-only:
 
 - `git log --since` with stats — commits, churn, which areas changed most.
 - Merge/PR history via `gh pr list --state merged` and `gh pr view` when the `gh` CLI is available; otherwise rely on git.
-- `ag-store spec_list --dir "<dir>" --store "<store>"` (active) and `ag-store spec_list --pool done --dir "<dir>" --store "<store>"` (shipped) — which specs shipped, which stalled, which became spikes. - `ag-store flow --dir "<dir>" --store "<store>"` — the flow numbers for every spec, already computed: `queue_wait_seconds` (created→claim), `cycle_seconds` (claim→ship), and the split of that cycle into `agent_seconds` and `human_wait_seconds`, with a per-checkpoint breakdown. Do not recompute these from timestamps by hand.
+- `ag-store spec_list` (active) and `ag-store spec_list --pool done` (shipped) — which specs shipped, which stalled, which became spikes. - `ag-store flow` — the flow numbers for every spec, already computed: `queue_wait_seconds` (created→claim), `cycle_seconds` (claim→ship), and the split of that cycle into `agent_seconds` and `human_wait_seconds`, with a per-checkpoint breakdown. Do not recompute these from timestamps by hand.
 - `docs/adr/` — decisions made in the window.
 
 Run heavy log/grep commands so only your summary lands in context, not raw output.
@@ -46,7 +46,7 @@ Answer, with evidence:
 - **What surprised us?** Incidents, reverts, or specs that ballooned past their scope boundary.
 - **Lead time** — is it dropping? If not, the constraint is upstream of coding; say so plainly.
 - **Did shipped work actually work?** For each spec shipped since the last retro, check its `outcome:` field — was the outcome observed? Unverified or unmet outcomes become new inbox stubs (`/ag-capture`), referencing the original slug.
-- **Are the bets still good?** For each open Outcome (`ag-store outcome_list --status open ...`) read its measure and stop rule against what shipped (`ag-store map ...`). Propose `achieved` where the evidence meets the measure, `abandoned` where the stop rule has fired, and say plainly where neither is yet decidable. A person confirms; you do not transition an Outcome on your own.
+- **Are the bets still good?** For each open Outcome (`ag-store outcome_list --status open`) read its measure and stop rule against what shipped (`ag-store map`). Propose `achieved` where the evidence meets the measure, `abandoned` where the stop rule has fired, and say plainly where neither is yet decidable. A person confirms; you do not transition an Outcome on your own.
 
 Measure **flow, not output** — do not report lines of code or "agent velocity".
 
@@ -57,8 +57,8 @@ For each lesson worth keeping, propose a concrete change (and make it on approva
 - A **`CLAUDE.md`** edit — a new convention, a do/don't, a clarified standard.
 - A new or updated **ADR** when the lesson is a decision.
 - A **`.agentile/shape.md`** addition when an item shipped wrong because shaping missed a question.
-- A **`brief.md`** update when the project's outcomes, constraints, or non-goals have shifted — keep the brief living rather than a launch document.
-- An **Outcome transition** on approval — `ag-store outcome_achieve <slug> ...`, or `/ag-abandon <slug>` (which cascades to the specs serving it) — followed by `ag-store brief_sync ...` so the brief's "Prioritised outcomes" list matches the store.
+- A **brief** update (in the app — `docs/agentile/brief.md` is a read-only copy) when the project's outcomes, constraints, or non-goals have shifted.
+- An **Outcome transition** on approval — `ag-store outcome_achieve <slug>`, or `/ag-abandon <slug>` (which cascades to the specs serving it).
 
 ## Step 4 — Report
 
