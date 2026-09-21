@@ -4,6 +4,50 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.20.0 — 2026-09-21
+
+- **Agentile Projects is the only backlog store.** The `local` (files + git)
+  and `airtable` adapters, `bin/ag-store-adapters/`, `bin/ag-claim`,
+  `bin/ag-checkpoint`, `bin/ag-dependents`, `templates/stores/`,
+  `templates/inbox.md` and `templates/agentile/runs.md` are gone.
+  `bin/ag-store` is now a single-file HTTP client over the app's
+  `/api/v1` with the same subcommands and JSON output; `.agentile/store.md`
+  holds `url` + `project`, `AGENTILE_PROJECTS_TOKEN` authenticates (and
+  attributes — no more `whoami`-by-git-email or `--by`). `--store` is
+  obsolete and ignored with a warning.
+- **Claim, rank and checkpoint sequencing are transactional, server-side.**
+  No `.pull.lock`, no `ag-lock` around the claim; `claim` opens the run;
+  `checkpoint_open`/`run_event`/`run_close` resolve the run from the spec
+  and your identity, so no skill handles a run id. Runs belong to a spec:
+  the spec-less `started`/`idle` events are gone (the `AG_BUILD:` line
+  still reports idle).
+- **New ops:** `inbox_assist` (tidy + classify a captured line — used by
+  `/ag-capture`, which now confirms once or saves with `--yes`) and
+  `inbox_shape` (create the spec, retire the stub and record provenance in
+  one call — used by `/ag-shape`). `abandon` takes `--cascade`.
+- **The brief lives in the app.** `docs/agentile/brief.md` is a read-only
+  copy that every `/ag-*` skill refreshes with `ag-store brief_sync`;
+  `/ag-outcome`, `/ag-prioritise` no longer sync it by hand.
+- **`/ag-init` links a repo to its project** (token check, project pick,
+  `doctor`) instead of asking Solo/Team; no `inbox.md`, `runs.md`,
+  `specs/done|abandoned`, `outcomes/` or legacy-layout migration. The
+  specs tree is just `docs/agentile/specs/<slug>/` for plans and snapshots.
+- **`/ag-deploy` records deploys in `docs/agentile/deploys.md`** (new
+  template) instead of `runs.md`; the batch is every shipped spec after the
+  last line's timestamp.
+- `/ag-version` flags a pre-0.20 `store.md`. README, methodology and the
+  standing-context template describe the single store; the workspaces/stores
+  and factory design docs carry status notes.
+
+**Upgrading from 0.19:** create an API token in Agentile Projects (Settings),
+export it as `AGENTILE_PROJECTS_TOKEN`, and run `/ag-init` in each checkout
+you want linked — it asks which project this repo is and writes
+`.agentile/store.md`. If your backlog was in an Airtable base, import it into
+a new Agentile Projects project with `bin/rails
+"agentile:import[base,slug,owner@email]"` in the app; see the app's README
+for the full import walkthrough. `local`/files-based backlogs have no
+importer — shape or re-capture what's still open.
+
 ## 0.19.0 — 2026-09-18
 
 - **`/ag-build`'s ship-approval step requires visual evidence for visual

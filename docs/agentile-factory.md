@@ -209,6 +209,8 @@ When a `ship_approval` or `verify_checkpoint` checkpoint opens on a project with
 
 ## 7. The console
 
+> **Status (0.20.0):** the console pages described here are absorbed by Agentile Projects' dashboards (home and per-project attention/in-progress/up-next). The daemon keeps spawning workers; its checkpoints and runs are the store's records (`ag-store checkpoint_open`/`run_event`), and a checkpoint answered on the dashboard is what resumes a worker.
+
 Four pages. All of them re-render on push: every daemon write to `workers`, `checkpoints`, `projects` and `events` broadcasts through `DaisyStack::Push` after commit, the RaceBox pattern, and the grids and cards declare `rerender_on:`.
 
 - **Floor** is the landing page, grouped by project. One card per project: a status line (On, 2 of 2 running, 1 waiting on you; or Off; or Idle: nothing prioritised), then its live workers (spec, model, elapsed, turns, tokens, last tool call), then its open attention items. A worker row opens the worker page; an attention row opens the item page.
@@ -233,6 +235,8 @@ The console runs on the factory machine and is reached over the LAN or Tailscale
 - Review credentials come from the environment through the console; the model never sees or writes them.
 
 ## 9. Data model
+
+> **Status (0.20.0):** `checkpoints` and the run state live in Agentile Projects (`runs`, `run_events`, `checkpoints`); the daemon's local tables become a cache of process state (pid, pipes) only.
 
 - **projects**: name, path, on, drain, rank, workers_cap, default_model, route_models (json), permission_mode, allowed_tools (json), review (json, mirrored from gates.json at registration and refreshed each poll), last_claim_result, last_polled_at.
 - **workers**: project_id, spec_slug, spec_rank, runner_id, session_id, model, worktree_path, branch, pid, status (`running`, `paused`, `handed_over`, `shipped`, `failed`, `crashed`, `stopped`), started_at, ended_at, paused_at, turns, input_tokens, output_tokens, cost_reported, exit_status, last_line.

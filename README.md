@@ -12,34 +12,30 @@
 capture → shape → spec → (prioritise → next) → plan → build → verify → ship → [deploy] → learn
 ```
 
-- **capture** — `/ag-capture <idea>` drops a one-line stub in `docs/agentile/inbox.md`. Instant, mid-build safe.
+- **capture** — `/ag-capture <idea>` drops a one-line stub in the project's Inbox in Agentile Projects, tidied and classified by the store; one confirmation (or `--yes`). Mid-build safe.
 - **shape** — `/ag-shape` interviews a stub into a Ready spec, against your project's Definition of Ready.
-- **spec** — shaped specs land in `docs/agentile/specs/`. `/ag-spec` writes one directly for trivial work.
-- **plan** — `/ag-plan` promotes the spec to its directory form and writes `plan.md` beside `SPEC.md`: files to touch, approach, test strategy, risks. The plan is a file you review and amend, not a chat message.
+- **spec** — shaped specs are records in the store, ranked by a field. `/ag-spec` writes one directly for trivial work.
+- **plan** — `/ag-plan` creates the spec's directory in the repo and writes `plan.md` beside a read-only `SPEC.md` snapshot: files to touch, approach, test strategy, risks. The plan is a file you review and amend, not a chat message.
 - **build** — the `ag-builder` agent implements on a branch/worktree, running your gates.
 - **verify** — the `ag-reviewer` agent critiques the diff with fresh context; gates + `/security-review` + a human read.
-- **ship** — small, flagged, reversible merges to trunk. The spec keeps its claim timestamps and gains `shipped_at`, then moves — directory and all — to `specs/done/`.
+- **ship** — small, flagged, reversible merges to trunk. The spec keeps its claim timestamps and gains `shipped_at`, and its run closes.
 - **deploy** — `/ag-deploy` releases the batch of specs shipped since the last deploy, running the project's pre-deploy checklist (`.agentile/deploy.md`) and then the `deploy` gate. In brackets because it is **not part of the per-spec loop**: `/ag-build` never calls it, since a deploy batches many ships and runs on its own cadence.
 - **learn** — `/ag-retro` compiles a flow digest and encodes lessons into `CLAUDE.md` and ADRs.
 
 `prioritise` and `next` are the queue segment between a Ready spec and the work starting — ordering is editorial and human, pulling is transactional and atomic. They are stages like any other (each has a playbook), shown in brackets because they manage the queue rather than transform the work.
 
-The whole backlog lives under one configurable **Agentile directory** (`docs/agentile/` by default, set in `.agentile/config.md`), with a fixed internal layout:
+The backlog lives in **Agentile Projects** (`.agentile/store.md` links a repo to its project; see "Stores" below). What stays in the repo, under one configurable **Agentile directory** (`docs/agentile/` by default, set in `.agentile/config.md`), is the code-adjacent material:
 
 ```
 docs/agentile/
-  inbox.md                 # captured stubs awaiting shaping
-  specs/                   # active specs (ready / in_progress)
-    0001-<slug>.md         # flat form — shaped, not yet planned
-    0002-<slug>/           # directory form — created when planning starts
-      SPEC.md              #   the spec (frontmatter + body)
+  brief.md                 # read-only copy of the store's brief, refreshed by every /ag-* skill
+  specs/
+    <slug>/                # created when planning starts
+      SPEC.md              #   read-only snapshot of the spec (frontmatter + body)
       plan.md              #   the reviewable plan
       ...                  #   supporting files: designs, notes, findings
-    done/                  # shipped specs (whole file or directory moves here)
-    abandoned/             # dropped specs (via /ag-abandon), reason recorded
+  deploys.md               # append-only deploy log
 ```
-
-A spec starts as a flat file and is **promoted to a directory by the plan stage** (`git mv` to `NNNN-<slug>/SPEC.md`, `plan.md` written beside it). Flat and directory forms are both legal everywhere; a directory simply means the spec has a plan or supporting material. The rank prefix sits on the file or directory name, so `ls specs/` is still the queue.
 
 ## Fixed core vs. tailorable content
 
@@ -50,7 +46,7 @@ The plugin ships the **fixed implementation** — the skills, the agents, the ho
 | `.agentile/shape.md` | **What "Ready" means** — the questions a stub must answer before it's a spec. The prime tailoring surface. |
 | `.agentile/config.md` | The **Agentile directory** (where the backlog lives, default `docs/agentile/`) and the Business Value × Technical Certainty triage routes. |
 | `.agentile/gates.json` | The deterministic commands — format, lint, test, build, deploy — and protected branches. |
-| `.agentile/store.md` | Where the Inbox and specs live — `local` (default, files+git) or `team` (a shared datastore, `airtable` by default). See "Stores" below. |
+| `.agentile/store.md` | The link to this repo's project in Agentile Projects (`url` + `project`). See "Stores" below. |
 | `.agentile/spec-template.md` | The shape of a Ready spec. |
 | `.agentile/plan-template.md` | The shape of a plan (`plan.md` in the spec's directory). |
 | `.agentile/adr-template.md` | The shape of an ADR. |
@@ -71,61 +67,29 @@ Absent a playbook, the built-in baseline applies. Use `/ag-customise <stage>` to
 
 Four skills govern the transition from ready work to in-flight work, and they are deliberately separate acts:
 
-- **`/ag-prioritise`** is an interactive ordering session: it proposes a rank order (Business Value × Technical Certainty, with any `depends_on` constraints respected), you reorder it, and it renames the ready specs densely to `docs/agentile/specs/0001-<slug>.md`, `0002-…` — the number is the rank, visible in `ls`. An unprefixed spec (`specs/<slug>.md`) is shaped and Ready but not yet prioritised, so it is not claimable. The old `priority:` frontmatter field is retired; the filename prefix is the single source of truth. The `wip_limit` and weighting live in `.agentile/prioritise.md`. Run it whenever the ready queue changes.
-- **`/ag-next`** is a transactional pull: it atomically claims the top unclaimed ready spec under a file lock (`bin/ag-claim`), stamps it with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Two builds running concurrently can never grab the same item. If all prioritised work is blocked waiting on dependencies, `/ag-next` reports `BLOCKED`; if shaped work exists but none of it has been prioritised yet, it reports `UNPRIORITISED` — run `/ag-prioritise` to proceed.
+- **`/ag-prioritise`** is an interactive ordering session: it proposes a rank order (Business Value × Technical Certainty, with any `depends_on` constraints respected), you reorder it, and it writes a dense rank onto each ready spec in the store (`ag-store rank`). An unranked spec is shaped and Ready but not yet prioritised, so it is not claimable. The `wip_limit` (falling back to the project's own setting when unset) and weighting live in `.agentile/prioritise.md`. Run it whenever the ready queue changes.
+- **`/ag-next`** is a transactional pull: it atomically claims the top unclaimed ready spec in one store transaction, stamps it with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Two builds running concurrently can never grab the same item. If all prioritised work is blocked waiting on dependencies, `/ag-next` reports `BLOCKED`; if shaped work exists but none of it has been prioritised yet, it reports `UNPRIORITISED` — run `/ag-prioritise` to proceed.
 - **`/ag-wip`** lists every in-progress claim with how to resume or answer each — a `claude --resume` line for a session, the console for a factory worker, re-run instructions for another named runner — plus any open checkpoint. Stale claims are surfaced for human judgement — Agentile flags them but does not auto-reclaim; **releasing** a claim (back to `ready`, claim fields cleared) is distinct from **abandoning** the spec (dropped for good).
-- **`/ag-abandon <slug>`** drops a spec that won't ship (failed review, withdrawn, not worth doing). It records the reason, walks the dependency chain with `bin/ag-dependents`, and offers — per dependent — to cascade the abandonment (with an auto-reason referencing the top-level one) or to keep it active and strip the now-dead link so it isn't silently `BLOCKED`. Abandoned specs move to `specs/abandoned/` with `status: abandoned`.
+- **`/ag-abandon <slug>`** drops a spec that won't ship (failed review, withdrawn, not worth doing). It records the reason, walks the dependency chain (`ag-store dependents`), and offers — per dependent — to cascade the abandonment (with an auto-reason referencing the top-level one) or to keep it active and strip the now-dead link so it isn't silently `BLOCKED`. Abandoned specs get `status: abandoned` in the store.
 
 The session id is a resume handle, so a build that was interrupted mid-cycle can be picked back up exactly where it stopped. `claimed_by` is really a **claim identity**, resolved as `${AGENTILE_RUNNER_ID}` if set, else `${CLAUDE_SESSION_ID}`. A factory worker claims as `factory/<project>/<NNNN-slug>`; the `bin/ag-run` fallback as `ag-run@host/pid`. `/ag-wip` tells them apart — a session id gets the `claude --resume` line, a factory worker points at the console, another named runner gets re-run instructions.
 
-The claim lock is a **per-machine** file lock: it serialises concurrent builds on one machine. Across machines, the repository is the sync point — commit and push claim stamps promptly, and treat a pushed claim as authoritative. Agentile is single-repo by design; cross-repo or cross-team coordination is out of scope.
-
-One sharp edge: the claim lock lives in the specs directory, so it only
-serialises builds that **share one checkout**. Two builds in two different git
-worktrees each have their own copy of the backlog and can claim the same spec.
-Keep the **backlog in the main checkout** — claim and prioritise there; send
-*builders* to worktrees (the `ag-builder` agent already isolates itself). Don't
-run `/ag-next` or `/ag-build` from inside a builder's worktree.
+The claim is race-safe by construction — one transaction in Agentile Projects, not a local file lock — so it holds across machines, checkouts and worktrees alike: several `/ag-build` workers, a factory run, and an interactive session can all claim and ship specs in parallel with no coordination step of their own. Shipping is not automatically race-safe the same way: two sessions merging to the same trunk checkout at once can still collide, so a rejected merge because trunk moved is a losing race to retry once, not an error.
 
 ### Stores
 
-The Inbox and every spec go through one **store**, selected by
-`.agentile/store.md`'s `store:` key — absent file, or `store: local`, means
-today's files+git behaviour, unchanged. Every skill that touches the backlog
-calls `bin/ag-store <op> --dir <agentile-dir> --store <local|airtable>`
-instead of reading/writing files directly, so the choice of backend is
-invisible to the skill's own instructions.
+Since 0.20.0 there is one store: **Agentile Projects**, a web app (multi-user, multi-project, with dashboards, Pundit roles, and the loop's business logic — transactional claim, rank, dependency walks, flow metrics, capture assist — server-side). Every skill that touches the backlog calls `bin/ag-store <op>`, a thin HTTP client over the app's JSON API, so the skills name one command and one output shape.
 
-- **`local`** (default) — files + git. Prioritising and claiming are
-  atomic within one checkout (a `flock`-based lock); across machines it's a
-  social contract (pull before you touch the queue, push right after), not
-  a guarantee.
-- **`airtable`** — the Inbox and every spec live in an Airtable base
-  instead, fully decomposed into real fields (one per frontmatter key and
-  one per spec-template body section — no blob field anywhere), so
-  prioritising and claiming are visible live to everyone with the base
-  open. `Rank` (a number field) replaces the `local` store's `NNNN-`
-  filename prefix; `Claimed By (Member)`/`Captured By`/`Shaped By` are
-  linked records into a `Members` table (attribution, not permissions —
-  `ag-store whoami` resolves the acting person from `git config
-  user.email`). Claim/rank are *not* atomic here (Airtable has no
-  server-side conditional write) — see `templates/stores/airtable/README.md`
-  for the honest concurrency notes and setup (a personal access token, a
-  base, `ag-store provision`).
+- `.agentile/store.md` holds `url` (the app; `AGENTILE_PROJECTS_URL` overrides it) and `project` (this repo's project slug). `/ag-init` writes it after asking which of your projects this repo is.
+- `AGENTILE_PROJECTS_TOKEN` (an API token from the app's Settings) is an environment variable only, never a tracked file. It identifies you: captures, shapes, claims and answers are attributed from it, and your project role (owner / member / viewer) is what the API authorises against.
+- Claim and rank are atomic — one transaction in the app — so two sessions can never take the same spec, and there is no file lock, `.pull.lock` or "pull before you touch the queue".
+- `plan.md`, the `SPEC.md` snapshot, findings and ADRs stay in the repo; the brief is edited in the app and mirrored to `docs/agentile/brief.md` read-only.
 
-`/ag-init` asks Solo vs. Team once (Team walks through creating or attaching
-a base, provisioning, and verifying with `doctor`); `/ag-customise store`
-switches later, and offers to copy an existing local backlog into a
-freshly-configured store on confirmation (nothing is deleted locally).
-`plan.md`, supporting files, and ADRs stay in the repo in **both** modes —
-only the Inbox and spec content move to a shared store. Adding a future
-backend (Jira, Azure DevOps, …) is one new file under
-`bin/ag-store-adapters/` implementing the same op contract, plus a
-`templates/stores/<name>/` pack — no change to any skill.
+The `local` (files + git) and `airtable` stores were removed in 0.20.0; `/ag-version` flags a pre-0.20 `store.md`, and `/ag-init` re-links the project. Existing Airtable bases are imported by the app's `agentile:import` task.
 
 ### Spec dependencies
 
-A spec can declare `depends_on: [slug, …]` in its frontmatter — a list of other specs (by slug) that must ship before this one can be claimed. Shaping asks about this by default, so dependencies are captured at the point of writing the spec rather than discovered mid-build. A spec isn't claimable until all its dependencies have shipped. When a spec ships it moves to `specs/done/`, keeping the active numbered list clean while remaining resolvable as a fulfilled dependency. (Abandoning a dependency, by contrast, leaves its dependents `BLOCKED` — `/ag-abandon` walks that chain so nothing is stranded silently.)
+A spec can declare `depends_on: [slug, …]` in its frontmatter — a list of other specs (by slug) that must ship before this one can be claimed. Shaping asks about this by default, so dependencies are captured at the point of writing the spec rather than discovered mid-build. A spec isn't claimable until all its dependencies have shipped. When a spec ships its status is `shipped` and it satisfies dependencies. (Abandoning a dependency, by contrast, leaves its dependents `BLOCKED` — `/ag-abandon` walks that chain so nothing is stranded silently.)
 
 ### Outcomes
 
@@ -153,7 +117,7 @@ never shipped.
 
 **`/ag-build [slug]`** takes **one spec** from claim to shipped and stops: claim the top prioritised ready spec (or the named one) → plan (pauses for `foreground`/`spike` specs by default) → implement → verify → pause for your sign-off → ship. Running several specs at once means several sessions, or a machine set up as a factory.
 
-Every pause is a **checkpoint file** in the spec's directory (`specs/NNNN-<slug>/checkpoints/001-plan_review.md` and so on), written with `bin/ag-checkpoint`. In a session you answer by replying; anywhere else you answer with `ag-checkpoint answer <path>` or on the factory console, and the next `/ag-build` with the same claim identity carries on from the answer. Every turn ends with a machine-readable `AG_BUILD: <shipped|paused|failed|idle> …` line.
+Every pause is a **checkpoint record** in the store. In a session you answer by replying; anywhere else you answer on the project dashboard in Agentile Projects (or `printf 'reply' | ag-store checkpoint_answer <id> --by <you>`), and the next `/ag-build` with the same claim identity carries on from the answer. Every turn ends with a machine-readable `AG_BUILD: <shipped|paused|failed|idle> …` line.
 
 Pause policy lives in the stage playbooks: `.agentile/plan.md` (`human_checkpoint: route | true | false`), `.agentile/build.md` (`human_checkpoint`, default false), `.agentile/ship.md` (`human_checkpoint`, default true — nothing merges without your approval), and `.agentile/verify.md` (`retry_limit`, `stop_on_gate_failure`). There is no separate loop config; `.agentile/loop.md` from earlier versions is retired and ignored: `/ag-version` says where its keys went.
 
@@ -167,21 +131,21 @@ For an unattended machine there are two drivers:
 ## Glossary
 
 - **stub** — a one-line idea in the inbox; not yet ready to build.
-- **spec** — a shaped, Ready work item: a flat `NNNN-<slug>.md` or a `NNNN-<slug>/SPEC.md` directory.
+- **spec** — a shaped, Ready work item in the store; once planned it also has a directory `docs/agentile/specs/<slug>/` in the repo.
 - **Ready** — satisfies the Definition of Ready in `.agentile/shape.md`; `status: ready`.
-- **prioritised** — carries an `NNNN-` rank prefix; an unprefixed spec is Ready but not claimable.
+- **prioritised** — has a rank in the store; an unranked spec is Ready but not claimable.
 - **claimable** — prioritised, `status: ready`, unclaimed, all `depends_on` shipped, WIP limit not hit.
 - **claimed** — pulled by `/ag-next`: `status: in_progress` plus `claimed_by`/`claimed_at`. `claimed_by` is a session id (a `claude --resume` handle) for an interactive claim, or a named runner (`AGENTILE_RUNNER_ID`) for a headless one.
-- **run log** — `docs/agentile/runs.md`: an append-only history of what `/ag-build` claimed, shipped, paused, or failed on — durable across a compaction or a fresh process.
+- **run** — one `/ag-build` session against one spec, recorded in the store with its events (claimed, paused, shipped, failed) — durable across a compaction or a fresh process.
 - **release** — clear a claim and return the spec to `ready`; the spec stays live.
-- **abandon** — drop a spec for good (`/ag-abandon`); it moves to `specs/abandoned/` with the reason.
-- **shipped** — merged and stamped `shipped_at`; the spec moves to `specs/done/` and satisfies dependencies.
+- **abandon** — drop a spec for good (`/ag-abandon`); `status: abandoned` in the store, with the reason.
+- **shipped** — merged and stamped `shipped_at`; `status: shipped`; it satisfies dependencies.
 - **spike** — a spec whose deliverable is an answer (`findings.md` or an ADR), not shipping code.
 - **route** — the triage outcome (`foreground` / `background` / `spike`); decides pairing vs delegation and where the loop pauses.
 - **playbook** — `.agentile/<stage>.md`: frontmatter directives + prose policy that tailor a stage.
 - **gate** — a deterministic command in `.agentile/gates.json` (format, lint, test, build, deploy). The first four gate a *change*; `deploy` gates a *release* and is run only by `/ag-deploy`.
 - **ship vs deploy** — ship merges one spec to trunk; deploy releases every spec shipped since the last deploy. Different cadence, different gates, different blast radius.
-- **checkpoint** — a file a paused `/ag-build` leaves in the spec's directory (`checkpoints/NNN-<reason>.md`) holding what it needs decided; answered in a session, with `ag-checkpoint answer`, or on the factory console.
+- **checkpoint** — a record a paused `/ag-build` leaves in the store holding what it needs decided; answered in a session, on the project dashboard, or with `ag-store checkpoint_answer`.
 
 ## Who does what
 
@@ -206,7 +170,7 @@ For an unattended machine there are two drivers:
    claude plugin marketplace add agenta-consulting/agentile
    claude plugin install agentile@agentile
    ```
-2. Restart the session, then in your target project run `/ag-init` to scaffold `docs/agentile/` (inbox + specs tree), `.agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section. It also asks Solo (files+git, the default) or Team (a shared store, Airtable by default — see "Stores" below) for the backlog. On a project that used the old root-level layout (`inbox.md`, `specs/`, `specs/archive/`), `/ag-init` detects it and offers to migrate everything into `docs/agentile/` with `git mv`. If you prefer to keep your root `CLAUDE.md` lean, the Agentile section can instead live in `.claude/rules/agentile.md` — `/ag-init` offers this; the content is identical, just independently updatable.
+2. Restart the session, then export `AGENTILE_PROJECTS_TOKEN` (an API token from Agentile Projects) and run `/ag-init` in your target project: it asks which of your projects this repo is, writes `.agentile/store.md`, and scaffolds `.agentile/`, `docs/agentile/`, `docs/adr/`, and the `CLAUDE.md` standing-context section. If you prefer to keep your root `CLAUDE.md` lean, the Agentile section can instead live in `.claude/rules/agentile.md` — `/ag-init` offers this; the content is identical, just independently updatable.
    Starting from an empty directory? Run `/ag-new-project` instead — it interviews you for the brief and the stack, records the stack as an ADR, writes a starter `CLAUDE.md`, runs the same scaffold with the gates pre-filled from the stack, then offers stage customisations and the first inbox stubs.
 3. Start the loop: `/ag-capture`, `/ag-inbox`, `/ag-shape`, …
 
@@ -234,7 +198,7 @@ Config-driven and **opt-in safe** — they read `.agentile/gates.json` and no-op
 
 The `test` gate belongs to **verify** and **ship**, which already run it — and run it against a spec that claims to be done, which is the right trigger. The script and its tests are kept for a redesign around a cheap, opt-in command and an edit-aware trigger.
 
-For a `test`/`build` command that needs protecting from concurrent runs (a human and `ag-builder`, or parallel subagents, against shared file-based test state like SQLite), wrap it in `gates.json` with `bin/ag-lock` — the same portable `File#flock` primitive `ag-claim` uses for its spec-claim lock; `/ag-init` offers to wire it in.
+For a `test`/`build` command that needs protecting from concurrent runs (a human and `ag-builder`, or parallel subagents, against shared file-based test state like SQLite), wrap it in `gates.json` with `bin/ag-lock` — a portable `File#flock` wrapper; `/ag-init` offers to wire it in.
 
 The hook scripts are Ruby (`hooks/*.rb`), so Ruby must be on `PATH`.
 

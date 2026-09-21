@@ -181,16 +181,16 @@ Then run `/ag-init` in your project: it scaffolds the backlog and configuration 
 | Methodology concept | Plugin implementation |
 |---|---|
 | Standing context | `CLAUDE.md` section scaffolded by `/ag-init`, plus `docs/adr/` and optional MCP servers |
-| Capture & Inbox | `/ag-capture` and `/ag-inbox`, writing to `docs/agentile/inbox.md` |
+| Capture & Inbox | `/ag-capture` and `/ag-inbox`, writing to the Inbox in Agentile Projects |
 | Shaping & DoR | `/ag-shape`, interviewing against `.agentile/shape.md` |
 | Direct spec for trivial work | `/ag-spec` |
-| The spec artefact | `docs/agentile/specs/NNNN-<slug>.md`, promoted at planning to `NNNN-<slug>/SPEC.md` + `plan.md` |
-| Prioritise — editorial | `/ag-prioritise`; the rank is the filename prefix |
-| Pull — transactional | `/ag-next` → `bin/ag-claim`: a file lock; the session id is the worker handle (`claude --resume <id>`) |
+| The spec artefact | a record in Agentile Projects; at planning, `docs/agentile/specs/<slug>/` gains a `SPEC.md` snapshot + `plan.md` |
+| Prioritise — editorial | `/ag-prioritise`; the rank is a field in the store |
+| Pull — transactional | `/ag-next` → `ag-store claim`: one transaction in the store; the session id is the worker handle (`claude --resume <id>`) |
 | Plan | `/ag-plan` writes `plan.md`, via Plan Mode or the `ag-planner` agent |
 | Build | the `ag-builder` agent on a branch/worktree, running the gates from `.agentile/gates.json` |
 | Verify | the `ag-reviewer` agent with fresh context, plus `/security-review` and the hooks |
-| Ship | orchestrated by `/ag-build` — a step, not an agent: merge, stamp `shipped_at`, move to `specs/done/` |
+| Ship | orchestrated by `/ag-build` — a step, not an agent: merge, stamp `shipped_at`, close the run |
 | Learn | `/ag-retro` |
 | Build one, or many | `/ag-build` per spec; parallel workers via the factory or `bin/ag-run` |
 | Tailoring | `.agentile/` playbooks, built conversationally with `/ag-customise` |
