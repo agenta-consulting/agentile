@@ -86,6 +86,8 @@ checklist is configured (`/ag-customise deploy` writes one).
    - <ISO8601> runner=<identity> target=<target> ref=<git sha> specs=<n> detail=<slugs, comma-separated>
    ```
 
+   `<identity>` is `${AGENTILE_RUNNER_ID}` if set, otherwise `${CLAUDE_SESSION_ID}` — the same resolution `/ag-build` and `/ag-next` use.
+
    The sha is what makes this auditable: the next deploy's batch is computed
    from this line, and a rollback needs to know exactly what went out. Commit
    `deploys.md` as part of the deploy.

@@ -27,7 +27,7 @@ This is the single most useful file to tailor. Add a question and every future s
 
 ## Frontmatter hygiene
 
-- **No unquoted colons in frontmatter values.** `title: Foo: bar` is invalid YAML; the store parses the frontmatter with a real YAML parser and rejects the spec, so it can never be created. Prefer rewording the title with a dash or comma ("Foo — bar"); quoting the value also works. The same applies to `outcome:` and every other field, and to ADR frontmatter.
+- **The store parses frontmatter line by line, not as YAML.** Everything after the first `:` on a line is the value, verbatim — so `title: Foo: bar` is fine; a colon inside a title never breaks anything. Do **not** quote values: `title: "Foo: bar"` stores the quotes as part of the title, and they will show up on the dashboard, in `spec_list`, and in the `SPEC.md` snapshot. The same applies to `outcome:` and every other field, and to ADR frontmatter (the identical parser). `created_at` is stamped by the store itself — never set it by hand.
 
 ## House additions
 

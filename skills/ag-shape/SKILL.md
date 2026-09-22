@@ -91,7 +91,7 @@ full interview below.
 
 Based on the conversation, do **one** of:
 
-- **Graduate to a spec** — build the markdown from `.agentile/spec-template.md`, filling every field from the interview, and set `type` (carried from the stub), `route`, `business_value`, `technical_certainty` (the last two left unset for a bug), `serves`, and `tags` (both blank when the interview gave none). Keep every frontmatter value valid YAML: no unquoted colons in `title`, `outcome` or any other field (quote `created_at`, which contains them) (`title: Foo: bar` breaks the claim tooling); reword with a dash or comma, or quote the value. Write it in one call that also retires the stub and records provenance and attribution:
+- **Graduate to a spec** — build the markdown from `.agentile/spec-template.md`, filling every field from the interview, and set `type` (carried from the stub), `route`, `business_value`, `technical_certainty` (the last two left unset for a bug), `serves`, and `tags` (both blank when the interview gave none). The store parses frontmatter line by line, not as YAML: everything after the first `:` is the value, verbatim — a colon inside `title` or any other field is fine, but never quote a value (the quotes are stored literally). Leave `created_at` unset; the store stamps it. Write it in one call that also retires the stub and records provenance and attribution:
 
   ```
   ag-store inbox_shape <stub-id>
@@ -101,7 +101,7 @@ Based on the conversation, do **one** of:
 
   If the call fails with a 422 (a validation error — e.g. a `depends_on` slug that doesn't exist), show the response's `detail` to the user and fix the markdown accordingly before calling `inbox_shape` again; don't retry blindly.
 - **Spike** — same as above with `type: spike` and `status: ready`, framing the open questions as the timeboxed exploration goal. A spike's deliverable is a written answer, not code: its build is the timeboxed exploration, its verify is 'question answered within the timebox', and on ship its findings (`findings.md` in the spec's directory, or an ADR) stay in the repo and the spec is `shipped` in the store — satisfying dependencies like any spec.
-- **Split** — capture the extra stubs with `ag-store inbox_add "<text>" --title "<title>" --type "<kind>"`, or shape several specs from one stub: use `inbox_shape <stub-id>` for the first and `ag-store spec_create <slug>` (markdown on stdin, with `source_inbox: <stub-id>` in the frontmatter) for the rest — one stub may link to several specs by design.
+- **Split** — capture the extra stubs with `ag-store inbox_add "<text>" --title "<title>" --type "<kind>"`, or shape several specs from one stub: use `inbox_shape <stub-id>` for the first and `ag-store spec_create <slug>` (markdown on stdin) for the rest. Only the first spec, created via `inbox_shape`, is linked back to the stub as its source — the store never maps a `source_inbox` key from frontmatter, so any spec created via `spec_create` carries no link to the stub at all. Say so plainly to the user: the later specs are provenance-free, not "linked by design."
 - **Merge** — fold the stub into an existing stub or spec.
 - **Drop** — just drop the stub, with a one-line note to the user on why.
 

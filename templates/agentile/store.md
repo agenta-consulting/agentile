@@ -13,6 +13,10 @@ overrides `url` (handy for a locally running app).
 Credentials are never written here — `AGENTILE_PROJECTS_TOKEN` is an
 environment variable only (create one under Settings → API tokens in the app),
 set wherever you keep local secrets for tools you run, never in a tracked file.
+Because `url` above *is* tracked, `bin/ag-store` refuses to send the token to
+it unless it is `https`, or its host is `localhost`/`127.0.0.1`, or
+`AGENTILE_PROJECTS_ALLOW_HTTP=1` is set — so a change to this file can't
+silently redirect the token to a host you don't control.
 
 The split is **events vs artefacts**:
 

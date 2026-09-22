@@ -46,7 +46,7 @@ piping the markdown on stdin; the store records you as its creator from the toke
 
 ## Step 2b — Edit mode (`/ag-outcome <slug>`)
 
-`ag-store outcome_read <slug>`, show it, ask what changed (one question). Patch frontmatter with `ag-store outcome_write <slug> --set key=value ...`. Body sections (claim, measure, stop rule, notes) are edited with `ag-store outcome_write <slug> --set claim="..."` (keys `claim`, `measure`, `stop_rule`, `notes`), or in the app.
+`ag-store outcome_read <slug>`, show it, ask what changed (one question). Patch frontmatter with `ag-store outcome_write <slug> --set key=value ...` — `status` and `rank` are endpoint-only and come back 422 from `outcome_write` (route those through `/ag-prioritise` or the achieve step instead). Body sections (claim, measure, stop rule, notes) are edited with `ag-store outcome_write <slug> --set claim="..."` (keys `claim`, `measure`, `stop_rule`, `notes`), or in the app.
 
 ## Step 2c — Achieve mode (`/ag-outcome achieve <slug>`)
 

@@ -81,14 +81,16 @@ ag-store abandon "<slug>" --reason "<reason>" [--cascade "[<dependent-slug>, ...
 
 using the user's Step 4 reason. The store sets `status: abandoned`, stamps
 `abandoned_at`, records the reason, clears the claim fields and closes any active run;
-each cascaded dependent gets the automatic reason `Abandoned as a consequence of
-abandoning <target-slug>: <target-reason>`.
+`Specs::Transitions.abandon!` cascades recursively with the **same** reason string,
+verbatim, on every dependent — there is no auto-generated prefix naming the target spec.
 
 ## Step 7 — Report
 
 Summarise:
 
-- Which specs were abandoned, each with its recorded reason.
+- Which specs were abandoned. The target carries the reason the user gave; every cascaded
+  dependent carries that identical reason string too (the store does not distinguish them),
+  so say plainly that the reason is shared, not point at each one as if it had its own.
 - Any dependents kept active, flagged as now-`BLOCKED`, and whether their `depends_on` link
   to the target was stripped.
 - A pointer to re-rank if needed: abandoning removes specs from the active queue, so the
