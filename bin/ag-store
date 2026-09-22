@@ -12,13 +12,21 @@
 #   url:     https://agentile-projects.agentaconsulting.com   (AGENTILE_PROJECTS_URL overrides)
 #   project: <slug>
 # Auth — AGENTILE_PROJECTS_TOKEN in the environment only, never a tracked file.
+# The url in .agentile/store.md is a tracked file, so the client refuses to send the
+# token to it unless it is https, or its host is localhost/127.0.0.1, or
+# AGENTILE_PROJECTS_ALLOW_HTTP=1 is set (exit 2, names the offending host, never the
+# token). `doctor` prints the resolved host itself so a redirected url is visible.
 # --dir (default docs/agentile) is used by promote and brief_sync, which touch
-# the repo; every other op ignores it.
+# the repo; every other op ignores it. `promote` makes no HTTP call, so unlike every
+# other op it needs neither a url nor a token.
 #
 # Ops (all output one JSON value on stdout; errors to stderr, exit 1 for an API
 # or usage error, exit 2 for a configuration/connectivity error):
 #   inbox_list [--status open|shaped|dropped]
 #   inbox_add <text> [--title "<label>"] [--type feature|bug|chore|spike] [--serves <outcome-slug>]
+#     [--suggested-kind k] [--duplicate-of id] [--duplicate-probability p]   (sent as
+#     suggested_kind/duplicate_of/duplicate_probability, omitted when absent)
+#                                                  -> the new item's id (integer, unwrapped from {ok, id})
 #   inbox_drop <id>
 #   inbox_assist <text>                          tidy + classify; returns
 #     {title, text, kind, serves_outcome_slug, duplicate_of, duplicate_of_type,
@@ -136,6 +144,8 @@ module AgStore
   end
 
   class Config
+    LOCAL_HOSTS = %w[localhost 127.0.0.1].freeze
+
     attr_reader :url, :project, :token, :dir
 
     def initialize(flags)
@@ -156,12 +166,41 @@ module AgStore
       {}
     end
 
-    def validate!(needs_project: true)
-      if url.empty?
-        raise ConfigError, "no store url — #{STORE_MD} has no `url:` (run /ag-init to link this project) and AGENTILE_PROJECTS_URL is unset"
+    # The host the url resolves to, for doctor/logging — never the token.
+    def host
+      URI.parse(url).host.to_s
+    rescue URI::InvalidURIError
+      ""
+    end
+
+    # needs_network: false is for ops that never make an HTTP call (promote) — they need
+    # neither a url, a token, nor the https/localhost check below.
+    def validate!(needs_project: true, needs_network: true)
+      if needs_network
+        if url.empty?
+          raise ConfigError, "no store url — #{STORE_MD} has no `url:` (run /ag-init to link this project) and AGENTILE_PROJECTS_URL is unset"
+        end
+        validate_scheme!
+        raise ConfigError, "AGENTILE_PROJECTS_TOKEN is not set — create a token in Agentile Projects (Settings → API tokens) and export it" if token.empty?
       end
-      raise ConfigError, "AGENTILE_PROJECTS_TOKEN is not set — create a token in Agentile Projects (Settings → API tokens) and export it" if token.empty?
       raise ConfigError, "no project — #{STORE_MD} has no `project:` (run /ag-init to link this project)" if needs_project && project.empty?
+    end
+
+    private
+
+    # A tracked file (.agentile/store.md) names the url every skill sends the bearer token
+    # to — refuse anything that could send it somewhere other than a host we control by
+    # default: https, or localhost/127.0.0.1 over plain http (dev), or an explicit opt-out.
+    def validate_scheme!
+      uri = URI.parse(url)
+      return if uri.scheme == "https"
+      return if LOCAL_HOSTS.include?(uri.host)
+      return if ENV["AGENTILE_PROJECTS_ALLOW_HTTP"] == "1"
+
+      raise ConfigError, "refusing to send AGENTILE_PROJECTS_TOKEN to '#{uri.host}' over #{uri.scheme || 'a non-https scheme'} — " \
+                          "the store url must be https, or the host must be localhost/127.0.0.1, or set AGENTILE_PROJECTS_ALLOW_HTTP=1 to override"
+    rescue URI::InvalidURIError
+      raise ConfigError, "no store url — #{url.inspect} is not a valid url"
     end
   end
 
@@ -252,8 +291,10 @@ module AgStore
       case op
       when "inbox_list" then @api.get(p["/inbox"], status: flags["status"])
       when "inbox_add"
-        @api.post(p["/inbox"], { text: positional[0].to_s, title: flags["title"], kind: flags["type"], serves: flags["serves"] }.compact)
-        true
+        res = @api.post(p["/inbox"], { text: positional[0].to_s, title: flags["title"], kind: flags["type"], serves: flags["serves"],
+                                        suggested_kind: flags["suggested-kind"], duplicate_of: flags["duplicate-of"],
+                                        duplicate_probability: flags["duplicate-probability"] }.compact)
+        res.is_a?(Hash) ? res["id"] : res
       when "inbox_drop" then @api.post(p["/inbox/#{AgStore.enc(positional[0])}/drop"]); true
       when "inbox_assist" then @api.post(p["/inbox/assist"], { text: positional[0].to_s })
       when "inbox_shape"
@@ -337,7 +378,9 @@ module AgStore
         File.write(path, md.to_s)
         path
       when "whoami" then @api.get("/me")
-      when "doctor" then @api.get(p["/doctor"])
+      when "doctor"
+        res = @api.get(p["/doctor"])
+        res.is_a?(Hash) ? res.merge("host" => @c.host) : res
       else raise Error, "unknown op '#{op}'"
       end
     end
@@ -354,7 +397,7 @@ warn "ag-store: --airtable-base is obsolete since 0.20.0 — ignoring it" if fla
 
 begin
   config = AgStore::Config.new(flags)
-  config.validate!(needs_project: !%w[whoami promote].include?(op))
+  config.validate!(needs_project: !%w[whoami promote].include?(op), needs_network: op != "promote")
   result = AgStore::Ops.new(config, AgStore::Client.new(config)).run(op, positional, flags, sets)
   puts JSON.generate(result)
 rescue AgStore::ConfigError => e

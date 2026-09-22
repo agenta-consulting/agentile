@@ -134,13 +134,22 @@ with_project(api.url) do |root|
   raise "api error should exit 1: #{st.exitstatus} #{err}" unless st.exitstatus == 1 && err.include?("no inbox item 9")
 end
 
-# 6. inbox_add maps --type to kind and --serves to serves; prints true
-api.route("POST", "#{P}/inbox") { |r| b = JSON.parse(r[:body]); [201, { "id" => 1, "title" => b["title"], "kind" => b["kind"] }] }
+# 6. inbox_add maps --type to kind and --serves to serves, and the optional
+#    assist-passthrough flags (--suggested-kind, --duplicate-of, --duplicate-probability)
+#    to their API names, omitted when absent; prints the created item's id (the app's
+#    {ok, id}), not `true`
+api.route("POST", "#{P}/inbox") { |r| b = JSON.parse(r[:body]); [201, { "ok" => true, "id" => 42, "title" => b["title"], "kind" => b["kind"] }] }
 with_project(api.url) do |root|
   out = store!("inbox_add", "Rate-limit the login endpoint", "--title", "Login rate limit", "--type", "chore", "--serves", "identity", env: ENV_OK, chdir: root)
-  raise "inbox_add should print true: #{out.inspect}" unless out == true
+  raise "inbox_add should print the new item's id: #{out.inspect}" unless out == 42
   body = JSON.parse(api.requests.last[:body])
   raise "inbox_add body: #{body.inspect}" unless body == { "text" => "Rate-limit the login endpoint", "title" => "Login rate limit", "kind" => "chore", "serves" => "identity" }
+
+  out = store!("inbox_add", "Maybe a dup", "--suggested-kind", "bug", "--duplicate-of", "7", "--duplicate-probability", "0.8", env: ENV_OK, chdir: root)
+  raise "inbox_add with assist flags should print the id: #{out.inspect}" unless out == 42
+  body = JSON.parse(api.requests.last[:body])
+  raise "inbox_add assist-flag body: #{body.inspect}" \
+    unless body == { "text" => "Maybe a dup", "suggested_kind" => "bug", "duplicate_of" => "7", "duplicate_probability" => "0.8" }
 end
 
 # 7. inbox_assist passes the text; inbox_shape posts markdown from stdin with text/markdown
@@ -205,13 +214,15 @@ with_project(api.url) do |root|
   raise "claim omits wip and slug when neither given: #{body.inspect}" unless body == { "identity" => "runner-1", "label" => "" }
 end
 
-# 12. release/ship/abandon (with --reason and optional --cascade)
-api.route("POST", "#{P}/specs/a/release") { [200, true] }
-api.route("POST", "#{P}/specs/a/ship") { [200, "a"] }
+# 12. release/ship/abandon (with --reason and optional --cascade); release/ship pass through
+#     whatever the app returns — the real app returns a full SpecSummary object, not a bare
+#     bool/string, so the fake mirrors that shape instead of asserting against a simplification
+api.route("POST", "#{P}/specs/a/release") { [200, { "slug" => "a", "status" => "ready" }] }
+api.route("POST", "#{P}/specs/a/ship") { [200, { "slug" => "a", "status" => "shipped", "shipped_at" => "2026-09-22T00:00:00Z" }] }
 api.route("POST", "#{P}/specs/a/abandon") { |r| [200, JSON.parse(r[:body])] }
 with_project(api.url) do |root|
-  raise "release" unless store!("release", "a", env: ENV_OK, chdir: root) == true
-  raise "ship" unless store!("ship", "a", env: ENV_OK, chdir: root) == "a"
+  raise "release" unless store!("release", "a", env: ENV_OK, chdir: root) == { "slug" => "a", "status" => "ready" }
+  raise "ship" unless store!("ship", "a", env: ENV_OK, chdir: root) == { "slug" => "a", "status" => "shipped", "shipped_at" => "2026-09-22T00:00:00Z" }
   out = store!("abandon", "a", "--reason", "spike said no", "--cascade", "[b, c]", env: ENV_OK, chdir: root)
   raise "abandon: #{out.inspect}" unless out == { "reason" => "spike said no", "cascade" => %w[b c] }
 end
@@ -223,6 +234,15 @@ with_project(api.url) do |root|
   raise "promote path: #{out.inspect}" unless out == "docs/agentile/specs/a"
   raise "promote should mkdir" unless File.directory?(File.join(root, "docs/agentile/specs/a"))
   raise "promote made a request" unless api.requests.size == before
+end
+
+# 13b. promote needs neither url nor token (M2) — it makes no HTTP call, so it must not be
+#      gated behind store.md/AGENTILE_PROJECTS_TOKEN the way every networked op is
+Dir.mktmpdir do |root|
+  FileUtils.mkdir_p(File.join(root, ".agentile")) # no store.md at all
+  out, err, st = run_store("promote", "a", "--dir", "docs/agentile", env: { "AGENTILE_PROJECTS_TOKEN" => "" }, chdir: root)
+  raise "promote without url/token should still work: #{st.exitstatus} #{err}" \
+    unless st.success? && JSON.parse(out) == "docs/agentile/specs/a"
 end
 
 # 14. deps / dependents / map / flow pass through
@@ -286,6 +306,24 @@ with_project(api.url) do |root|
 
   raise "run_close" unless store!("run_close", "--spec", "a", "--runner", "runner-1", "--detail", "done", env: ENV_OK, chdir: root) == true
   raise "run_list" unless store!("run_list", "--spec", "a", "--status", "active", env: ENV_OK, chdir: root).first["id"] == 1
+
+  # run_close against a spec with no live run at all: exit 1 with a message, not a crash
+  _o, err, st = run_store("run_close", "--spec", "no-such-run-here", "--runner", "runner-1", env: ENV_OK, chdir: root)
+  raise "run_close with no live run should exit 1 and say so: #{st.exitstatus} #{err}" \
+    unless st.exitstatus == 1 && err.include?("no active run")
+end
+
+# 16b. C1 regression: run_event on a spec whose only run has already ended creates a
+#      brand-new (phantom) run, because ensure_run finds nothing under --status active and
+#      posts one. This is exactly the bug /ag-build's Unrecoverable-errors path must avoid —
+#      by checking `run_list --status active` itself before ever calling run_event — so this
+#      asserts the client-side behaviour the skill has to route around, not a client bug to fix.
+runs << { "id" => 900, "spec" => "ended-spec", "runner_id" => "runner-1", "session_id" => "sess-1", "status" => "closed", "started_at" => "2026-09-21T00:00:00Z" }
+with_project(api.url) do |root|
+  before = api.requests.count { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" }
+  run_store("run_event", "failed", "--spec", "ended-spec", "--runner", "runner-1", "--detail", "run_ended", env: ENV_OK, chdir: root)
+  after = api.requests.count { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" }
+  raise "run_event on a spec whose only run has ended should still create a new run (the C1 bug)" unless after == before + 1
 end
 
 # 17. checkpoint_list / checkpoint_open_count / checkpoint_answer
@@ -307,12 +345,15 @@ with_project(api.url) do |root|
   raise "brief_sync content" unless File.read(File.join(root, "docs/agentile/brief.md")).include?("Prioritised outcomes")
 end
 
-# 19. whoami hits /me (unscoped); doctor hits the project doctor
+# 19. whoami hits /me (unscoped); doctor hits the project doctor and the client adds the
+#     resolved host itself (I11) so a misdirected url is visible without decoding store.md
 api.route("GET", "/api/v1/me") { [200, { "user_id" => 1, "name" => "Keith", "email" => "k@x", "projects" => [{ "slug" => "p", "role" => "owner" }] }] }
 api.route("GET", "#{P}/doctor") { [200, { "project" => "p", "role" => "owner", "reachable" => true }] }
 with_project(api.url) do |root|
   raise "whoami" unless store!("whoami", env: ENV_OK, chdir: root)["name"] == "Keith"
-  raise "doctor" unless store!("doctor", env: ENV_OK, chdir: root)["reachable"] == true
+  doc = store!("doctor", env: ENV_OK, chdir: root)
+  raise "doctor" unless doc["reachable"] == true
+  raise "doctor should print the resolved host client-side: #{doc.inspect}" unless doc["host"] == "127.0.0.1"
 end
 
 # 20. --store is obsolete: warns on stderr, still works; unknown op exits 1
@@ -354,6 +395,23 @@ Dir.mktmpdir do |root|
   FileUtils.mkdir_p(File.join(root, "docs", "agentile"))
   out = store!("inbox_list", env: ENV_OK, chdir: root)
   raise "project slug should be url-encoded in the request path" unless out == []
+end
+
+# 23. security (I11): a non-https url is refused unless the host is localhost/127.0.0.1 —
+#     before any request is sent, exit 2, and the message names the offending host, never
+#     the token. Every other offline test above already proves the localhost allowance,
+#     since the fake API itself is plain http on 127.0.0.1. AGENTILE_PROJECTS_ALLOW_HTTP=1
+#     overrides the check for a non-local host.
+with_project("http://evil.example.com") do |root|
+  before = api.requests.size
+  _o, err, st = run_store("inbox_list", env: ENV_OK, chdir: root)
+  raise "non-https, non-local url should exit 2 and name the host, never the token: #{st.exitstatus} #{err}" \
+    unless st.exitstatus == 2 && err.include?("evil.example.com") && !err.include?("tok_test")
+  raise "should never have sent a request to the refused host" unless api.requests.size == before
+
+  _o, err, st = run_store("inbox_list", env: ENV_OK.merge("AGENTILE_PROJECTS_ALLOW_HTTP" => "1"), chdir: root)
+  raise "AGENTILE_PROJECTS_ALLOW_HTTP=1 should bypass the scheme/host refusal: #{st.exitstatus} #{err}" \
+    unless st.exitstatus == 2 && !err.include?("refusing")
 end
 
 api.close

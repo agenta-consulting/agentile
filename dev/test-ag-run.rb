@@ -143,11 +143,11 @@ with_stub_claude do |bindir|
   raise "old prefix not reported" unless out.include?("AG_LOOP: shipped 0001-old")
 end
 
-# 11. a pause line carries the checkpoint path through to the report
+# 11. a pause line carries the checkpoint id through to the report
 with_stub_claude do |bindir|
-  out, _err, status, _log = run_ag_run(bindir, ["AG_BUILD: paused 0003-c plan_review docs/agentile/specs/0003-c/checkpoints/001-plan_review.md"])
+  out, _err, status, _log = run_ag_run(bindir, ["AG_BUILD: paused 0003-c plan_review 501"])
   raise "pause should exit 0" unless status.success?
-  raise "checkpoint path missing from report" unless out.include?("001-plan_review.md")
+  raise "checkpoint id missing from report" unless out.include?("checkpoint: 501")
 end
 
 # 12. a status line wrapped in backticks or bold is still recognised
