@@ -401,7 +401,10 @@ end
 #     before any request is sent, exit 2, and the message names the offending host, never
 #     the token. Every other offline test above already proves the localhost allowance,
 #     since the fake API itself is plain http on 127.0.0.1. AGENTILE_PROJECTS_ALLOW_HTTP=1
-#     overrides the check for a non-local host.
+#     overrides the check for a non-local host, letting the bad url reach the connection
+#     attempt — pointed at a closed local port (bound then immediately released) so that
+#     attempt fails fast with ECONNREFUSED instead of the ~5s open_timeout a real
+#     unreachable hostname would incur.
 with_project("http://evil.example.com") do |root|
   before = api.requests.size
   _o, err, st = run_store("inbox_list", env: ENV_OK, chdir: root)
@@ -409,9 +412,12 @@ with_project("http://evil.example.com") do |root|
     unless st.exitstatus == 2 && err.include?("evil.example.com") && !err.include?("tok_test")
   raise "should never have sent a request to the refused host" unless api.requests.size == before
 
-  _o, err, st = run_store("inbox_list", env: ENV_OK.merge("AGENTILE_PROJECTS_ALLOW_HTTP" => "1"), chdir: root)
+  closed = TCPServer.new("127.0.0.1", 0)
+  closed_url = "http://127.0.0.1:#{closed.addr[1]}"
+  closed.close
+  _o, err, st = run_store("inbox_list", env: ENV_OK.merge("AGENTILE_PROJECTS_ALLOW_HTTP" => "1", "AGENTILE_PROJECTS_URL" => closed_url), chdir: root)
   raise "AGENTILE_PROJECTS_ALLOW_HTTP=1 should bypass the scheme/host refusal: #{st.exitstatus} #{err}" \
-    unless st.exitstatus == 2 && !err.include?("refusing")
+    unless st.exitstatus == 2 && !err.include?("refusing") && err.include?(closed_url) && !err.include?("tok_test")
 end
 
 api.close

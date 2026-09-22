@@ -1,4 +1,4 @@
-<!-- Frontmatter hygiene: every value here must be valid YAML. No unquoted colons in `title`, `outcome` or any other field — `title: Foo: bar` fails to parse and the store's markdown parser cannot pull the spec. Prefer rewording with a dash or comma ("Foo — bar"); quoting the value also works. -->
+<!-- This is a plain repo file, not something the store ever parses. This frontmatter is for humans and /ag-retro only — no quoting rules apply beyond valid Markdown. -->
 ---
 number: <NNNN>
 title: <short decision title>
