@@ -2,6 +2,8 @@
 
 Design spec. Status: phase 1 (protocol and `/ag-build`, plugin 0.13.0) implemented 2026-09-16 — see `docs/plans/2026-09-16-ag-build-and-checkpoints.md`; daemon and console not yet built. Supersedes `/ag-loop` and the single-machine `bin/ag-run` driver as the way to run Agentile unattended; `bin/ag-run` stays as the zero-infrastructure fallback. Builds on `docs/agentile-loop-runner.md` (the runner and its exit contract) and `docs/plans/2026-09-06-loop-context-management.md` (fresh context per item, runner identity, thin orchestrator), and is the "separate mode" those documents deferred for detached, unattended runs.
 
+> **Status (0.20.0):** since Agentile Projects landed, checkpoints and runs described below as files or local daemon tables are store records instead: `/ag-build` opens a checkpoint and gets back an **id**, not a path, and that checkpoint is answered by id — on the Agentile Projects dashboard or at a terminal with `ag-store checkpoint_answer <id>`. Runs are likewise store records (`runs`/`run_events`), not a `workers` table the daemon owns alone. §7 and §9 below carry the same note where they describe the console and the daemon's data model; the rest of this document (the file-based checkpoint protocol in §3, the `<checkpoint-path>` status-line slot, the local `checkpoints`/`workers` schema in §9) is history, not current behaviour.
+
 ## Context
 
 `/ag-loop` drains a backlog inside one Claude Code session. That has two limits the loop-runner spec accepted and the context-management plan only partly fixed:
@@ -63,7 +65,7 @@ The daemon reads backlogs through `bin/ag-store`, writes worker state and events
 
 ```
 AG_BUILD: shipped <slug>
-AG_BUILD: paused <slug> <reason> <checkpoint-path>
+AG_BUILD: paused <slug> <reason> <checkpoint-id>
 AG_BUILD: failed <slug-or-'-'> <reason>
 AG_BUILD: idle <NONE|WIP_FULL|BLOCKED|UNPRIORITISED>
 ```
@@ -91,11 +93,11 @@ Per claimed spec the daemon runs:
 
 ```
 cd <project>
-git worktree add <worktree_root>/<project>/<NNNN-slug> -b ag/<NNNN-slug> <trunk>
-AGENTILE_RUNNER_ID=factory/<project>/<NNNN-slug> \
+git worktree add <worktree_root>/<project>/<slug> -b ag/<slug> <trunk>
+AGENTILE_RUNNER_ID=factory/<project>/<slug> \
 claude -p "/ag-build" \
   --model <chosen> \
-  --name "<project> · <NNNN-slug>" \
+  --name "<project> · <slug>" \
   --permission-mode <project setting, default acceptEdits> \
   --permission-prompts none \
   --allowedTools <derived from the project's gates.json and settings> \
@@ -230,7 +232,7 @@ The console runs on the factory machine and is reached over the LAN or Tailscale
 - No `ANTHROPIC_API_KEY` in the daemon's environment, ever; the daemon refuses to start if one is set.
 - Never `--bare`.
 - Every worker is confined to its worktree; trunk is touched only by the ship step under `bin/ag-lock`, and `gates.json` protected branches still apply.
-- `--permission-prompts none`: an unauthorised action is denied, not waited on. Default posture is `acceptEdits` plus an allowlist built from the project's `gates.json` commands, `git`, and the plugin's own tools (`ag-store`, `ag-checkpoint`, `ag-lock`). `bypassPermissions` is a per-project opt-in and the Projects page labels it.
+- `--permission-prompts none`: an unauthorised action is denied, not waited on. Default posture is `acceptEdits` plus an allowlist built from the project's `gates.json` commands, `git`, and the plugin's own tools (`ag-store`, `ag-lock`). `bypassPermissions` is a per-project opt-in and the Projects page labels it.
 - `--max-turns` and a wall-clock limit end runaway workers as `failed timeout` with the worktree intact.
 - Review credentials come from the environment through the console; the model never sees or writes them.
 
@@ -249,7 +251,7 @@ Specs are not stored; the console reads them through `bin/ag-store spec_list` wh
 ## 10. Changes to the plugin
 
 - `skills/ag-build/SKILL.md` (new): section 1. `skills/ag-loop/SKILL.md` becomes the one-release alias.
-- `bin/ag-claim` and the store `claim` op: accept a target slug.
+- `bin/ag-store`'s `claim` op: accept a target slug.
 - Checkpoint writing at every pause; the `question` reason; the checkpoint path on the status line.
 - `agents/ag-builder.md` and `agents/ag-reviewer.md`: report a genuine human decision as a question with options and a recommendation; prefer a recorded assumption when stakes are low; say "implement" where "build" would be ambiguous.
 - `templates/agentile/spec-template.md`: optional `model:`.
@@ -279,7 +281,7 @@ Specs are not stored; the console reads them through `bin/ag-store spec_list` wh
 - Deploying from the factory; `/ag-deploy` stays a human-run batch.
 - Participants and approval roles (`team.md`); `answered_by` is recorded so they can join later.
 - Workers on more than one machine; a second machine is a second factory.
-- Airtable or Jira as the checkpoint store; checkpoints are repo files so a worker with no network beyond Claude still works.
+- Airtable or Jira as the checkpoint store; checkpoints are Agentile Projects store records, so a worker needs network reachability to the app (beyond Claude) to open or answer one.
 - Weighted fair sharing across projects.
 
 ## 14. Open decisions for Keith

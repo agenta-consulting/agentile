@@ -70,9 +70,9 @@ Four skills govern the transition from ready work to in-flight work, and they ar
 - **`/ag-prioritise`** is an interactive ordering session: it proposes a rank order (Business Value × Technical Certainty, with any `depends_on` constraints respected), you reorder it, and it writes a dense rank onto each ready spec in the store (`ag-store rank`). An unranked spec is shaped and Ready but not yet prioritised, so it is not claimable. The `wip_limit` (falling back to the project's own setting when unset) and weighting live in `.agentile/prioritise.md`. Run it whenever the ready queue changes.
 - **`/ag-next`** is a transactional pull: it atomically claims the top unclaimed ready spec in one store transaction, stamps it with `status: in_progress`, `claimed_by: <session-id>`, and `claimed_at`, then reports what was claimed. Two builds running concurrently can never grab the same item. If all prioritised work is blocked waiting on dependencies, `/ag-next` reports `BLOCKED`; if shaped work exists but none of it has been prioritised yet, it reports `UNPRIORITISED` — run `/ag-prioritise` to proceed.
 - **`/ag-wip`** lists every in-progress claim with how to resume or answer each — a `claude --resume` line for a session, the console for a factory worker, re-run instructions for another named runner — plus any open checkpoint. Stale claims are surfaced for human judgement — Agentile flags them but does not auto-reclaim; **releasing** a claim (back to `ready`, claim fields cleared) is distinct from **abandoning** the spec (dropped for good).
-- **`/ag-abandon <slug>`** drops a spec that won't ship (failed review, withdrawn, not worth doing). It records the reason, walks the dependency chain (`ag-store dependents`), and offers — per dependent — to cascade the abandonment (with an auto-reason referencing the top-level one) or to keep it active and strip the now-dead link so it isn't silently `BLOCKED`. Abandoned specs get `status: abandoned` in the store.
+- **`/ag-abandon <slug>`** drops a spec that won't ship (failed review, withdrawn, not worth doing). It records the reason, walks the dependency chain (`ag-store dependents`), and offers — per dependent — to cascade the abandonment (each cascaded dependent gets the *same* reason string as the target, verbatim — there is no auto-generated prefix) or to keep it active and strip the now-dead link so it isn't silently `BLOCKED`. Abandoned specs get `status: abandoned` in the store.
 
-The session id is a resume handle, so a build that was interrupted mid-cycle can be picked back up exactly where it stopped. `claimed_by` is really a **claim identity**, resolved as `${AGENTILE_RUNNER_ID}` if set, else `${CLAUDE_SESSION_ID}`. A factory worker claims as `factory/<project>/<NNNN-slug>`; the `bin/ag-run` fallback as `ag-run@host/pid`. `/ag-wip` tells them apart — a session id gets the `claude --resume` line, a factory worker points at the console, another named runner gets re-run instructions.
+The session id is a resume handle, so a build that was interrupted mid-cycle can be picked back up exactly where it stopped. `claimed_by` is really a **claim identity**, resolved as `${AGENTILE_RUNNER_ID}` if set, else `${CLAUDE_SESSION_ID}`. A factory worker claims as `factory/<project>/<slug>`; the `bin/ag-run` fallback as `ag-run@host/pid`. `/ag-wip` tells them apart — a session id gets the `claude --resume` line, a factory worker points at the console, another named runner gets re-run instructions.
 
 The claim is race-safe by construction — one transaction in Agentile Projects, not a local file lock — so it holds across machines, checkouts and worktrees alike: several `/ag-build` workers, a factory run, and an interactive session can all claim and ship specs in parallel with no coordination step of their own. Shipping is not automatically race-safe the same way: two sessions merging to the same trunk checkout at once can still collide, so a rejected merge because trunk moved is a losing race to retry once, not an error.
 
@@ -84,6 +84,8 @@ Since 0.20.0 there is one store: **Agentile Projects**, a web app (multi-user, m
 - `AGENTILE_PROJECTS_TOKEN` (an API token from the app's Settings) is an environment variable only, never a tracked file. It identifies you: captures, shapes, claims and answers are attributed from it, and your project role (owner / member / viewer) is what the API authorises against.
 - Claim and rank are atomic — one transaction in the app — so two sessions can never take the same spec, and there is no file lock, `.pull.lock` or "pull before you touch the queue".
 - `plan.md`, the `SPEC.md` snapshot, findings and ADRs stay in the repo; the brief is edited in the app and mirrored to `docs/agentile/brief.md` read-only.
+- The API returns full resource objects (a spec, an Outcome, a run, …); `ag-store` unwraps each one down to the slug, id or ISO8601 stamp the skills actually need (documented per-op at the top of `bin/ag-store`), so a skill's "`-> slug`" or "`-> ISO8601`" contract holds regardless of how much detail the app's JSON response carries.
+- Because `.agentile/store.md`'s `url` is a tracked file, `ag-store` refuses to send the bearer token to it unless it is `https`, or its host is `localhost`/`127.0.0.1`, or `AGENTILE_PROJECTS_ALLOW_HTTP=1` is set; `doctor` prints the resolved host so a redirected url is visible.
 
 The `local` (files + git) and `airtable` stores were removed in 0.20.0; `/ag-version` flags a pre-0.20 `store.md`, and `/ag-init` re-links the project. Existing Airtable bases are imported by the app's `agentile:import` task.
 
@@ -159,7 +161,7 @@ For an unattended machine there are two drivers:
 | plan | writes `plan.md` | reviews/amends `plan.md` | route-aware: `foreground`/`spike` pause |
 | build | implements against the gates | available for questions | playbook opt-in |
 | verify | fresh-context review + gates | reads the diff | playbook opt-in |
-| ship | merges, stamps, archives | approves the ship | `ship.md` `human_checkpoint` (default on) |
+| ship | merges, stamps | approves the ship | `ship.md` `human_checkpoint` (default on) |
 | learn | compiles the digest, proposes edits | approves what gets encoded | approval of context edits |
 
 ## Install (in a project)
@@ -198,7 +200,7 @@ Config-driven and **opt-in safe** — they read `.agentile/gates.json` and no-op
 
 The `test` gate belongs to **verify** and **ship**, which already run it — and run it against a spec that claims to be done, which is the right trigger. The script and its tests are kept for a redesign around a cheap, opt-in command and an edit-aware trigger.
 
-For a `test`/`build` command that needs protecting from concurrent runs (a human and `ag-builder`, or parallel subagents, against shared file-based test state like SQLite), wrap it in `gates.json` with `bin/ag-lock` — a portable `File#flock` wrapper; `/ag-init` offers to wire it in.
+For a `test`/`build` command that needs protecting from concurrent runs (a human and `ag-builder`, or parallel subagents, against shared file-based test state like SQLite), wrap it in `gates.json` with `bin/ag-lock` — a portable `File#flock` wrapper; add it by hand (see the `$comment` in `.agentile/gates.json`) — `/ag-init` no longer offers to wire it in.
 
 The hook scripts are Ruby (`hooks/*.rb`), so Ruby must be on `PATH`.
 
