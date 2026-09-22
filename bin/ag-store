@@ -13,9 +13,10 @@
 #   project: <slug>
 # Auth — AGENTILE_PROJECTS_TOKEN in the environment only, never a tracked file.
 # The url in .agentile/store.md is a tracked file, so the client refuses to send the
-# token to it unless it is https, or its host is localhost/127.0.0.1, or
-# AGENTILE_PROJECTS_ALLOW_HTTP=1 is set (exit 2, names the offending host, never the
-# token). `doctor` prints the resolved host itself so a redirected url is visible.
+# token to it unless it is https, or a loopback host (localhost, 127.0.0.1, ::1,
+# *.localhost), or AGENTILE_PROJECTS_ALLOW_HTTP=1 is set (exit 2, names the offending
+# host, never the token). `doctor` prints the resolved host itself so a redirected url
+# is visible.
 # --dir (default docs/agentile) is used by promote and brief_sync, which touch
 # the repo; every other op ignores it. `promote` makes no HTTP call, so unlike every
 # other op it needs neither a url nor a token.
@@ -144,7 +145,7 @@ module AgStore
   end
 
   class Config
-    LOCAL_HOSTS = %w[localhost 127.0.0.1].freeze
+    LOCAL_HOSTS = %w[localhost 127.0.0.1 ::1 [::1]].freeze
 
     attr_reader :url, :project, :token, :dir
 
@@ -174,7 +175,7 @@ module AgStore
     end
 
     # needs_network: false is for ops that never make an HTTP call (promote) — they need
-    # neither a url, a token, nor the https/localhost check below.
+    # neither a url, a token, nor the https/loopback check below.
     def validate!(needs_project: true, needs_network: true)
       if needs_network
         if url.empty?
@@ -190,17 +191,27 @@ module AgStore
 
     # A tracked file (.agentile/store.md) names the url every skill sends the bearer token
     # to — refuse anything that could send it somewhere other than a host we control by
-    # default: https, or localhost/127.0.0.1 over plain http (dev), or an explicit opt-out.
+    # default: https, or a loopback host over plain http (dev) — localhost/127.0.0.1/::1,
+    # or a *.localhost name (RFC 6761: the .localhost TLD always resolves to loopback, and
+    # Keith's dev apps are served through a local Caddy proxy on stable *.localhost
+    # hostnames) — or an explicit opt-out.
     def validate_scheme!
       uri = URI.parse(url)
       return if uri.scheme == "https"
-      return if LOCAL_HOSTS.include?(uri.host)
+      return if loopback_host?(uri.host)
       return if ENV["AGENTILE_PROJECTS_ALLOW_HTTP"] == "1"
 
       raise ConfigError, "refusing to send AGENTILE_PROJECTS_TOKEN to '#{uri.host}' over #{uri.scheme || 'a non-https scheme'} — " \
-                          "the store url must be https, or the host must be localhost/127.0.0.1, or set AGENTILE_PROJECTS_ALLOW_HTTP=1 to override"
+                          "the store url must be https, or a loopback host (localhost, 127.0.0.1, ::1, *.localhost), or set AGENTILE_PROJECTS_ALLOW_HTTP=1 to override"
     rescue URI::InvalidURIError
       raise ConfigError, "no store url — #{url.inspect} is not a valid url"
+    end
+
+    def loopback_host?(host)
+      return false if host.nil?
+
+      h = host.downcase
+      LOCAL_HOSTS.include?(h) || h.end_with?(".localhost")
     end
   end
 

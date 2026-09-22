@@ -85,7 +85,7 @@ Since 0.20.0 there is one store: **Agentile Projects**, a web app (multi-user, m
 - Claim and rank are atomic — one transaction in the app — so two sessions can never take the same spec, and there is no file lock, `.pull.lock` or "pull before you touch the queue".
 - `plan.md`, the `SPEC.md` snapshot, findings and ADRs stay in the repo; the brief is edited in the app and mirrored to `docs/agentile/brief.md` read-only.
 - The API returns full resource objects (a spec, an Outcome, a run, …); `ag-store` unwraps each one down to the slug, id or ISO8601 stamp the skills actually need (documented per-op at the top of `bin/ag-store`), so a skill's "`-> slug`" or "`-> ISO8601`" contract holds regardless of how much detail the app's JSON response carries.
-- Because `.agentile/store.md`'s `url` is a tracked file, `ag-store` refuses to send the bearer token to it unless it is `https`, or its host is `localhost`/`127.0.0.1`, or `AGENTILE_PROJECTS_ALLOW_HTTP=1` is set; `doctor` prints the resolved host so a redirected url is visible.
+- Because `.agentile/store.md`'s `url` is a tracked file, `ag-store` refuses to send the bearer token to it unless it is https, or a loopback host (`localhost`, `127.0.0.1`, `::1`, `*.localhost`), or `AGENTILE_PROJECTS_ALLOW_HTTP=1` is set; `doctor` prints the resolved host so a redirected url is visible.
 
 The `local` (files + git) and `airtable` stores were removed in 0.20.0; `/ag-version` flags a pre-0.20 `store.md`, and `/ag-init` re-links the project. Existing Airtable bases are imported by the app's `agentile:import` task.
 

@@ -420,6 +420,17 @@ with_project("http://evil.example.com") do |root|
     unless st.exitstatus == 2 && !err.include?("refusing") && err.include?(closed_url) && !err.include?("tok_test")
 end
 
+# 23b. *.localhost is a loopback host too (RFC 6761) — Keith's dev apps are served through
+# a local Caddy proxy on stable *.localhost hostnames, so a plain-http url on one of those
+# must be accepted without AGENTILE_PROJECTS_ALLOW_HTTP=1, same as localhost/127.0.0.1.
+# The fake API is bound to 127.0.0.1, and agentile-projects.localhost resolves to loopback
+# on this machine, so pointing the url's host at the *.localhost name while keeping the
+# fake API's port reaches the same server.
+with_project("http://agentile-projects.localhost:#{api.port}") do |root|
+  out = store!("inbox_list", env: ENV_OK, chdir: root)
+  raise "*.localhost should be accepted as a loopback host: #{out.inspect}" unless out.is_a?(Array)
+end
+
 api.close
 puts "OFFLINE PASS"
 
