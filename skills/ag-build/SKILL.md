@@ -17,7 +17,7 @@ From the moment a spec is claimed or a resume discovers one (Step 0/1) through S
 
 ## Identity
 
-Resolve the claim identity once: `${AGENTILE_RUNNER_ID}` if set, otherwise `${CLAUDE_SESSION_ID}`. A factory worker arrives with `AGENTILE_RUNNER_ID=factory/<project>/<NNNN-slug>` and a claim already stamped with it; an interactive session claims for itself under its session id. A fresh process meant to resume a paused item must carry the same `AGENTILE_RUNNER_ID` the claim was made under; a session resumes itself with `claude --resume <session-id>`.
+Resolve the claim identity once: `${AGENTILE_RUNNER_ID}` if set, otherwise `${CLAUDE_SESSION_ID}`. A factory worker arrives with `AGENTILE_RUNNER_ID=factory/<project>/<slug>` and a claim already stamped with it; an interactive session claims for itself under its session id. A fresh process meant to resume a paused item must carry the same `AGENTILE_RUNNER_ID` the claim was made under; a session resumes itself with `claude --resume <session-id>`.
 
 ## Concurrency
 
@@ -37,7 +37,7 @@ Before anything else, resolve the **Agentile directory** from `.agentile/config.
 
 ## Run log
 
-The run log is the store's: `claim` opens a run for this spec and identity — that already is the run's record of having started, so this skill never calls `run_event started` or `run_event claimed` — and every pause or failure below is `ag-store run_event <event> --spec "<slug>" --runner "<identity>" --detail "<free text>"` (`paused`, `failed`). A ship, release or abandon closes the run itself — that transition *is* the run's terminal record, so this skill never calls `run_event shipped` either; the only events it ever sends are `paused` and `failed`, and only while the run is still active. A run belongs to a spec, so there is nothing to log before a claim succeeds or when the queue is idle — the `AG_BUILD:` line carries those.
+The run log is mostly the store's own: `claim` opens a run for this spec and identity — that already is the run's record of having started, so this skill never calls `run_event started` or `run_event claimed`. Opening a checkpoint pauses the run server-side (`Checkpoints::Open` records a `paused` run event as part of the same transaction that writes the checkpoint), so this skill never calls `run_event paused` either — writing the checkpoint is the only pause-side action needed. The only event this skill ever sends itself is `ag-store run_event failed --spec "<slug>" --runner "<identity>" --detail "<short-code>"`, for an unrecoverable error or a gate-failure ending, and only while the run is still active (see **Unrecoverable errors**). A ship, release or abandon closes the run itself — that transition *is* the run's terminal record, so this skill never calls `run_event shipped`. A run belongs to a spec, so there is nothing to log before a claim succeeds or when the queue is idle — the `AG_BUILD:` line carries those.
 
 ## Policy
 
@@ -77,8 +77,8 @@ then proceed exactly as Step 0's routing for an answered checkpoint of that reas
 Run `ag-store spec_list --status in_progress`. If no entry's `claimed_by` equals this identity, nothing of yours is in flight: go to Step 1. Otherwise that entry is your spec and you claim nothing this run — take its `slug` (the `<slug>` every run-event and status line uses, and the `<id>` for every later `ag-store` call) and its `route` from the listing; `<spec-dir>` is `<dir>/specs/<slug>/`. Then:
 
 - If `<spec-dir>/plan.md` is absent, go to Step 2.
-- Otherwise run `ag-store checkpoint_list "<slug>"`. It returns an array of checkpoint objects — `{id, seq, reason, status, asked_by, ask, answer, ...}` — oldest first, so the newest is the **last** element; take that element's `id` as `<checkpoint-id>` for the rest of this resume (it is the same id `checkpoint_open` printed when the checkpoint was written, and what a `checkpoint_answer` on it was addressed to). If the array is empty, go to Step 3.
-- If the newest checkpoint is `answered`, read its `answer` field from the `list` output — that is the human's decision — and resume by the checkpoint's reason, which is the only rule for where to go:
+- Otherwise run `ag-store run_list --spec "<slug>" --status active` and take the single live run's `id` as `<run-id>` — that identifies the current run, distinct from any earlier run this spec may have had (a `stop_on_gate_failure: false` ending or a release-and-reclaim under the same identity leaves earlier runs closed but their checkpoints still on the spec). Then run `ag-store checkpoint_list "<slug>"`. It returns an array of checkpoint objects — `{id, seq, reason, status, asked_by, ask, answer, run_id, ...}` — oldest first, across every run the spec has ever had; filter to the entries whose `run_id` equals `<run-id>` and take the last (newest) of those as the checkpoint for the rest of this resume — its `id` is `<checkpoint-id>` (the same id `checkpoint_open` printed when the checkpoint was written, and what a `checkpoint_answer` on it was addressed to). If no entry matches, go to Step 3.
+- If that checkpoint is `answered`, read its `answer` field from the `list` output — that is the human's decision — and resume by the checkpoint's reason, which is the only rule for where to go:
   - `plan_review` → Step 3.
   - `build_blocked` → Step 3, re-dispatching the builder with the answer as its instruction.
   - `build_checkpoint` → Step 3, re-dispatching the builder with the answer as its instruction; if the answer is a bare approval, go to Step 4 instead of rebuilding.
@@ -86,7 +86,7 @@ Run `ag-store spec_list --status in_progress`. If no entry's `claimed_by` equals
   - `gate_failure` → Step 3 with the answer as the builder's instruction — unless the answer says to release or abandon the spec, in which case record `run_event failed --detail gate_failure` first (the run is still active — `release`/`abandon` would close it before the event could attach), *then* run `ag-store release "<slug>"` or point at `/ag-abandon <slug>`, and end with `AG_BUILD: failed <slug> gate_failure`.
   - `verify_checkpoint` → Step 5 on approval; otherwise Step 3 with the answer as the builder's instruction.
   - `ship_approval` → Step 6 on approval; otherwise Step 3 with the answer as the builder's instruction.
-- If the newest checkpoint is still `open`, never open a second one for the same ask. In an interactive session, relay its `ask` with `AskUserQuestion`, record the reply against that checkpoint (see **Tools**), and continue by the routing above for its reason. Headless, report that it is waiting and end with `AG_BUILD: paused <slug> <reason> <checkpoint-id>`.
+- If that checkpoint is still `open`, never open a second one for the same ask. In an interactive session, relay its `ask` with `AskUserQuestion`, record the reply against that checkpoint (see **Tools**), and continue by the routing above for its reason. Headless, report that it is waiting and end with `AG_BUILD: paused <slug> <reason> <checkpoint-id>`.
 
 ### Step 1 — Claim
 
@@ -118,17 +118,17 @@ Pause for plan review when the stage playbook `.agentile/plan.md`'s `human_check
 printf '%s' "<summary>. Review or amend plan.md in place, then answer this checkpoint." | ag-store checkpoint_open "<slug>" plan_review --session "${CLAUDE_SESSION_ID}" --by plan
 ```
 
-record `run_event paused --detail plan_review`, and end the turn: one paragraph, the line "Plan written to `<spec-dir>/plan.md` — review or amend it, then reply 'approved'.", and the status line `AG_BUILD: paused <slug> plan_review <checkpoint-id>`. An amended `plan.md` is the approved plan. If the approval instead comes back in chat, record it against the checkpoint (see **Tools**) and continue as Step 0 routes an answered `plan_review`.
+and end the turn: one paragraph, the line "Plan written to `<spec-dir>/plan.md` — review or amend it, then reply 'approved'.", and the status line `AG_BUILD: paused <slug> plan_review <checkpoint-id>`. An amended `plan.md` is the approved plan. If the approval instead comes back in chat, record it against the checkpoint (see **Tools**) and continue as Step 0 routes an answered `plan_review`.
 
 ### Step 3 — Implement
 
 Read `.agentile/build.md`'s frontmatter. If `delegate_to: <skill>` is set, invoke that skill; otherwise dispatch the `ag-builder` agent with the spec identifier, its `plan.md` path, the build playbook path, and, when resuming from an answered `question` checkpoint, the answer text. The builder's first line is one of:
 
 - `BUILD: done` → continue.
-- `BUILD: blocked` → checkpoint `build_blocked` (`--by build`) with the builder's reason as the ask; record `run_event paused --detail build_blocked`; end with `AG_BUILD: paused <slug> build_blocked <checkpoint-id>`.
-- `BUILD: question` → checkpoint `question` (`--by builder`, which is how Step 0 sends the answer back here) with the builder's question block (question, options, recommendation) as the ask; record `run_event paused --detail question`; end with `AG_BUILD: paused <slug> question <checkpoint-id>`.
+- `BUILD: blocked` → checkpoint `build_blocked` (`--by build`) with the builder's reason as the ask; end with `AG_BUILD: paused <slug> build_blocked <checkpoint-id>`.
+- `BUILD: question` → checkpoint `question` (`--by builder`, which is how Step 0 sends the answer back here) with the builder's question block (question, options, recommendation) as the ask; end with `AG_BUILD: paused <slug> question <checkpoint-id>`.
 
-If `build.md` sets `human_checkpoint: true`: checkpoint `build_checkpoint` (`--by build`) with the builder's summary; record `run_event paused --detail build_checkpoint`; end with `AG_BUILD: paused <slug> build_checkpoint <checkpoint-id>`.
+If `build.md` sets `human_checkpoint: true`: checkpoint `build_checkpoint` (`--by build`) with the builder's summary; end with `AG_BUILD: paused <slug> build_checkpoint <checkpoint-id>`.
 
 At any of these pauses, an answer that arrives in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for that reason.
 
@@ -138,9 +138,9 @@ Dispatch the `ag-reviewer` agent. Its first line is one of:
 
 - `VERDICT: pass` → continue.
 - `VERDICT: question` → checkpoint `question` exactly as in Step 3, but `--by reviewer`, which is how Step 0 sends the answer back here.
-- `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` (`--by build`) with the findings as the ask, record `run_event paused --detail gate_failure`, and end with `AG_BUILD: paused <slug> gate_failure <checkpoint-id>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, record `run_event failed --detail gate_failure`, then `ag-store run_close --spec "<slug>" --runner "<identity>" --detail gate_failure` (the claim is kept on purpose — see **Closing the run**), and end with `AG_BUILD: failed <slug> gate_failure`.
+- `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` (`--by build`) with the findings as the ask, and end with `AG_BUILD: paused <slug> gate_failure <checkpoint-id>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, record `run_event failed --detail gate_failure` — that event is itself terminal (see **Closing the run**), so nothing closes the run afterward, and the claim is kept on purpose since no `release`/`abandon` is called — and end with `AG_BUILD: failed <slug> gate_failure`.
 
-If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` (`--by verify`) with the reviewer's findings summary; record `run_event paused --detail verify_checkpoint`; end with `AG_BUILD: paused <slug> verify_checkpoint <checkpoint-id>`.
+If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` (`--by verify`) with the reviewer's findings summary; end with `AG_BUILD: paused <slug> verify_checkpoint <checkpoint-id>`.
 
 At either pause, an answer that arrives in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for that reason.
 
@@ -148,7 +148,7 @@ At either pause, an answer that arrives in chat is recorded against the checkpoi
 
 If the spec's acceptance criteria, or the builder's or reviewer's report, describe a visual or UI outcome — a rendered image, a layout, a color, a screen — render or screenshot the actual result and show it before asking for approval, in whatever form the surface allows (an inline image, a screenshot, a published comparison page). A sentence describing what something looks like is not evidence a human can approve against; the human has to see it. Do this whether the caller is interactive or headless — headless still writes the checkpoint's ask with the evidence attached or linked, since whoever answers it later still needs to see it.
 
-If `ship.md`'s `human_checkpoint` is `true` (default): checkpoint `ship_approval` (`--by ship`) whose ask has three lines — the spec slug and title, what was built (one sentence from the builder's report), and the verify outcome (one sentence from the reviewer's) — plus the visual evidence above when it applies, then record `run_event paused --detail ship_approval`, end the turn with those three lines, "Approve to ship `<slug>`?", and `AG_BUILD: paused <slug> ship_approval <checkpoint-id>`. An approval that comes back in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for `ship_approval`.
+If `ship.md`'s `human_checkpoint` is `true` (default): checkpoint `ship_approval` (`--by ship`) whose ask has three lines — the spec slug and title, what was built (one sentence from the builder's report), and the verify outcome (one sentence from the reviewer's) — plus the visual evidence above when it applies, then end the turn with those three lines, "Approve to ship `<slug>`?", and `AG_BUILD: paused <slug> ship_approval <checkpoint-id>`. An approval that comes back in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for `ship_approval`.
 
 An answered `ship_approval` whose answer says anything other than approval (a note, "send back") is a bounce: go to Step 3 with the answer as the builder's instruction.
 
@@ -161,13 +161,18 @@ An answered `ship_approval` whose answer says anything other than approval (a no
 
 ## Unrecoverable errors
 
-Any error you cannot recover from — a required file missing, an agent that returns no verdict line, a tool that fails repeatedly, a denied permission you cannot work around — ends the run: when a spec was claimed, record `run_event failed --detail <short-code>`, then close the run (see **Closing the run** — nothing else will, since this path never calls `ship`/`release`/`abandon`), and end with `AG_BUILD: failed <slug-or-'-'> <short-code>`. The code is one lowercase snake_case word or short phrase naming the cause (`no_verdict_line`, `checkpoint_write_denied`, `run_ended`); use `-` for the slug when no spec was claimed (nothing is logged and there is no run to close then — there is no spec at all to log against). Do not invent new checkpoint reasons for these — the seven reasons are fixed, and an error is a failure, not a pause.
+Any error you cannot recover from — a required file missing, an agent that returns no verdict line, a tool that fails repeatedly, a denied permission you cannot work around, a `checkpoint_open` that came back 409 because the run has already ended — ends the run. When a spec was claimed, check first whether its run is still live: `ag-store run_list --spec "<slug>" --status active`.
+
+- If that list is **empty**, the run has already ended — a `run_ended` 409 is exactly this case — so record nothing: there is no live run to attach a `failed` event to, and calling `run_event` here would create a brand-new phantom run rather than find the old one. Just end with `AG_BUILD: failed <slug> <short-code>`.
+- If a live run exists, record `run_event failed --detail <short-code>` and nothing more — that event is itself terminal (see **Closing the run**), so there is no run left to close afterward; never follow it with `run_close`.
+
+Either way, end with `AG_BUILD: failed <slug-or-'-'> <short-code>`. The code is one lowercase snake_case word or short phrase naming the cause (`no_verdict_line`, `checkpoint_write_denied`, `run_ended`); use `-` for the slug when no spec was claimed (there is no run and no spec at all to log against). Do not invent new checkpoint reasons for these — the seven reasons are fixed, and an error is a failure, not a pause.
 
 ## Closing the run
 
-`ship`, `release` and `abandon` already close the spec's live run server-side as part of that transition — never call `run_close` after any of them, it has nothing left to do and nothing to close.
+`run_event failed` is itself a terminal event — it sets the run's status to `failed` and stamps `ended_at` in the same call, so the run is no longer live once it lands. `ship`, `release` and `abandon` likewise already close the spec's live run server-side as part of that transition. **Never call `run_close` after `run_event failed`, or after `ship`/`release`/`abandon`** — in every one of those cases there is nothing left to close, and `run_close` errors (exit 1, "no active run") when it finds none.
 
-`run_close` is only for a worker that stops **without** a spec transition — the run is still active but no `ship`/`release`/`abandon` call is coming this turn: a hand-off to someone else, an idle worker that claimed nothing further, or a `failed` ending where the claim is being kept on purpose rather than released. In those cases, close the run explicitly so it drops out of the active view while its history is kept for the flow metrics:
+`run_close` is only for a hand-off or idle ending where the run must stop **without** a `failed` verdict: the run is still active, and no `ship`/`release`/`abandon`/`run_event failed` call is coming this turn — a hand-off to someone else mid-build, or an idle worker that claimed nothing further this pass. In those cases, close the run explicitly so it drops out of the active view while its history is kept for the flow metrics:
 
 ```
 ag-store run_close --spec "<slug>" --runner "<identity>" --detail "<why>"
