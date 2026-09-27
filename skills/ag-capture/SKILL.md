@@ -34,11 +34,13 @@ Before anything else, resolve the **Agentile directory** from `.agentile/config.
 
 ## Steps
 
-1. The stub text is `$ARGUMENTS`, minus a trailing `--yes` if present. If it is empty, ask the user for the one line (this is the only question allowed here) and stop until they answer.
+1. The stub text is `$ARGUMENTS`, minus a trailing `--yes` and minus a `--project <slug>` pair if present. If it is empty, ask the user for the one line (this is the only question allowed here) and stop until they answer.
+
+   `--project <slug>` captures into **another** project in the same store — e.g. `/ag-capture --project daisy-stack <idea>` from inside an app files the idea in the DaisyStack inbox. When it is given, pass `--project "<slug>"` on **every** `ag-store` call below (assist and add), so the suggestions come from that project's outcomes and recent stubs, not this one's. When it is absent, pass nothing: `ag-store` uses this checkout's `.agentile/store.md` project.
 2. Ask the store for suggestions (quote the text so the shell cannot eat an apostrophe or a backtick — the text must reach the store **verbatim**):
 
    ```
-   ag-store inbox_assist "<stub text>"
+   ag-store inbox_assist "<stub text>" [--project "<slug>"]
    ```
 
    It returns `{title, text, kind, serves_outcome_slug, duplicate_of, duplicate_of_type, duplicate_probability, judgment_id}` — a tidied title and text, a `kind` (`feature`/`bug`/`chore`/`spike`, or null when the store was not confident), the open Outcome it seems to serve (or null), and a possible duplicate (an existing inbox stub or a ready spec — `duplicate_of_type` is `"inbox"` or `"spec"`) when `duplicate_probability` is 0.5 or more. Nothing is saved yet.
@@ -49,8 +51,8 @@ Before anything else, resolve the **Agentile directory** from `.agentile/config.
 5. Save:
 
    ```
-   ag-store inbox_add "<text>" --title "<title>" --type "<kind>" [--serves "<outcome-slug>"] [--suggested-kind "<kind>"] [--duplicate-of "<id>"] [--duplicate-probability "<p>"]
+   ag-store inbox_add "<text>" --title "<title>" --type "<kind>" [--project "<slug>"] [--serves "<outcome-slug>"] [--suggested-kind "<kind>"] [--duplicate-of "<id>"] [--duplicate-probability "<p>"]
    ```
 
    The store records who captured it from the token — there is no `--by`. It prints the new stub's id. A non-zero exit 2 means the project is not linked — tell the user to run `/ag-init` rather than working around it.
-6. Reply with one short line confirming the stub was captured as inbox item #`<id>`, its title and kind, and (if any) the Outcome it serves. Nothing more.
+6. Reply with one short line confirming the stub was captured as inbox item #`<id>`, its title and kind, the project it went to when `--project` was used, and (if any) the Outcome it serves. Nothing more.

@@ -4,6 +4,14 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## 0.20.1 — 2026-09-27
+
+- **`/ag-capture --project <slug>` files a stub in another project** in the
+  same store, e.g. `/ag-capture --project daisy-stack <idea>` from inside an
+  app lands in the DaisyStack inbox. The flag is passed to both
+  `inbox_assist` and `inbox_add` (`ag-store` already honoured `--project`
+  on every op), so suggestions come from the target project.
+
 ## 0.20.0 — 2026-09-21
 
 - **Agentile Projects is the only backlog store.** The `local` (files + git)
