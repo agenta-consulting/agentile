@@ -24,7 +24,7 @@ Two constraints shape everything below:
 - **One worker process per spec, headless.** Each claimed spec runs as `claude -p "/ag-build"` in its own process, in the project's main checkout, with a model chosen for that spec. The worker exits when the spec is shipped, failed, or a pause has outlasted the keep-alive window.
 - **The daemon answers nothing; the console collects answers.** When a worker needs a decision it writes a checkpoint file into the spec directory and ends its turn. The console shows the checkpoint, takes the answer, and the daemon delivers it on the worker's stdin if the process is still alive, or by `--resume <session_id>` if not. Either way the item's own context survives the pause and nothing from any other item enters it.
 - **Claim first, spawn second.** The daemon claims through the existing store (`bin/ag-store claim`, under the file lock) using the worker's identity as `AGENTILE_RUNNER_ID`, reads the claimed spec's frontmatter to pick the model, then spawns the worker with the same runner id. `/ag-build` finds a spec already claimed by its identity and continues with it. Interactively, `/ag-build` claims for itself.
-- **One daemon per machine, project-shaped commands.** The daemon is the slot manager, because the rate limit is per subscription. Everything you type is per project: `factory start`, `factory stop`, `factory status`. A project is on or off for feeding the factory, has a worker cap and a rank.
+- **One daemon per machine, no project registration.** The daemon is the slot manager, because the rate limit is per subscription. Whether a project feeds the factory, and how many workers it gets, is set on that project's own Settings page in Agentile Projects, not typed at the machine; `factory start`, `factory stop`, `factory status` and `factory scan` take no project path at all — the daemon discovers each project's checkout on this machine by scanning configured roots and asking Agentile Projects which of what it finds is switched on.
 - **Rails console on the Practice Manager stack.** The review surface is a Rails 8 + DaisyStack app (the pattern of `company/internal_projects/practice_manager`): SQLite, Devise, resource pages, live updates through `DaisyStack::Push` over Solid Cable. The daemon runs as a Rails runner inside the same app (`bin/factory`), sharing its models and broadcasting the same events, not as a Solid Queue job.
 - **Stage policy lives in stage playbooks and nowhere else.** `.agentile/loop.md` is retired. Its per-project keys move to the playbooks of the stages they govern; its scheduling keys move to the factory.
 - **The plugin changes stay additive.** Every existing way of running Agentile keeps working through one release of aliases.
@@ -154,32 +154,30 @@ When the console marks a checkpoint answered, the daemon writes one message to t
 
 ## 4. The daemon and its commands
 
-`bin/factory` is one long-running Ruby process per machine, started on demand by the first `factory start` (like herdr's server) or by a `systemd --user` unit. The commands are per project:
+`bin/factory` is one long-running Ruby process per machine, started on demand by the first `factory start` (like herdr's server) or by a `systemd --user` unit. None of the commands take a project — projects come from Agentile Projects:
 
 ```
-factory start [path] --workers 2 --model opus    # register if new, turn on, set allocation
-factory start ~/lab/oma_bom --workers 1 --drain  # turn off again when its backlog empties
-factory stop  [path]                             # turn off: claim nothing new, let workers finish
-factory stop  [path] --now                       # also stop running workers, release claims
+factory start                                    # make sure a daemon is running, wake it
+factory stop                                     # ask a running daemon to shut down
 factory status                                   # every project: on/off, running, waiting on you
+factory scan                                     # sync now; report each project's checkout state
 ```
 
-`path` defaults to the current directory. Registering checks that `.agentile/` exists and runs `bin/ag-store doctor`.
+Turning a project on or off, and setting its worker cap, happens on that project's Settings page in Agentile Projects; the daemon finds where it is checked out on this machine by scanning the roots in Settings (default `~/lab`, `~/projects`) for a direct child carrying a linked `.agentile/store.md`. `factory scan` is the troubleshooting command for that: it syncs immediately and prints every project's checkout state.
 
-Resource direction is two numbers per project plus an order:
+Resource direction is one number per project plus a machine-wide cap:
 
-- `workers`: the most that project may run at once.
-- `rank`: who wins when the machine-wide cap is the binding one.
+- `factory_workers`: the most that project may run at once, set in Agentile Projects.
 - The machine-wide `max_workers` (Settings, default 3), set once for the subscription.
 
-A project with `workers 2` and rank 1 gets its two slots first; whatever is left goes down the ranks. Changing an allocation takes effect at the next poll without touching running workers. There is deliberately no weighted sharing and no cross-project spec priority; rank and caps say "mostly this one, a little of that one" legibly. The claim itself carries no wip limit of its own: the store's own `wip_limit` for the project governs how many of its specs may be in progress at once, across every person and machine that claims from it; `workers`/`workers_cap` is only this machine's own ceiling on how many it runs concurrently, which the scheduler enforces before it ever asks the store to claim.
+There is no rank any more. When the machine-wide cap is the binding one, dispatch goes round-robin across every switched-on, checked-out project — one claim per project per pass — so a small cap is shared out rather than won outright by whichever project sorts first. Changing an allocation — the switch, the cap, or the checkout itself — takes effect at the next sync without touching running workers. There is deliberately no weighted sharing and no cross-project spec priority; round-robin and caps say "share it out" legibly. The claim itself carries no wip limit of its own: the store's own `wip_limit` for the project governs how many of its specs may be in progress at once, across every person and machine that claims from it; `factory_workers`/`workers_cap` is only this machine's own ceiling on how many it runs concurrently, which the scheduler enforces before it ever asks the store to claim.
 
 The daemon's loop, every `poll_interval` (default 30 seconds):
 
 1. **Stream.** Drain every worker's stdout into `events`; on a terminal status line record `shipped`, `paused` (creating the checkpoint row from the file, starting a review server if the reason calls for one), `failed`, or a crash (non-zero exit with no status line). Close stdin on `shipped` and `failed`; on `paused` start the keep-alive clock.
 2. **Deliver.** For each checkpoint answered since the last tick, and each chat message posted, write to the worker's stdin, or resume the session if the process is gone. Stop the review server when its checkpoint is answered.
 3. **Throttle.** Claude Code reports one of three rate-limit statuses: `allowed`, `allowed_warning` and `rejected`. Only `rejected` should stop dispatch — `allowed_warning` is a utilisation warning, not a denial, and treating it as one would hold the whole factory off for the rest of a five-hour window on a warning alone. If any worker reported `rejected`, dispatch nothing until the recorded reset time, and show that on the Floor.
-4. **Dispatch.** While running workers are below the machine cap, for each project that is on, in rank order and below its own cap: claim with a fresh runner id; on a path, read the frontmatter, choose the model (section 5), spawn. Record `NONE`, `WIP_FULL`, `BLOCKED` or `UNPRIORITISED` on the project so the Floor can show why it is idle. A project started with `--drain` turns itself off at `NONE`.
+4. **Dispatch.** While running workers are below the machine cap, round-robin across every project Agentile Projects has switched on that has exactly one checkout on this machine, below its own cap: claim with a fresh runner id; read the frontmatter, choose the model (section 5), spawn. Record `NONE`, `WIP_FULL`, `BLOCKED` or `UNPRIORITISED` on the project so the Floor can show why it is idle. There is no drain any more — switch a project off in Agentile Projects instead.
 5. **Notify.** For each new attention item, a desktop notification (`notify-send`) and, when configured, an ntfy push linking to the item.
 
 The daemon is the only thing that spawns, resumes or messages workers, so the caps are real. On restart it reconciles `workers` marked running against live pids and marks the dead ones crashed. The daemon never runs `/ag-deploy`; the Floor shows how many shipped specs await a deploy per project.
@@ -190,7 +188,7 @@ Resolved once per claim, first match wins:
 
 1. `model:` in the spec frontmatter (new, optional).
 2. The project's route table, keyed by the spec's `route`: default `background: sonnet`, `foreground: opus`, `spike: opus`.
-3. The project's default model, or `--model` given to `factory start`.
+3. The project's default model, set as an override on its detail page in the factory console.
 4. The factory default from Settings (`sonnet`).
 
 A worker on a heavier model also gets `--fallback-model sonnet`, so a capacity error degrades rather than fails. The Projects page shows the resolved model beside each Ready spec before anything is spawned.
