@@ -1,8 +1,8 @@
 # Agentile Factory — one fresh process per spec, and a console for what needs you
 
-Design spec. Status: phase 1 (protocol and `/ag-build`, plugin 0.13.0) implemented 2026-09-16 — see `docs/plans/2026-09-16-ag-build-and-checkpoints.md`; daemon and console not yet built. Supersedes `/ag-loop` and the single-machine `bin/ag-run` driver as the way to run Agentile unattended; `bin/ag-run` stays as the zero-infrastructure fallback. Builds on `docs/agentile-loop-runner.md` (the runner and its exit contract) and `docs/plans/2026-09-06-loop-context-management.md` (fresh context per item, runner identity, thin orchestrator), and is the "separate mode" those documents deferred for detached, unattended runs.
+Design spec. Status: phase 1 (protocol and `/ag-build`, plugin 0.13.0) implemented 2026-09-16 — see `docs/plans/2026-09-16-ag-build-and-checkpoints.md`; the daemon and console are both built (console phase in progress; see the 0.20.0 status notes below). Supersedes `/ag-loop` and the single-machine `bin/ag-run` driver as the way to run Agentile unattended; `bin/ag-run` stays as the zero-infrastructure fallback. Builds on `docs/agentile-loop-runner.md` (the runner and its exit contract) and `docs/plans/2026-09-06-loop-context-management.md` (fresh context per item, runner identity, thin orchestrator), and is the "separate mode" those documents deferred for detached, unattended runs.
 
-> **Status (0.20.0):** since Agentile Projects landed, checkpoints and runs described below as files or local daemon tables are store records instead: `/ag-build` opens a checkpoint and gets back an **id**, not a path, and that checkpoint is answered by id — on the Agentile Projects dashboard or at a terminal with `ag-store checkpoint_answer <id>`. Runs are likewise store records (`runs`/`run_events`), not a `workers` table the daemon owns alone. §7 and §9 below carry the same note where they describe the console and the daemon's data model; the rest of this document (the file-based checkpoint protocol in §3, the `<checkpoint-path>` status-line slot, the local `checkpoints`/`workers` schema in §9) is history, not current behaviour.
+> **Status (0.20.0):** since Agentile Projects landed, checkpoints and runs described below as files or local daemon tables are store records instead: `/ag-build` opens a checkpoint and gets back an **id**, not a path, and that checkpoint is answered by id — on the Agentile Projects dashboard or at a terminal with `ag-store checkpoint_answer <id>`. Runs are likewise store records (`runs`/`run_events`), not a `workers` table the daemon owns alone. §7 and §9 below carry the same note where they describe the console and the daemon's data model; the rest of this document (the file-based checkpoint protocol in §3, the `<checkpoint-path>` status-line slot, the local `checkpoints`/`workers` schema in §9) is history, not current behaviour. The Agentile Factory (`~/lab/agentile_factory`) now implements this: a paused worker's `AG_BUILD: paused` line carries the checkpoint id, each daemon tick asks the store whether that checkpoint is answered and delivers the answer on the worker's stdin (or restarts it on the same claim and runner id), the daemon keeps no local checkpoints table, and factory-detected failures (a crash or a wall-clock timeout) are reported to the store as a `failed` run event. See the factory's `docs/decisions/0004-agentile-projects-owns-the-backlog.md`.
 
 ## Context
 
@@ -21,7 +21,7 @@ Two constraints shape everything below:
 ## Decisions
 
 - **The unit of work is one spec, and the skill is `/ag-build`.** `/ag-build [slug]` takes one spec from claim to shipped and stops. It replaces `/ag-loop`; there is no skill that iterates. Running several specs at once means several sessions or several factory workers, each on one spec.
-- **One worker process per spec, headless.** Each claimed spec runs as `claude -p "/ag-build"` in its own process, its own git worktree, with a model chosen for that spec. The worker exits when the spec is shipped, failed, or a pause has outlasted the keep-alive window.
+- **One worker process per spec, headless.** Each claimed spec runs as `claude -p "/ag-build"` in its own process, in the project's main checkout, with a model chosen for that spec. The worker exits when the spec is shipped, failed, or a pause has outlasted the keep-alive window.
 - **The daemon answers nothing; the console collects answers.** When a worker needs a decision it writes a checkpoint file into the spec directory and ends its turn. The console shows the checkpoint, takes the answer, and the daemon delivers it on the worker's stdin if the process is still alive, or by `--resume <session_id>` if not. Either way the item's own context survives the pause and nothing from any other item enters it.
 - **Claim first, spawn second.** The daemon claims through the existing store (`bin/ag-store claim`, under the file lock) using the worker's identity as `AGENTILE_RUNNER_ID`, reads the claimed spec's frontmatter to pick the model, then spawns the worker with the same runner id. `/ag-build` finds a spec already claimed by its identity and continues with it. Interactively, `/ag-build` claims for itself.
 - **One daemon per machine, project-shaped commands.** The daemon is the slot manager, because the rate limit is per subscription. Everything you type is per project: `factory start`, `factory stop`, `factory status`. A project is on or off for feeding the factory, has a worker cap and a rank.
@@ -44,7 +44,7 @@ Two constraints shape everything below:
                  │  deliver answers → review servers → notify    │
                  └───┬───────────────┬──────────────┬───────────┘
                      │ stdin/stdout  │              │  one process each,
-                     ▼ stream-json   ▼              ▼  own worktree, own model
+                     ▼ stream-json   ▼              ▼  in the project's checkout, own model
               claude -p        claude -p       claude -p
               /ag-build        /ag-build       /ag-build
               (numnums, opus)  (oma_bom, sonnet)(numnums, sonnet)
@@ -70,6 +70,8 @@ AG_BUILD: failed <slug-or-'-'> <reason>
 AG_BUILD: idle <NONE|WIP_FULL|BLOCKED|UNPRIORITISED>
 ```
 
+The status line being the turn's *last* line is what a reader can rely on, not its *only* line: a `plan_review` pause typically ends a paragraph of prose and a pointer to `plan.md` with this line, and a driver reading the turn should scan for the last matching line rather than expect the whole turn to be just this.
+
 The name collides with the build stage (`ag-builder`, `.agentile/build.md`) and that is accepted: "build the spec" is the whole trip, "the build stage" is the implementing part of it. Stage prose says "implement" wherever the two would otherwise be confused.
 
 Interactive use is unchanged in spirit: you run `/ag-build 0009-unit-conversion-rules` in a session to hand-drive one spec while the factory works the rest of the queue. Pauses in an interactive session are still asked in chat, but the checkpoint file is written regardless so the item appears on the console. The builder already implements in its own worktree, so an interactive `/ag-build` beside factory workers touches the main checkout only to claim and to ship, both under the repo's locks.
@@ -93,7 +95,6 @@ Per claimed spec the daemon runs:
 
 ```
 cd <project>
-git worktree add <worktree_root>/<project>/<slug> -b ag/<slug> <trunk>
 AGENTILE_RUNNER_ID=factory/<project>/<slug> \
 claude -p "/ag-build" \
   --model <chosen> \
@@ -106,7 +107,7 @@ claude -p "/ag-build" \
   --append-system-prompt-file <plugin>/templates/factory-worker.md
 ```
 
-The cwd is the worktree, so edits, gate runs and commits are isolated from every other worker on the same repo. Ship merges to trunk through `bin/ag-lock` per repo. The daemon removes the worktree on `shipped` or abandon and keeps it on `paused`, `failed` or crash.
+The cwd is the project's own main checkout, not a worktree the daemon creates per worker — a worktree checks out trunk with no working copy of the claim `ag-store claim` just wrote into the spec's frontmatter, so a worker started there would find nothing claimed by its own identity. See the factory's `docs/decisions/0001-workers-run-in-the-main-checkout.md` for the full reasoning. Isolation of code changes is handled one level down instead: the `ag-builder` subagent still declares its own `isolation: worktree`, so gate runs and commits for the build stage happen in a worktree regardless. Ship merges to trunk through `bin/ag-lock` per repo, serialising the main checkout across whatever workers share it.
 
 The daemon holds stdin open for the life of the worker. That gives three things: chat messages from the console reach the worker at its next turn boundary at the latest; a paused worker can stay alive and idle, costing nothing, so an answer is delivered instantly; and the process still stops when it is done, because the daemon closes stdin when it sees a terminal status line. A paused worker that outlives the keep-alive window (Settings, default 30 minutes) is closed, and later answers go through `--resume <session_id>`. If a resume fails, the daemon falls back to a fresh `claude -p "/ag-build"` with the same runner id; the claim and the answered checkpoint are on disk, so the item continues from its plan and branch.
 
@@ -177,7 +178,7 @@ The daemon's loop, every `poll_interval` (default 30 seconds):
 
 1. **Stream.** Drain every worker's stdout into `events`; on a terminal status line record `shipped`, `paused` (creating the checkpoint row from the file, starting a review server if the reason calls for one), `failed`, or a crash (non-zero exit with no status line). Close stdin on `shipped` and `failed`; on `paused` start the keep-alive clock.
 2. **Deliver.** For each checkpoint answered since the last tick, and each chat message posted, write to the worker's stdin, or resume the session if the process is gone. Stop the review server when its checkpoint is answered.
-3. **Throttle.** If any worker reported a rate limit, dispatch nothing until the recorded reset time, and show that on the Floor.
+3. **Throttle.** Claude Code reports one of three rate-limit statuses: `allowed`, `allowed_warning` and `rejected`. Only `rejected` should stop dispatch — `allowed_warning` is a utilisation warning, not a denial, and treating it as one would hold the whole factory off for the rest of a five-hour window on a warning alone. If any worker reported `rejected`, dispatch nothing until the recorded reset time, and show that on the Floor.
 4. **Dispatch.** While running workers are below the machine cap, for each project that is on, in rank order and below its own cap: claim with a fresh runner id; on a path, read the frontmatter, choose the model (section 5), spawn. Record `NONE`, `WIP_FULL`, `BLOCKED` or `UNPRIORITISED` on the project so the Floor can show why it is idle. A project started with `--drain` turns itself off at `NONE`.
 5. **Notify.** For each new attention item, a desktop notification (`notify-send`) and, when configured, an ntfy push linking to the item.
 
@@ -211,7 +212,7 @@ When a `ship_approval` or `verify_checkpoint` checkpoint opens on a project with
 
 ## 7. The console
 
-> **Status (0.20.0):** the console pages described here are absorbed by Agentile Projects' dashboards (home and per-project attention/in-progress/up-next). The daemon keeps spawning workers; its checkpoints and runs are the store's records (`ag-store checkpoint_open`/`run_event`), and a checkpoint answered on the dashboard is what resumes a worker.
+> **Status (0.20.0):** the console pages described here are absorbed by Agentile Projects' dashboards (home and per-project attention/in-progress/up-next). The daemon keeps spawning workers; its checkpoints and runs are the store's records (`ag-store checkpoint_open`/`run_event`), and a checkpoint answered on the dashboard is what resumes a worker. This is implemented, and the console below is not: the factory has no answer form of its own; instead it links to the checkpoint's page in Agentile Projects (`<url>/p/<project>/checkpoints/<id>/edit`) and to the project's dashboard. See the factory's `docs/decisions/0004-agentile-projects-owns-the-backlog.md`.
 
 Four pages. All of them re-render on push: every daemon write to `workers`, `checkpoints`, `projects` and `events` broadcasts through `DaisyStack::Push` after commit, the RaceBox pattern, and the grids and cards declare `rerender_on:`.
 
@@ -231,14 +232,14 @@ The console runs on the factory machine and is reached over the LAN or Tailscale
 
 - No `ANTHROPIC_API_KEY` in the daemon's environment, ever; the daemon refuses to start if one is set.
 - Never `--bare`.
-- Every worker is confined to its worktree; trunk is touched only by the ship step under `bin/ag-lock`, and `gates.json` protected branches still apply.
+- Every worker runs in the project's main checkout; trunk is touched only by the ship step under `bin/ag-lock`, and `gates.json` protected branches still apply.
 - `--permission-prompts none`: an unauthorised action is denied, not waited on. Default posture is `acceptEdits` plus an allowlist built from the project's `gates.json` commands, `git`, and the plugin's own tools (`ag-store`, `ag-lock`). `bypassPermissions` is a per-project opt-in and the Projects page labels it.
-- `--max-turns` and a wall-clock limit end runaway workers as `failed timeout` with the worktree intact.
+- `--max-turns` and a wall-clock limit end runaway workers as `failed timeout` with the claim and checkout left as they are for inspection.
 - Review credentials come from the environment through the console; the model never sees or writes them.
 
 ## 9. Data model
 
-> **Status (0.20.0):** `checkpoints` and the run state live in Agentile Projects (`runs`, `run_events`, `checkpoints`); the daemon's local tables become a cache of process state (pid, pipes) only.
+> **Status (0.20.0):** `checkpoints` and the run state live in Agentile Projects (`runs`, `run_events`, `checkpoints`); the daemon's local tables become a cache of process state (pid, pipes) only. This is implemented: the factory keeps no local `checkpoints` table at all. A paused worker's `AG_BUILD: paused <slug> <reason> <id>` line gives the daemon the store's checkpoint id; each tick it asks the store (`ag-store checkpoint_list <slug>`) whether that id is answered, then either writes "Checkpoint `<id>` is answered. Read it and continue." on the worker's stdin or restarts it on the same claim with the same `AGENTILE_RUNNER_ID`. See the factory's `docs/decisions/0004-agentile-projects-owns-the-backlog.md`.
 
 - **projects**: name, path, on, drain, rank, workers_cap, default_model, route_models (json), permission_mode, allowed_tools (json), review (json, mirrored from gates.json at registration and refreshed each poll), last_claim_result, last_polled_at.
 - **workers**: project_id, spec_slug, spec_rank, runner_id, session_id, model, worktree_path, branch, pid, status (`running`, `paused`, `handed_over`, `shipped`, `failed`, `crashed`, `stopped`), started_at, ended_at, paused_at, turns, input_tokens, output_tokens, cost_reported, exit_status, last_line.
