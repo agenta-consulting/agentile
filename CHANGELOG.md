@@ -4,6 +4,23 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
+## Unreleased
+
+- **Docs:** `docs/agentile-factory.md` corrected to match the built factory: the
+  daemon and console are both built (line 3), §2 points at the factory's
+  `docs/decisions/0001-workers-run-in-the-main-checkout.md` instead of
+  describing a per-worker git worktree, and §7/§9's 0.20.0 status notes now
+  say the factory implements them — checkpoint ids on the `AG_BUILD: paused`
+  line, no local checkpoints table, the console linking to the checkpoint's
+  page in Agentile Projects and to the project dashboard — naming the
+  factory's `docs/decisions/0004-agentile-projects-owns-the-backlog.md`.
+  Also records two facts owed since phase 2: a status line can follow prose
+  in the same turn, and Claude Code emits `allowed_warning` as a third
+  rate-limit status alongside `allowed`/`rejected`.
+  `templates/factory-worker.md` now tells a worker it runs in the project's
+  checkout, not its own worktree (the builder sub-agent's own
+  `isolation: worktree` is unchanged).
+
 ## 0.20.1 — 2026-09-27
 
 - **`/ag-capture --project <slug>` files a stub in another project** in the
