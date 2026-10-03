@@ -6,6 +6,12 @@ here. See the Versioning section in [README.md](./README.md) for why.
 
 ## Unreleased
 
+## 0.22.2 — 2026-10-03
+
+- **`dev/ag-dev-link` always links the main checkout.** Run from inside a
+  worktree, it used to link the installed plugin to that worktree, so the
+  install silently stayed on whatever version the branch was on.
+
 ## 0.22.1 — 2026-10-03
 
 - **`/ag-deploy` no longer dirties the tree and then refuses itself.** The

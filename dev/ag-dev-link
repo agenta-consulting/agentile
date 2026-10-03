@@ -10,6 +10,12 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Run from a worktree, REPO would be that worktree — a branch that goes stale
+# the moment trunk moves. Always link the main checkout.
+COMMON="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+if [ -n "$COMMON" ] && [ "$(basename "$COMMON")" = ".git" ]; then
+  REPO="$(dirname "$COMMON")"
+fi
 MARKET="agentile"
 PLUGIN="agentile"
 
