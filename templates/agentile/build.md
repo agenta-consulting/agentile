@@ -9,5 +9,6 @@
 Document execution conventions here (commit granularity, etc.). `/ag-build`
 creates `.claude/worktrees/build-<slug>` on branch `build/<slug>` before
 planning; a `delegate_to` skill is handed that worktree and must not create its own.
-With `delegate_to: worktree-workflow`, each ready spec is built as an isolated
-worktree chunk and merged back to main. Run `/ag-customise build` to set this up.
+With `delegate_to: worktree-workflow`, that skill does the build work inside
+the worktree `/ag-build` created (it must not create its own); `/ag-build` merges
+`build/<slug>` back to trunk. Run `/ag-customise build` to set this up.

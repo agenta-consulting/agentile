@@ -17,6 +17,9 @@ here. See the Versioning section in [README.md](./README.md) for why.
   no longer declares `isolation: worktree`. A plan_review amendment is
   committed (`Amend plan <slug>`) and a send-back now re-plans. Ship merges
   `build/<slug>` and removes the worktree and branch. See ADR-0001.
+- **Upgrade note.** A spec planned under the old flow leaves an untracked
+  `docs/agentile/specs/<slug>/` in the main checkout; remove it before the ship
+  merge or the merge fails with "untracked files would be overwritten".
 
 ## 0.22.2 — 2026-10-03
 

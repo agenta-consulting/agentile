@@ -66,16 +66,17 @@ Every spec is built in one worktree and branch, created **before planning** so `
 
 0. Main-checkout check: `git rev-parse --git-dir` and `git rev-parse --git-common-dir`. If they differ, this session is inside a linked worktree: refuse. From a factory, end with `AG_BUILD: failed <slug> not_main_checkout` (recording `run_event failed` per **Unrecoverable errors**).
 1. `<worktree>` and `<branch>` as above.
-2. `git check-ignore -q .claude/worktrees/` — if it exits 1, add `.claude/worktrees/` to `.git/info/exclude` with the Edit tool (local, never committed) so the worktree never shows untracked on trunk.
+2. `git check-ignore -q .claude/worktrees/` — if it exits 1, add `.claude/worktrees/` to `.git/info/exclude` with the Edit tool (local, never committed) so the worktree never shows untracked on trunk. Known caveat: a headless run may not be allowed to write `.git/info/exclude`; if the write is denied, end with `worktree_ignore_failed` (treated like `worktree_create_failed`) rather than working around it.
 3. `git worktree prune` — clears registrations whose directory was deleted, so a resume after a manual delete can recreate it.
 4. `git worktree list --porcelain`, then:
    - `<worktree>` registered on `refs/heads/build/<slug>` → reuse it.
    - `<worktree>` registered on any other branch or detached, `build/<slug>` checked out in another worktree, or the path exists on disk but is not registered → `worktree_conflict`. Never delete anything.
    - Path absent and `git rev-parse --verify --quiet refs/heads/build/<slug>` succeeds → `git worktree add <worktree> build/<slug>` (reuse the branch, never reset it).
-   - Neither → `git worktree add <worktree> -b build/<slug>` (cut from the main checkout's HEAD, which is trunk).
+   - Neither → `git worktree add <worktree> -b build/<slug>` (cut explicitly from `<trunk>`, the branch `.agentile/ship.md` merges to, falling back to the main checkout's current branch: `git worktree add <worktree> -b build/<slug> <trunk>`).
    - A failing `git worktree add` → `worktree_create_failed`.
+   - Recreation needs the `build/<slug>` ref on this machine: nothing pushes the branch, so another machine without it starts from `<trunk>` again.
 
-For `worktree_conflict` or `worktree_create_failed`, record `run_event failed --detail <code>` if the run is live and end with `AG_BUILD: failed <slug> <code>`.
+For `worktree_conflict`, `worktree_create_failed` or `worktree_ignore_failed`, record `run_event failed --detail <code>` if the run is live and end with `AG_BUILD: failed <slug> <code>`.
 
 **Pointing subagents at the worktree.** Dispatch `ag-builder` and `ag-reviewer` with the Agent tool's `cwd` set to `<worktree>`, so their Bash runs there and gate commands run as typed. Also put the absolute worktree path and branch in the prompt, tell them to use absolute paths for Read/Edit/Write, and to verify on their first call that `git rev-parse --show-toplevel` equals the worktree path and `git branch --show-current` equals the branch — returning `BUILD: blocked` (builder) or `VERDICT: question` (reviewer) if not, rather than editing the wrong checkout.
 

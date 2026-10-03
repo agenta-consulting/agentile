@@ -55,8 +55,9 @@ deletes the branch. Abandon and release leave both in place.
 
 - Trunk never carries an untracked spec directory; the plan and the code
   arrive in the same merge, and the PR shows the acceptance criteria.
-- Resume is deterministic: the branch name is derived from the slug, so any
-  machine can recreate the worktree from `build/<slug>`.
+- Resume is deterministic: the branch name is derived from the slug, so the
+  worktree can be recreated from `build/<slug>` on the machine that has that
+  ref. Nothing pushes the branch, so another machine would start over from trunk.
 - The orchestrator now does git plumbing (worktree add/prune/remove, branch
   delete) that Claude Code used to do; edge cases (stale registrations, a path
   on the wrong branch, unmerged branches) are ours to handle.
