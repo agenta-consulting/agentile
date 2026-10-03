@@ -40,16 +40,19 @@ checklist is configured (`/ag-customise deploy` writes one).
 
 ## Steps
 
-1. **Establish what would go out.** Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Read the deploy log `<dir>/deploys.md` (create it from `templates/agentile/deploys.md` if missing) for its last line; the batch is every spec in `ag-store spec_list --pool done` whose `shipped_at` is after that line's timestamp. If the log has no lines, say so — this is the first recorded deploy, so list the shipped specs and let the user confirm the starting point rather than claiming the whole history is undeployed.
-
-2. **Refuse to deploy something you cannot name.** Stop and report, rather than
-   continuing, when:
+1. **Check the tree before touching it.** This runs first, before anything in
+   this skill writes a file — otherwise the skill dirties the tree and then
+   refuses itself. Stop and report, rather than continuing, when:
    - the working tree is dirty (`git status --porcelain` is non-empty) — deploy
      what is committed, never what is merely on disk;
    - the current branch is not the trunk in `gates.json`'s
-     `protected_branches`, or trunk is behind its remote;
-   - a spec is `in_progress` and its branch is already merged — that is work
-     that shipped without being recorded, and the batch list would be wrong.
+     `protected_branches`, or trunk is behind its remote (`git fetch` first).
+
+2. **Establish what would go out.** Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. If the sync changed `<dir>/brief.md`, commit that file alone (`Refresh brief copy from the store`) — it is a read-only copy of the store's brief, not code, and leaving it on disk would make the deploy's sha lie about the tree. Read the deploy log `<dir>/deploys.md` for its last line; a missing log is the same as an empty one — **do not create it here**, step 7 does. The batch is every spec in `ag-store spec_list --pool done` whose `shipped_at` is after that line's timestamp. If the log has no lines, say so — this is the first recorded deploy, so list the shipped specs and let the user confirm the starting point rather than claiming the whole history is undeployed.
+
+   **Refuse to deploy something you cannot name:** stop and report if a spec is
+   `in_progress` and its branch is already merged — that is work that shipped
+   without being recorded, and the batch list would be wrong.
 
 3. **Run the pre-deploy checklist** from `.agentile/deploy.md`, in the order
    written. These are the project's own heavy checks — a phase sign-off, a
@@ -80,7 +83,8 @@ checklist is configured (`/ag-customise deploy` writes one).
    deployed because the project has not configured a deploy command. Do not
    invent one, and do not substitute a build or a push you found in a Makefile.
 
-7. **Record it.** Append one line to `<dir>/deploys.md`:
+7. **Record it.** Append one line to `<dir>/deploys.md` (create it from
+   `templates/agentile/deploys.md` first if it does not exist):
 
    ```
    - <ISO8601> runner=<identity> target=<target> ref=<git sha> specs=<n> detail=<slugs, comma-separated>

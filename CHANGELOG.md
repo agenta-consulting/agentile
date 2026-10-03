@@ -6,6 +6,14 @@ here. See the Versioning section in [README.md](./README.md) for why.
 
 ## Unreleased
 
+## 0.22.1 — 2026-10-03
+
+- **`/ag-deploy` no longer dirties the tree and then refuses itself.** The
+  clean-tree and trunk checks now run first, before the skill writes anything.
+  A `brief_sync` that changes `brief.md` is committed on its own, and
+  `deploys.md` is created only when step 7 records a deploy (a missing log
+  counts as empty). Before this, step 1 could rewrite `brief.md` or create
+  `deploys.md`, and then step 2 stopped because the tree was dirty.
 - **Docs:** `docs/agentile-factory.md` corrected to match the built factory: the
   daemon and console are both built (line 3), §2 points at the factory's
   `docs/decisions/0001-workers-run-in-the-main-checkout.md` instead of
