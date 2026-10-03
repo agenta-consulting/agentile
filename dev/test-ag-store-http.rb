@@ -70,7 +70,7 @@ end
 # the offline section's calls against the fake API — each call's own `env:`
 # hash still layers on top and can re-set any of these deliberately.
 ISOLATE = { "AGENTILE_PROJECTS_URL" => nil, "AGENTILE_PROJECTS_TOKEN" => nil,
-            "AGENTILE_RUNNER_ID" => nil, "CLAUDE_SESSION_ID" => nil }.freeze
+            "AGENTILE_RUNNER_ID" => nil, "CLAUDE_SESSION_ID" => nil, "AGENTILE_MODEL" => nil }.freeze
 
 def run_store(*args, env: {}, stdin: nil, chdir: Dir.pwd)
   out, err, st = Open3.capture3(ISOLATE.merge(env), "ruby", HELP, *args, stdin_data: stdin.to_s, chdir: chdir)
@@ -212,6 +212,24 @@ with_project(api.url) do |root|
   raise "claim code" unless store!("claim", "runner-1", "", env: ENV_OK, chdir: root) == "WIP_FULL"
   body = JSON.parse(api.requests.last[:body])
   raise "claim omits wip and slug when neither given: #{body.inspect}" unless body == { "identity" => "runner-1", "label" => "" }
+
+  # model: --model on the body, verbatim; AGENTILE_MODEL as fallback; flag wins; blank is absent
+  store!("claim", "runner-1", "", "--model", "claude-opus-5-5", env: ENV_OK, chdir: root)
+  body = JSON.parse(api.requests.last[:body])
+  raise "claim --model: #{body.inspect}" unless body == { "identity" => "runner-1", "label" => "", "model" => "claude-opus-5-5" }
+
+  store!("claim", "runner-1", "", env: ENV_OK.merge("AGENTILE_MODEL" => "sonnet"), chdir: root)
+  body = JSON.parse(api.requests.last[:body])
+  raise "claim AGENTILE_MODEL (verbatim alias): #{body.inspect}" unless body["model"] == "sonnet"
+
+  store!("claim", "runner-1", "", "--model", "claude-opus-5-5", env: ENV_OK.merge("AGENTILE_MODEL" => "sonnet"), chdir: root)
+  raise "claim flag should win over env" unless JSON.parse(api.requests.last[:body])["model"] == "claude-opus-5-5"
+
+  store!("claim", "runner-1", "", env: ENV_OK.merge("AGENTILE_MODEL" => ""), chdir: root)
+  raise "claim blank env omits model: #{api.requests.last[:body]}" if JSON.parse(api.requests.last[:body]).key?("model")
+
+  store!("claim", "runner-1", "", "--model", "--spec", "a", env: ENV_OK, chdir: root)
+  raise "claim valueless --model must not send true: #{api.requests.last[:body]}" if JSON.parse(api.requests.last[:body]).key?("model")
 end
 
 # 12. release/ship/abandon (with --reason and optional --cascade); release/ship pass through
@@ -324,6 +342,43 @@ with_project(api.url) do |root|
   run_store("run_event", "failed", "--spec", "ended-spec", "--runner", "runner-1", "--detail", "run_ended", env: ENV_OK, chdir: root)
   after = api.requests.count { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" }
   raise "run_event on a spec whose only run has ended should still create a new run (the C1 bug)" unless after == before + 1
+end
+
+# 16c. model on the run ensure_run creates: --model / AGENTILE_MODEL ride on POST /runs only
+#      when a run is actually opened; an existing active run gets nothing model-related.
+(4..8).each do |n|
+  api.route("POST", "#{P}/runs/#{n}/events") { |_r| [201, { "id" => n, "last_event_at" => "2026-09-21T00:00:02Z" }] }
+  api.route("POST", "#{P}/runs/#{n}/checkpoints") { |_r| [201, { "id" => 600 + n }] }
+end
+with_project(api.url) do |root|
+  runs_posts = -> { api.requests.select { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" } }
+  mark = api.requests.size
+
+  store!("run_event", "claimed", "--spec", "mod-one", "--runner", "runner-1", "--model", "claude-opus-5-5", env: ENV_OK, chdir: root)
+  created = api.requests[mark..].find { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" }
+  raise "run_event --model should create run with model" unless created && JSON.parse(created[:body]) == { "spec" => "mod-one", "runner_id" => "runner-1", "session_id" => "sess-1", "model" => "claude-opus-5-5" }
+
+  mark = api.requests.size
+  store!("run_event", "started", "--spec", "mod-one", "--runner", "runner-1", "--model", "other", env: ENV_OK, chdir: root)
+  store!("checkpoint_open", "mod-one", "ship_approval", "--model", "other", "--by", "ship", env: ENV_OK.merge("AGENTILE_RUNNER_ID" => "runner-1"), stdin: "ok?", chdir: root)
+  later = api.requests[mark..]
+  raise "existing run: no further POST /runs" unless later.none? { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" }
+  raise "existing run: no request body may carry model" if later.any? { |r| r[:body].include?("model") }
+
+  mark = api.requests.size
+  store!("checkpoint_open", "zed-two", "ship_approval", "--model", "claude-opus-5-5", "--by", "ship", env: ENV_OK.merge("AGENTILE_RUNNER_ID" => "runner-1"), stdin: "ok?", chdir: root)
+  created = api.requests[mark..].find { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" }
+  raise "checkpoint_open --model on a fresh spec" unless created && JSON.parse(created[:body])["model"] == "claude-opus-5-5"
+
+  mark = api.requests.size
+  store!("run_event", "claimed", "--spec", "yak-three", "--runner", "runner-1", env: ENV_OK.merge("AGENTILE_MODEL" => "sonnet"), chdir: root)
+  created = api.requests[mark..].find { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" }
+  raise "ensure_run AGENTILE_MODEL fallback" unless created && JSON.parse(created[:body])["model"] == "sonnet"
+
+  mark = api.requests.size
+  store!("run_event", "claimed", "--spec", "owl-four", "--runner", "runner-1", env: ENV_OK, chdir: root)
+  created = api.requests[mark..].find { |r| r[:method] == "POST" && r[:path] == "#{P}/runs" }
+  raise "no model => no model key" if created.nil? || JSON.parse(created[:body]).key?("model")
 end
 
 # 17. checkpoint_list / checkpoint_open_count / checkpoint_answer
