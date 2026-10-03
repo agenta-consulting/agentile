@@ -21,6 +21,26 @@ here. See the Versioning section in [README.md](./README.md) for why.
   checkout, not its own worktree (the builder sub-agent's own
   `isolation: worktree` is unchanged).
 
+## 0.21.0 — 2026-10-03
+
+- **`/ag-build` writes every checkpoint ask in one structured format**:
+  a one-line headline, optional context, a `Before approving:` checklist,
+  an `Options:` list (`(recommended)` on one) and a `---` line before the
+  details. The format and a per-reason table live in a new "Checkpoint ask
+  format" section of `skills/ag-build/SKILL.md`; every Step that writes a
+  checkpoint names its sections, and the plan_review example and the
+  ship_approval layout are rewritten to it.
+- **Builder and reviewer reports follow it**: a `blocked` report and a
+  `VERDICT: fail` report start with a headline and give `Options:`; the
+  `## Question` block uses `Options:` with `(recommended)` instead of
+  `Recommendation: <n>`, which is still accepted.
+- **`ag-store checkpoint_open` warns on stderr** (never fails, ask posted
+  unchanged, exit 0) for an ask over 200 characters with no blank line, or
+  with no `Options:` line unless the reason is plan_review or ship_approval.
+- **`templates/checkpoint-asks/<reason>.md`**: one worked example per reason,
+  the shared fixtures client parsers test against. Clients keep their prose
+  heuristics as the fallback for old asks.
+
 ## 0.20.1 — 2026-09-27
 
 - **`/ag-capture --project <slug>` files a stub in another project** in the

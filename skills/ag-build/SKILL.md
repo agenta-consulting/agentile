@@ -62,6 +62,54 @@ The **spec directory** is `<dir>/specs/<slug>/` — created by `/ag-plan` (via `
 
 Every `ag-store checkpoint_open` call also passes `--by <who>`, naming what asked — `plan`, `build`, `verify` or `ship` for a stage checkpoint, and `builder` or `reviewer` for a `question`. It lands as the `asked_by` field, and Step 0 routes an answered `question` by it.
 
+## Checkpoint ask format
+
+Every checkpoint ask is written in one layout, so every client (Factory, Agentile Projects, Hooman Input, iOS, Shaper) can render and answer it the same way:
+
+```
+<Headline: one sentence on one line. What the human must decide or know.>
+
+<Context: optional, one to three short lines. Why now, what was tried.>
+
+Before approving:
+- <thing to check, e.g. open http://localhost:3000/x and confirm Y>
+
+Options:
+1. <the exact reply this option sends> (recommended)
+2. <the exact reply this option sends>
+3. Fix it yourself with: <command>, then answer 'done'
+
+---
+
+<Details: findings, gate output, file:line bullets, evidence paths or links.>
+```
+
+Rules (each is something a parser relies on):
+
+- Line 1 is the headline: one sentence, no markdown heading, no list marker, no visual-evidence link.
+- Blank lines separate the blocks. An ask of 200 characters or fewer may be the headline alone.
+- `Options:` sits alone on its line, followed directly by a numbered list (`1.`, `2.` …): two to four items, one per line, no blank lines inside. Write `Options:` once only, and never in Details.
+- Write each option **exactly as the reply it sends**; the worker matches the answer text against it. A one-line consequence may follow after ` — `. At most one option carries `(recommended)`.
+- An option that needs the human to act elsewhere says so in words (`yourself`, `with: <command>`, `answer with a different instruction`); clients give it no button. One that sends a fixed reply after acting elsewhere uses `then answer '<reply>'`.
+- `---` alone on a line separates the decision from the Details, which clients fold.
+- `Before approving:` is a `-` checklist of what to open or check. Visual evidence (a path or link) goes there or in Details, never in the headline.
+- `Recommendation: <n>` on its own line after the list is still accepted (legacy), but write `(recommended)` instead.
+- Standard wording for plan_review and ship_approval Options: `1. approved` and `2. Send it back: answer with a different instruction saying what to change`.
+
+Sections per reason:
+
+| reason | headline | context | Before approving | Options | `---` Details |
+|---|---|---|---|---|---|
+| plan_review | "Plan ready for `<slug>`: <one-line summary>." | optional | optional | approved / send back | plan summary; path to plan.md |
+| build_blocked | why the builder stopped | what it tried | no | required | builder's report bullets |
+| question | the question | optional | no | required, one `(recommended)` | consequences, background |
+| build_checkpoint | what was built | optional | optional | required (approved / send back) | builder's summary |
+| gate_failure | what still fails after retries | retry count | no | required (retry / `release` / abandon yourself with: `/ag-abandon <slug>`) | reviewer's must-fix findings |
+| verify_checkpoint | the verify outcome | optional | optional | required (approved / send back) | reviewer's findings |
+| ship_approval | "Ship `<slug>` — <title>?" | what was built, verify outcome (one sentence each) | yes | approved / send back | evidence links or paths, report extracts |
+
+`ag-store checkpoint_open` warns on stderr, and still posts the ask unchanged (exit 0), when an ask over 200 characters has no blank line, or when it has no `Options:` line and its reason is not plan_review or ship_approval. Worked examples, one per reason, are in `templates/checkpoint-asks/<reason>.md`; client repos test their parsers against them. Old prose asks still go through, and clients keep their prose heuristics as the fallback.
+
 **Record an answer that arrives in chat.** The checkpoint record is the record of the decision; the transcript is not. So when the human answers in conversation rather than in the app — an interactive session where you relayed the ask with `AskUserQuestion`, or where the user simply replied in their next turn — record it before you act on it:
 
 ```
@@ -112,10 +160,10 @@ ag-store claim "<identity>" "" [--spec "<slug from $ARGUMENTS>"]
 
 Invoke `/ag-plan <slug>`. Invoked from `/ag-build`, it dispatches the `ag-planner` subagent, creates `<spec-dir>`, writes `plan.md` and a `SPEC.md` snapshot there, and returns a short confirmation.
 
-Pause for plan review when the stage playbook `.agentile/plan.md`'s `human_checkpoint` is `true`, or is `route` and the spec's `route` (from the Step 1 listing, or the Step 0 listing on a resumed run) is `foreground` or `spike`. To pause: write the checkpoint with the plan summary `/ag-plan` returned as the ask,
+Pause for plan review when the stage playbook `.agentile/plan.md`'s `human_checkpoint` is `true`, or is `route` and the spec's `route` (from the Step 1 listing, or the Step 0 listing on a resumed run) is `foreground` or `spike`. To pause: write the checkpoint as a plan_review ask in the **Checkpoint ask format** (headline, context, Options approved / send back, `---`, then the plan summary `/ag-plan` returned as Details),
 
 ```
-printf '%s' "<summary>. Review or amend plan.md in place, then answer this checkpoint." | ag-store checkpoint_open "<slug>" plan_review --session "${CLAUDE_SESSION_ID}" --by plan
+printf '%s\n\n%s\n\nOptions:\n1. approved\n2. Send it back: answer with a different instruction saying what to change\n\n---\n\n%s' "Plan ready for <slug>: <one-line summary>." "Review or amend plan.md in place, then answer." "<summary from /ag-plan>" | ag-store checkpoint_open "<slug>" plan_review --session "${CLAUDE_SESSION_ID}" --by plan
 ```
 
 and end the turn: one paragraph, the line "Plan written to `<spec-dir>/plan.md` — review or amend it, then reply 'approved'.", and the status line `AG_BUILD: paused <slug> plan_review <checkpoint-id>`. An amended `plan.md` is the approved plan. If the approval instead comes back in chat, record it against the checkpoint (see **Tools**) and continue as Step 0 routes an answered `plan_review`.
@@ -125,10 +173,10 @@ and end the turn: one paragraph, the line "Plan written to `<spec-dir>/plan.md` 
 Read `.agentile/build.md`'s frontmatter. If `delegate_to: <skill>` is set, invoke that skill; otherwise dispatch the `ag-builder` agent with the spec identifier, its `plan.md` path, the build playbook path, and, when resuming from an answered `question` checkpoint, the answer text. The builder's first line is one of:
 
 - `BUILD: done` → continue.
-- `BUILD: blocked` → checkpoint `build_blocked` (`--by build`) with the builder's reason as the ask; end with `AG_BUILD: paused <slug> build_blocked <checkpoint-id>`.
-- `BUILD: question` → checkpoint `question` (`--by builder`, which is how Step 0 sends the answer back here) with the builder's question block (question, options, recommendation) as the ask; end with `AG_BUILD: paused <slug> question <checkpoint-id>`.
+- `BUILD: blocked` → checkpoint `build_blocked` (`--by build`) with the builder's `blocked` report after its first line as the ask (headline, context, Options, Details; the builder writes it in the **Checkpoint ask format**); end with `AG_BUILD: paused <slug> build_blocked <checkpoint-id>`.
+- `BUILD: question` → checkpoint `question` (`--by builder`, which is how Step 0 sends the answer back here) with the content of the builder's `## Question` block, without the heading line, as the ask (headline = the question, then Options with one `(recommended)`, then Details if any); end with `AG_BUILD: paused <slug> question <checkpoint-id>`.
 
-If `build.md` sets `human_checkpoint: true`: checkpoint `build_checkpoint` (`--by build`) with the builder's summary; end with `AG_BUILD: paused <slug> build_checkpoint <checkpoint-id>`.
+If `build.md` sets `human_checkpoint: true`: checkpoint `build_checkpoint` (`--by build`) with an ask of headline (what was built), Options approved / send back, `---`, then the builder's summary as Details; end with `AG_BUILD: paused <slug> build_checkpoint <checkpoint-id>`.
 
 At any of these pauses, an answer that arrives in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for that reason.
 
@@ -138,9 +186,9 @@ Dispatch the `ag-reviewer` agent. Its first line is one of:
 
 - `VERDICT: pass` → continue.
 - `VERDICT: question` → checkpoint `question` exactly as in Step 3, but `--by reviewer`, which is how Step 0 sends the answer back here.
-- `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` (`--by build`) with the findings as the ask, and end with `AG_BUILD: paused <slug> gate_failure <checkpoint-id>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, record `run_event failed --detail gate_failure` — that event is itself terminal (see **Closing the run**), so nothing closes the run afterward, and the claim is kept on purpose since no `release`/`abandon` is called — and end with `AG_BUILD: failed <slug> gate_failure`.
+- `VERDICT: fail` → re-run Steps 3 and 4 up to `retry_limit` more times, passing the reviewer's must-fix findings to the builder. Still failing: if `stop_on_gate_failure` is `true`, checkpoint `gate_failure` (`--by build`) with the reviewer's final `fail` report after its first line as the ask (headline, retry count as context, Options retry / `release` / abandon yourself with `/ag-abandon <slug>`, `---`, must-fix findings as Details — add the Options yourself if the reviewer omitted them), and end with `AG_BUILD: paused <slug> gate_failure <checkpoint-id>` (mention `/ag-abandon <slug>` as the way to drop it). If `false`, record `run_event failed --detail gate_failure` — that event is itself terminal (see **Closing the run**), so nothing closes the run afterward, and the claim is kept on purpose since no `release`/`abandon` is called — and end with `AG_BUILD: failed <slug> gate_failure`.
 
-If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` (`--by verify`) with the reviewer's findings summary; end with `AG_BUILD: paused <slug> verify_checkpoint <checkpoint-id>`.
+If `verify.md` sets `human_checkpoint: true`: checkpoint `verify_checkpoint` (`--by verify`) with an ask of headline (the verify outcome), Options approved / send back, `---`, then the reviewer's findings summary as Details; end with `AG_BUILD: paused <slug> verify_checkpoint <checkpoint-id>`.
 
 At either pause, an answer that arrives in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for that reason.
 
@@ -148,7 +196,7 @@ At either pause, an answer that arrives in chat is recorded against the checkpoi
 
 If the spec's acceptance criteria, or the builder's or reviewer's report, describe a visual or UI outcome — a rendered image, a layout, a color, a screen — render or screenshot the actual result and show it before asking for approval, in whatever form the surface allows (an inline image, a screenshot, a published comparison page). A sentence describing what something looks like is not evidence a human can approve against; the human has to see it. Do this whether the caller is interactive or headless — headless still writes the checkpoint's ask with the evidence attached or linked, since whoever answers it later still needs to see it.
 
-If `ship.md`'s `human_checkpoint` is `true` (default): checkpoint `ship_approval` (`--by ship`) whose ask has three lines — the spec slug and title, what was built (one sentence from the builder's report), and the verify outcome (one sentence from the reviewer's) — plus the visual evidence above when it applies, then end the turn with those three lines, "Approve to ship `<slug>`?", and `AG_BUILD: paused <slug> ship_approval <checkpoint-id>`. An approval that comes back in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for `ship_approval`.
+If `ship.md`'s `human_checkpoint` is `true` (default): checkpoint `ship_approval` (`--by ship`) whose ask follows the **Checkpoint ask format**: the headline `Ship <slug> — <title>?`; a context of what was built (one sentence from the builder's report) and the verify outcome (one sentence from the reviewer's); a `Before approving:` checklist of what to open or look at, including the visual evidence above when it applies (a path or link, never in the headline); Options approved / send back; `---`; then Details (evidence paths, report extracts). End the turn with the headline and those two sentences, "Approve to ship `<slug>`?", and `AG_BUILD: paused <slug> ship_approval <checkpoint-id>`. An approval that comes back in chat is recorded against the checkpoint first (see **Tools**), then followed by Step 0's routing for `ship_approval`.
 
 An answered `ship_approval` whose answer says anything other than approval (a note, "send back") is a bounce: go to Step 3 with the answer as the builder's instruction.
 
@@ -193,7 +241,7 @@ AG_BUILD: idle <NONE|WIP_FULL|BLOCKED|UNPRIORITISED>
 
 ## Questions instead of guesses
 
-A worker cannot prompt. When the builder or reviewer needs a human decision the spec, plan, `CLAUDE.md` and ADRs cannot settle, it returns `question` and this skill writes the checkpoint. Prefer a recorded assumption in `plan.md` when the stakes are low; ask once, with options and a recommendation, when they are not. In an interactive session you may also relay the question with `AskUserQuestion` — but still write the checkpoint first, so the item shows on the dashboard, and record the reply against it (see **Tools**) before acting on it.
+A worker cannot prompt. When the builder or reviewer needs a human decision the spec, plan, `CLAUDE.md` and ADRs cannot settle, it returns `question` and this skill writes the checkpoint. Prefer a recorded assumption in `plan.md` when the stakes are low; ask once, in the **Checkpoint ask format**, with `(recommended)` on one option, when they are not. In an interactive session you may also relay the question with `AskUserQuestion` — but still write the checkpoint first, so the item shows on the dashboard, and record the reply against it (see **Tools**) before acting on it.
 
 ## Interactive use beside the factory
 
