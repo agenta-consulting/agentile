@@ -4,15 +4,6 @@ Every change to the plugin bumps the version in `.claude-plugin/plugin.json`
 (and the matching marketplace entry) **in the same commit**, and adds a line
 here. See the Versioning section in [README.md](./README.md) for why.
 
-## 0.22.0 — 2026-10-03
-
-- **`ag-store` sends the model when it opens a run.** `claim` and the run that
-  `ensure_run` creates (`run_event`, `checkpoint_open`) carry `model` from
-  `--model <id>`, else `AGENTILE_MODEL`; omitted when both are blank, never
-  sent for an existing run, sent verbatim (no alias normalisation). `/ag-build`
-  passes its own model id on claim, so the app's LLM-time-per-model chart
-  attributes the run.
-
 ## Unreleased
 
 - **Docs:** `docs/agentile-factory.md` corrected to match the built factory: the
@@ -29,6 +20,15 @@ here. See the Versioning section in [README.md](./README.md) for why.
   `templates/factory-worker.md` now tells a worker it runs in the project's
   checkout, not its own worktree (the builder sub-agent's own
   `isolation: worktree` is unchanged).
+
+## 0.22.0 — 2026-10-03
+
+- **`ag-store` sends the model when it opens a run.** `claim` and the run that
+  `ensure_run` creates (`run_event`, `checkpoint_open`) carry `model` from
+  `--model <id>`, else `AGENTILE_MODEL`; omitted when both are blank, never
+  sent for an existing run, sent verbatim (no alias normalisation). `/ag-build`
+  passes its own model id on claim, so the app's LLM-time-per-model chart
+  attributes the run.
 
 ## 0.21.0 — 2026-10-03
 
