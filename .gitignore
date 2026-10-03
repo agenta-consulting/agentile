@@ -3,3 +3,7 @@
 *.snapshot.bak.*
 .claude/settings.local.json
 .env.local
+**/specs/.pull.lock
+.claude/worktrees/
+.claude/agent-memory/
+docs/**/*.pdf
