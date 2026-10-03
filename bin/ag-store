@@ -50,6 +50,7 @@
 #   outcome_create <slug>       (markdown on stdin)          -> slug string (unwrapped, as above)
 #   outcome_rank <slug>... | outcome_achieve <slug> | outcome_abandon <slug> --reason "<text>"
 #   checkpoint_open <slug> <reason> --session <id> --by <who>   (ask on stdin) -> checkpoint id
+#     (warns on stderr if the ask does not follow the Checkpoint ask format; still posts it, exit 0)
 #   checkpoint_list <slug> | checkpoint_open_count <slug>
 #   checkpoint_answer <id> --by <who>             (answer on stdin)
 #   run_event <event> --spec <slug> --runner <id> [--detail "<text>"]
@@ -84,6 +85,9 @@ module AgStore
 
   CHECKPOINT_REASONS = %w[plan_review build_blocked build_checkpoint gate_failure
                           verify_checkpoint ship_approval question].freeze
+  # Replies for these are fixed (approve, or send back with a note), so an ask
+  # without an Options: line is normal and never warned about.
+  OPTIONS_EXEMPT_REASONS = %w[plan_review ship_approval].freeze
   RUN_EVENTS = %w[started claimed shipped paused failed idle deployed closed].freeze
   LIST_FIELDS = %w[depends_on tags shaped_by cascade].freeze
   STORE_MD = ".agentile/store.md"
@@ -132,6 +136,22 @@ module AgStore
   # Percent-encode one path segment (a slug, an id, the project). Never call
   # this on a whole path — only on the interpolated piece — so literal
   # separators ("/", and a trailing ".md") stay untouched.
+  # Advisory format check for a checkpoint ask (see "Checkpoint ask format" in
+  # skills/ag-build/SKILL.md). Returns warning messages, [] when fine; never raises.
+  def self.ask_warnings(reason, ask)
+    ask = ask.to_s
+    warnings = []
+    if ask.length > 200 && !ask.match?(/\n[ \t]*\n/)
+      warnings << "checkpoint ask is #{ask.length} characters with no blank line — split headline from details (see Checkpoint ask format in /ag-build)"
+    end
+    if !OPTIONS_EXEMPT_REASONS.include?(reason.to_s) && !ask.match?(/^[ \t]*Options:/)
+      warnings << "#{reason} ask has no Options: line — list the replies (see Checkpoint ask format in /ag-build)"
+    end
+    warnings
+  rescue StandardError
+    []
+  end
+
   def self.enc(segment) = ERB::Util.url_encode(segment.to_s)
 
   # "[a, b]" -> ["a", "b"]; "[]" -> []; anything else unchanged.
@@ -358,9 +378,11 @@ module AgStore
         raise Error, "unknown checkpoint reason #{reason.inspect} (#{CHECKPOINT_REASONS.join('|')})" unless CHECKPOINT_REASONS.include?(reason.to_s)
 
         session = flags["session"].to_s.empty? ? ENV["CLAUDE_SESSION_ID"].to_s : flags["session"].to_s
+        ask = $stdin.read.to_s.strip
+        AgStore.ask_warnings(reason, ask).each { |m| warn "ag-store: warning: #{m}" }
         run = ensure_run(slug, identity, session)
         res = @api.post(p["/runs/#{AgStore.enc(run['id'])}/checkpoints"],
-                        { reason: reason, asked_by: flags["by"].to_s, session_id: session, ask: $stdin.read.to_s.strip })
+                        { reason: reason, asked_by: flags["by"].to_s, session_id: session, ask: ask })
         res.is_a?(Hash) ? res["id"] : res
       when "checkpoint_list" then @api.get(p["/specs/#{AgStore.enc(positional[0])}/checkpoints"])
       when "checkpoint_open_count"

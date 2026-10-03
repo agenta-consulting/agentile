@@ -431,6 +431,47 @@ with_project("http://agentile-projects.localhost:#{api.port}") do |root|
   raise "*.localhost should be accepted as a loopback host: #{out.inspect}" unless out.is_a?(Array)
 end
 
+# 24. checkpoint_open format warnings: advisory only — stderr, exit 0, ask posted unchanged.
+#     Reuses section 16's run and checkpoint route (which echoes the posted body).
+with_project(api.url) do |root|
+  open_ask = lambda do |reason, ask|
+    _o, err, st = run_store("checkpoint_open", "a", reason, "--session", "sess-1", "--by", "build", env: ENV_OK, stdin: ask, chdir: root)
+    posted = JSON.parse(api.requests.reverse.find { |r| r[:method] == "POST" && r[:path] == "#{P}/runs/1/checkpoints" }[:body])["ask"]
+    raise "checkpoint_open must exit 0 and post the ask unchanged (#{reason}): #{st.exitstatus} #{err}" unless st.exitstatus == 0 && posted == ask.strip
+    err
+  end
+
+  long_one_para = "Blocked because the spec is unclear. " * 8 + "\nOptions:\n1. resume"
+  raise "setup: ask should be over 200 chars" unless long_one_para.length > 200 && !long_one_para.match?(/\n[ \t]*\n/)
+  err = open_ask.call("build_blocked", long_one_para)
+  raise "over-length no-blank-line ask should warn: #{err}" unless err.include?("no blank line") && !err.include?("no Options:")
+
+  err = open_ask.call("build_blocked", "Blocked on the schema.")
+  raise "build_blocked without Options should warn: #{err}" unless err.include?("no Options: line") && !err.include?("no blank line")
+
+  err = open_ask.call("gate_failure", "Review still fails. " * 12)
+  raise "long ask with no blank line and no Options should give both warnings: #{err}" unless err.include?("no blank line") && err.include?("no Options: line")
+
+  %w[plan_review ship_approval].each do |reason|
+    err = open_ask.call(reason, "Short ask with no options.")
+    raise "#{reason} is exempt from the Options warning: #{err}" unless err.empty?
+  end
+
+  err = open_ask.call("question", "Which one?\n\nOptions:\n1. a (recommended)\n2. b")
+  raise "a formatted short ask should not warn: #{err}" unless err.empty?
+
+  fixtures = Dir[File.join(__dir__, "..", "templates", "checkpoint-asks", "*.md")].map { |f| File.basename(f, ".md") }.sort
+  expected = %w[build_blocked build_checkpoint gate_failure plan_review question ship_approval verify_checkpoint]
+  raise "templates/checkpoint-asks should hold exactly one fixture per reason: #{fixtures.inspect}" unless fixtures == expected
+  expected.each do |reason|
+    text = File.read(File.join(__dir__, "..", "templates", "checkpoint-asks", "#{reason}.md"))
+    err = open_ask.call(reason, text)
+    raise "fixture #{reason} should pass the check with no warning: #{err}" unless err.empty?
+    raise "fixture #{reason} should have exactly one Options: line" unless text.scan(/\bOptions?\s*:/i).size == 1
+    raise "fixture #{reason} should have a --- line" unless text.match?(/^---$/)
+  end
+end
+
 api.close
 puts "OFFLINE PASS"
 
