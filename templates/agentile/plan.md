@@ -12,6 +12,6 @@ human_checkpoint: route   # pause for plan review: true (always) | false (never)
   straight through to build.
 - `true` pauses for every spec; `false` never pauses.
 
-Review or amend `plan.md` in place, then answer the checkpoint (reply "approved"
+Review or amend `plan.md` in place (in the build worktree; the path is in the checkpoint ask), then answer the checkpoint (reply "approved"
 in a session, or answer it on the factory console). An amended `plan.md` is the
 approved plan.

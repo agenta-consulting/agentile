@@ -27,6 +27,7 @@ If the file is absent, use the baseline below unchanged.
 
 ## What to check
 
+- **Where you run** — you are dispatched into the build worktree `.claude/worktrees/build-<slug>`; the diff under review is `git diff <trunk>...build/<slug>` (the spec directory and any ADR included). Run the gates there.
 - **Against the spec** — does the diff actually meet every acceptance criterion? Does it stay inside the scope boundary, or did it balloon? Are the spec's edge cases and failure paths handled?
 - **Correctness** — logic errors, off-by-ones, unhandled errors, race conditions, broken assumptions. Trace the real code paths.
 - **Gates** — run `test`, `lint`, and `build` from `.agentile/gates.json` and report the actual results. Do not take the builder's word that they pass; run them. A blank command means that gate is not configured.
