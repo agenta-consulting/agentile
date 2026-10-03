@@ -15,8 +15,8 @@ capture → shape → spec → (prioritise → next) → plan → build → veri
 - **capture** — `/ag-capture <idea>` drops a one-line stub in the project's Inbox in Agentile Projects, tidied and classified by the store; one confirmation (or `--yes`). Mid-build safe.
 - **shape** — `/ag-shape` interviews a stub into a Ready spec, against your project's Definition of Ready.
 - **spec** — shaped specs are records in the store, ranked by a field. `/ag-spec` writes one directly for trivial work.
-- **plan** — `/ag-plan` creates the spec's directory in the repo and writes `plan.md` beside a read-only `SPEC.md` snapshot: files to touch, approach, test strategy, risks. The plan is a file you review and amend, not a chat message.
-- **build** — the `ag-builder` agent implements on a branch/worktree, running your gates.
+- **plan** — `/ag-plan` creates the spec's directory in the repo and writes `plan.md` beside a read-only `SPEC.md` snapshot, committed on the spec's build branch `build/<slug>`: files to touch, approach, test strategy, risks. The plan is a file you review and amend, not a chat message.
+- **build** — the `ag-builder` agent implements in that build worktree, running your gates.
 - **verify** — the `ag-reviewer` agent critiques the diff with fresh context; gates + `/security-review` + a human read.
 - **ship** — small, flagged, reversible merges to trunk. The spec keeps its claim timestamps and gains `shipped_at`, and its run closes.
 - **deploy** — `/ag-deploy` releases the batch of specs shipped since the last deploy, running the project's pre-deploy checklist (`.agentile/deploy.md`) and then the `deploy` gate. In brackets because it is **not part of the per-spec loop**: `/ag-build` never calls it, since a deploy batches many ships and runs on its own cadence.

@@ -6,6 +6,21 @@ here. See the Versioning section in [README.md](./README.md) for why.
 
 ## Unreleased
 
+## 0.23.0 — 2026-10-03
+
+- **`/ag-build` creates the build worktree before planning.** Each spec gets
+  `.claude/worktrees/build-<slug>` on branch `build/<slug>` (created, reused,
+  or recreated after a manual delete) before `/ag-plan` runs, so `plan.md`, the
+  `SPEC.md` snapshot and any drafted ADR are committed on the build branch
+  (`Plan <slug>`) and never land on trunk before ship. `ag-builder` and
+  `ag-reviewer` are dispatched into that worktree (Agent `cwd`); `ag-builder`
+  no longer declares `isolation: worktree`. A plan_review amendment is
+  committed (`Amend plan <slug>`) and a send-back now re-plans. Ship merges
+  `build/<slug>` and removes the worktree and branch. See ADR-0001.
+- **Upgrade note.** A spec planned under the old flow leaves an untracked
+  `docs/agentile/specs/<slug>/` in the main checkout; remove it before the ship
+  merge or the merge fails with "untracked files would be overwritten".
+
 ## 0.22.2 — 2026-10-03
 
 - **`dev/ag-dev-link` always links the main checkout.** Run from inside a

@@ -58,7 +58,27 @@ A `checkpoint_open` against a run that is not active or paused (already shipped,
 
 A headless run must pre-authorise these tools and the gates: `--permission-prompts none` denies anything not on the allowlist rather than asking, so pass e.g. `--allowedTools "Bash(ag-store:*)" "Bash(git:*)"` plus each command in `.agentile/gates.json`. The allowlist matches the command text as typed, so **call each tool by its bare name as the first word of its own command**: never prefix `export PATH=…;` or `cd …;`, never use the absolute path, and never chain several commands with `;` or `&&` in one call. A pipe whose every command is allowed (`printf … | ag-store checkpoint_open …`) is fine. If a bare tool name is not found, end with `AG_BUILD: failed <slug> tool_missing` rather than working around it; after one denial the session denies every later prompt-requiring command.
 
-The **spec directory** is `<dir>/specs/<slug>/` — created by `/ag-plan` (via `ag-store promote`), holding `plan.md`, the `SPEC.md` snapshot and supporting files. Every pause in this skill happens after that.
+The **build worktree** is `<worktree>` = the absolute `<repo-root>/.claude/worktrees/build-<slug>`, on the branch `<branch>` = `build/<slug>` (`<repo-root>` is `git rev-parse --show-toplevel` in the main checkout). The **spec directory** is `<worktree>/<dir>/specs/<slug>/` — created by `/ag-plan` (via `ag-store promote --dir "<worktree>/<dir>"`) inside the build worktree, holding `plan.md`, the `SPEC.md` snapshot and supporting files; it reaches trunk with the build merge, not before. Every pause in this skill happens after that.
+
+## Build worktree
+
+Every spec is built in one worktree and branch, created **before planning** so `plan.md`, `SPEC.md` and any drafted ADR are committed on the build branch and never touch trunk. This section is the single definition of "ensure the build worktree"; `/ag-plan` points here. Run it from the main checkout, one bare `git` command per call:
+
+0. Main-checkout check: `git rev-parse --git-dir` and `git rev-parse --git-common-dir`. If they differ, this session is inside a linked worktree: refuse. From a factory, end with `AG_BUILD: failed <slug> not_main_checkout` (recording `run_event failed` per **Unrecoverable errors**).
+1. `<worktree>` and `<branch>` as above.
+2. `git check-ignore -q .claude/worktrees/` — if it exits 1, add `.claude/worktrees/` to `.git/info/exclude` with the Edit tool (local, never committed) so the worktree never shows untracked on trunk. Known caveat: a headless run may not be allowed to write `.git/info/exclude`; if the write is denied, end with `worktree_ignore_failed` (treated like `worktree_create_failed`) rather than working around it.
+3. `git worktree prune` — clears registrations whose directory was deleted, so a resume after a manual delete can recreate it.
+4. `git worktree list --porcelain`, then:
+   - `<worktree>` registered on `refs/heads/build/<slug>` → reuse it.
+   - `<worktree>` registered on any other branch or detached, `build/<slug>` checked out in another worktree, or the path exists on disk but is not registered → `worktree_conflict`. Never delete anything.
+   - Path absent and `git rev-parse --verify --quiet refs/heads/build/<slug>` succeeds → `git worktree add <worktree> build/<slug>` (reuse the branch, never reset it).
+   - Neither → `git worktree add <worktree> -b build/<slug>` (cut explicitly from `<trunk>`, the branch `.agentile/ship.md` merges to, falling back to the main checkout's current branch: `git worktree add <worktree> -b build/<slug> <trunk>`).
+   - A failing `git worktree add` → `worktree_create_failed`.
+   - Recreation needs the `build/<slug>` ref on this machine: nothing pushes the branch, so another machine without it starts from `<trunk>` again.
+
+For `worktree_conflict`, `worktree_create_failed` or `worktree_ignore_failed`, record `run_event failed --detail <code>` if the run is live and end with `AG_BUILD: failed <slug> <code>`.
+
+**Pointing subagents at the worktree.** Dispatch `ag-builder` and `ag-reviewer` with the Agent tool's `cwd` set to `<worktree>`, so their Bash runs there and gate commands run as typed. Also put the absolute worktree path and branch in the prompt, tell them to use absolute paths for Read/Edit/Write, and to verify on their first call that `git rev-parse --show-toplevel` equals the worktree path and `git branch --show-current` equals the branch — returning `BUILD: blocked` (builder) or `VERDICT: question` (reviewer) if not, rather than editing the wrong checkout.
 
 Every `ag-store checkpoint_open` call also passes `--by <who>`, naming what asked — `plan`, `build`, `verify` or `ship` for a stage checkpoint, and `builder` or `reviewer` for a `question`. It lands as the `asked_by` field, and Step 0 routes an answered `question` by it.
 
@@ -122,12 +142,12 @@ then proceed exactly as Step 0's routing for an answered checkpoint of that reas
 
 ### Step 0 — Resume check
 
-Run `ag-store spec_list --status in_progress`. If no entry's `claimed_by` equals this identity, nothing of yours is in flight: go to Step 1. Otherwise that entry is your spec and you claim nothing this run — take its `slug` (the `<slug>` every run-event and status line uses, and the `<id>` for every later `ag-store` call) and its `route` from the listing; `<spec-dir>` is `<dir>/specs/<slug>/`. Then:
+Run `ag-store spec_list --status in_progress`. If no entry's `claimed_by` equals this identity, nothing of yours is in flight: go to Step 1. Otherwise that entry is your spec and you claim nothing this run — take its `slug` (the `<slug>` every run-event and status line uses, and the `<id>` for every later `ag-store` call) and its `route` from the listing. Run **Build worktree** (it recreates the worktree from `build/<slug>` if the directory is gone); `<spec-dir>` is `<worktree>/<dir>/specs/<slug>/`. Then:
 
 - If `<spec-dir>/plan.md` is absent, go to Step 2.
 - Otherwise run `ag-store run_list --spec "<slug>" --status active` and take the single live run's `id` as `<run-id>` — that identifies the current run, distinct from any earlier run this spec may have had (a `stop_on_gate_failure: false` ending or a release-and-reclaim under the same identity leaves earlier runs closed but their checkpoints still on the spec). Then run `ag-store checkpoint_list "<slug>"`. It returns an array of checkpoint objects — `{id, seq, reason, status, asked_by, ask, answer, run_id, ...}` — oldest first, across every run the spec has ever had; filter to the entries whose `run_id` equals `<run-id>` and take the last (newest) of those as the checkpoint for the rest of this resume — its `id` is `<checkpoint-id>` (the same id `checkpoint_open` printed when the checkpoint was written, and what a `checkpoint_answer` on it was addressed to). If no entry matches, go to Step 3.
 - If that checkpoint is `answered`, read its `answer` field from the `list` output — that is the human's decision — and resume by the checkpoint's reason, which is the only rule for where to go:
-  - `plan_review` → Step 3.
+  - `plan_review` → on approval, commit any amendment first (`git -C <worktree> status --porcelain -- <dir>/specs/<slug> docs/adr`; if non-empty, `git -C <worktree> add` those paths and `git -C <worktree> commit -m "Amend plan <slug>"`), then Step 3. Any other answer is a send-back: Step 2, passing the answer to `/ag-plan` as the re-plan instruction.
   - `build_blocked` → Step 3, re-dispatching the builder with the answer as its instruction.
   - `build_checkpoint` → Step 3, re-dispatching the builder with the answer as its instruction; if the answer is a bare approval, go to Step 4 instead of rebuilding.
   - `question` → the step that asked, read off the checkpoint's `asked_by` field in the `ag-store checkpoint_list` output: `builder` → Step 3, `reviewer` → Step 4. Pass the answer to the agent you re-dispatch.
@@ -154,25 +174,25 @@ Use your own exact model id from your system context for `<your model id>` (e.g.
 
 (Passing `0` explicitly means unlimited; only use the first form with `0` if `.agentile/prioritise.md` says unlimited outright — never pass `0` as a default.)
 
-- A slug → the claim succeeded, and the store has opened this run — no `run_event claimed` call needed, that is what the open run already records. Use the slug as `<slug>` and `<id>` everywhere below (run events, status lines, `/ag-plan <slug>`, every other `ag-store` call). Establish the spec's fields now — run `ag-store spec_list --status in_progress` and take the entry whose `claimed_by` is this identity: its `route` is what Step 2 reads; `<spec-dir>` is `<dir>/specs/<slug>/`. Continue.
+- A slug → the claim succeeded, and the store has opened this run — no `run_event claimed` call needed, that is what the open run already records. Use the slug as `<slug>` and `<id>` everywhere below (run events, status lines, `/ag-plan <slug>`, every other `ag-store` call). Establish the spec's fields now — run `ag-store spec_list --status in_progress` and take the entry whose `claimed_by` is this identity: its `route` is what Step 2 reads. Run **Build worktree**; `<spec-dir>` is `<worktree>/<dir>/specs/<slug>/`. Continue.
 - `NONE`, `WIP_FULL`, `BLOCKED`, `UNPRIORITISED` → explain in one line (`/ag-prioritise` for `UNPRIORITISED` or `BLOCKED`, `/ag-wip` for `WIP_FULL`, `/ag-shape` for `NONE`), and end with `AG_BUILD: idle <code>`. Nothing is logged: there is no spec to log against.
 - `NOT_FOUND` or `TAKEN` (targeted claim only) → say which slug, and end with `AG_BUILD: failed <slug> <code>`.
 
 ### Step 2 — Plan
 
-Invoke `/ag-plan <slug>`. Invoked from `/ag-build`, it dispatches the `ag-planner` subagent, creates `<spec-dir>`, writes `plan.md` and a `SPEC.md` snapshot there, and returns a short confirmation.
+Invoke `/ag-plan <slug>` (on a send-back, also pass the human's answer as the re-plan instruction). Invoked from `/ag-build`, the worktree already exists; it dispatches the `ag-planner` subagent, creates `<spec-dir>` in the build worktree, writes `plan.md` and a `SPEC.md` snapshot there, commits them on `build/<slug>` as `Plan <slug>`, and returns a short confirmation.
 
 Pause for plan review when the stage playbook `.agentile/plan.md`'s `human_checkpoint` is `true`, or is `route` and the spec's `route` (from the Step 1 listing, or the Step 0 listing on a resumed run) is `foreground` or `spike`. To pause: write the checkpoint as a plan_review ask in the **Checkpoint ask format** (headline, context, Options approved / send back, `---`, then the plan summary `/ag-plan` returned as Details),
 
 ```
-printf '%s\n\n%s\n\nOptions:\n1. approved\n2. Send it back: answer with a different instruction saying what to change\n\n---\n\n%s' "Plan ready for <slug>: <one-line summary>." "Review or amend plan.md in place, then answer." "<summary from /ag-plan>" | ag-store checkpoint_open "<slug>" plan_review --session "${CLAUDE_SESSION_ID}" --by plan
+printf '%s\n\n%s\n\nOptions:\n1. approved\n2. Send it back: answer with a different instruction saying what to change\n\n---\n\n%s' "Plan ready for <slug>: <one-line summary>." "Review or amend <worktree>/<dir>/specs/<slug>/plan.md in place, then answer." "<summary from /ag-plan>" | ag-store checkpoint_open "<slug>" plan_review --session "${CLAUDE_SESSION_ID}" --by plan
 ```
 
-and end the turn: one paragraph, the line "Plan written to `<spec-dir>/plan.md` — review or amend it, then reply 'approved'.", and the status line `AG_BUILD: paused <slug> plan_review <checkpoint-id>`. An amended `plan.md` is the approved plan. If the approval instead comes back in chat, record it against the checkpoint (see **Tools**) and continue as Step 0 routes an answered `plan_review`.
+and end the turn: one paragraph, the line "Plan written to `<worktree>/<dir>/specs/<slug>/plan.md` — review or amend it, then reply 'approved'.", and the status line `AG_BUILD: paused <slug> plan_review <checkpoint-id>`. An amended `plan.md` is the approved plan. If the approval instead comes back in chat, record it against the checkpoint (see **Tools**) and continue as Step 0 routes an answered `plan_review`.
 
 ### Step 3 — Implement
 
-Read `.agentile/build.md`'s frontmatter. If `delegate_to: <skill>` is set, invoke that skill; otherwise dispatch the `ag-builder` agent with the spec identifier, its `plan.md` path, the build playbook path, and, when resuming from an answered `question` checkpoint, the answer text. The builder's first line is one of:
+Read `.agentile/build.md`'s frontmatter. If `delegate_to: <skill>` is set, invoke that skill with the worktree path, branch, spec slug, `plan.md` path and the literal instruction "Work in this worktree on this branch. Do not create another worktree or branch."; otherwise dispatch the `ag-builder` agent (Agent `cwd: <worktree>`, see **Build worktree**) with the worktree path, branch, spec identifier, its `plan.md` path, the build playbook path, and, when resuming from an answered `question` checkpoint, the answer text. The builder's first line is one of:
 
 - `BUILD: done` → continue.
 - `BUILD: blocked` → checkpoint `build_blocked` (`--by build`) with the builder's `blocked` report after its first line as the ask (headline, context, Options, Details; the builder writes it in the **Checkpoint ask format**); end with `AG_BUILD: paused <slug> build_blocked <checkpoint-id>`.
@@ -184,7 +204,7 @@ At any of these pauses, an answer that arrives in chat is recorded against the c
 
 ### Step 4 — Verify
 
-Dispatch the `ag-reviewer` agent. Its first line is one of:
+Dispatch the `ag-reviewer` agent with Agent `cwd: <worktree>`, the worktree path, `<branch>` and the trunk name, so it reviews `git diff <trunk>...<branch>`. Its first line is one of:
 
 - `VERDICT: pass` → continue.
 - `VERDICT: question` → checkpoint `question` exactly as in Step 3, but `--by reviewer`, which is how Step 0 sends the answer back here.
@@ -204,9 +224,9 @@ An answered `ship_approval` whose answer says anything other than approval (a no
 
 ### Step 6 — Ship
 
-1. Merge per `.agentile/ship.md`'s prose (or repository convention), never onto a `protected_branches` entry from a builder branch without the merge step itself. This is the one step where two concurrent `/ag-build` sessions can genuinely collide, since it writes to the shared trunk checkout: if the merge is rejected because trunk moved since you branched (another session shipped first), pull/rebase once and retry before treating it as a failure — a lost race here is expected under concurrency, not an error to surface or ask about.
+1. From the main checkout, merge `build/<slug>` per `.agentile/ship.md`'s prose (default `git merge --no-ff build/<slug>`), never onto a `protected_branches` entry from a builder branch without the merge step itself. The spec directory and ADR ride in this merge. This is the one step where two concurrent `/ag-build` sessions can genuinely collide, since it writes to the shared trunk checkout: if the merge is rejected because trunk moved since you branched (another session shipped first), rebase the branch once in the worktree (`git -C <worktree> rebase <trunk>`) and retry before treating it as a failure — a lost race here is expected under concurrency, not an error to surface or ask about.
 2. `ag-store ship "<slug>"` — sets `status: shipped`, stamps `shipped_at`, keeps the claim fields, and closes the spec's live run server-side (the `shipped` status is the run's terminal record; there is nothing left to log with `run_event` after this — never call it here).
-3. Commit the spec directory (`plan.md`, `SPEC.md` snapshot, findings) with the ship if it is not already committed.
+3. Only after the merge and `ship` both succeeded, clean up: `git worktree remove <worktree>` — if it refuses (untracked artefacts, dirty files) do not `--force`; leave it and say so. Then `git branch -d build/<slug>`; on "not fully merged", `git branch -D` only if `ship.md` declares a squash merge, else leave it and say so. A cleanup failure never changes the outcome. (Abandon, release and gate-failure endings leave the worktree and branch in place.)
 4. End with `AG_BUILD: shipped <slug>`.
 
 ## Unrecoverable errors
@@ -247,4 +267,4 @@ A worker cannot prompt. When the builder or reviewer needs a human decision the 
 
 ## Interactive use beside the factory
 
-`/ag-build <slug>` claims a specific spec and leaves the top of the queue to the workers. The builder already works in its own worktree; the ship step merges to trunk in the main checkout, which is where the backlog lives — never run `/ag-build` from inside a builder's worktree.
+`/ag-build <slug>` claims a specific spec and leaves the top of the queue to the workers. `/ag-build` creates the spec's build worktree itself (see **Build worktree**) and still runs from the main checkout, where the backlog lives and the ship step merges to trunk — never run `/ag-build` from inside a linked worktree.

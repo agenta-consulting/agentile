@@ -17,7 +17,7 @@ You do not write or edit implementation code. You produce a plan.
 - `docs/agentile/brief.md` if present — the project's outcomes, constraints, and non-goals, so the plan serves the actual goal and respects the walls.
 - If the spec's frontmatter has `serves:`, also read that Outcome (`ag-store outcome_read <slug>`) — the plan should serve the claim, not only the acceptance criteria.
 - `.agentile/gates.json` — so your test strategy names the project's real commands.
-- The actual code paths the spec touches — trace them; do not guess.
+- The actual code paths the spec touches — trace them; do not guess. When given a build worktree path, read code there (you still return the plan content; `/ag-plan` writes and commits it).
 
 ## What to return
 

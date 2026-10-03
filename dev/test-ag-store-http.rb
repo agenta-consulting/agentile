@@ -263,6 +263,16 @@ Dir.mktmpdir do |root|
     unless st.success? && JSON.parse(out) == "docs/agentile/specs/a"
 end
 
+# 13c. promote accepts an absolute, worktree-rooted --dir and prints that absolute path
+Dir.mktmpdir do |root|
+  FileUtils.mkdir_p(File.join(root, ".agentile"))
+  wt = File.join(root, "wt")
+  out, err, st = run_store("promote", "a", "--dir", File.join(wt, "docs/agentile"), env: { "AGENTILE_PROJECTS_TOKEN" => "" }, chdir: root)
+  want = File.join(wt, "docs/agentile/specs/a")
+  raise "promote absolute --dir: #{st.exitstatus} #{err} #{out.inspect}" unless st.success? && JSON.parse(out) == want
+  raise "promote absolute --dir should mkdir" unless File.directory?(want)
+end
+
 # 14. deps / dependents / map / flow pass through
 api.route("GET", "#{P}/specs/a/deps") { [200, ["b"]] }
 api.route("GET", "#{P}/specs/a/dependents") { [200, %w[c d]] }

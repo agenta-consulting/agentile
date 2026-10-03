@@ -52,7 +52,7 @@ Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/age
 - `.agentile/adr-template.md`
 - `<dir>/deploys.md` (from `templates/agentile/deploys.md`) — the deploy log `/ag-deploy` appends to.
 - `docs/adr/0000-record-architecture-decisions.md` (from `templates/docs/adr/0000-record-architecture-decisions.md`) — replace `<YYYY-MM-DD>` with today's date (`date +%Y-%m-%d`).
-- Create the bare directory `<dir>/specs/` (no `.gitkeep`, no `done`/`abandoned` subdirectories — terminal states are status values in the store). Once a spec starts planning, its `plan.md`, `SPEC.md` snapshot and supporting files live at `<dir>/specs/<slug>/`, created on demand by `ag-store promote`.
+- Create the bare directory `<dir>/specs/` (no `.gitkeep`, no `done`/`abandoned` subdirectories — terminal states are status values in the store). Once a spec starts planning, its `plan.md`, `SPEC.md` snapshot and supporting files live at `<dir>/specs/<slug>/`, created on demand by `ag-store promote` on the spec's build branch `build/<slug>` (in `.claude/worktrees/build-<slug>`), reaching trunk with the build merge.
 - Pull the brief: `ag-store brief_sync --dir "<dir>"` writes `<dir>/brief.md` (a read-only copy; the app owns it). If the project's brief is still empty, the file holds the app's placeholder — that is fine.
 
 There is no `inbox.md`, `runs.md`, `outcomes/` directory or `.pull.lock` — the Inbox, Outcomes, checkpoints and runs are store records, and claiming is transactional in the app.
