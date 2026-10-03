@@ -40,7 +40,7 @@
 #   spec_write <slug> --set k=v [--set k=v ...]   list fields accept "[a, b]"
 #     (the app rejects status/rank here — 422 — they are set via their own endpoints)
 #   rank <slug> [<slug>...]                       ready specs only, dense ranks in this order
-#   claim <identity> [label] [wip] [--spec <slug>]   slug, or WIP_FULL|BLOCKED|UNPRIORITISED|NONE|NOT_FOUND|TAKEN
+#   claim <identity> [label] [wip] [--spec <slug>] [--model <id>]   slug, or WIP_FULL|BLOCKED|UNPRIORITISED|NONE|NOT_FOUND|TAKEN
 #     (wip omitted -> the project's own wip_limit applies; wip 0 -> unlimited, sent explicitly)
 #   release <slug> | ship <slug> | abandon <slug> --reason "<text>" [--cascade "[a, b]"]
 #   promote <slug> --dir <dir>                    ensures <dir>/specs/<slug>/ exists; prints it
@@ -49,16 +49,20 @@
 #   outcome_list [--status s] | outcome_read <slug> | outcome_write <slug> --set k=v
 #   outcome_create <slug>       (markdown on stdin)          -> slug string (unwrapped, as above)
 #   outcome_rank <slug>... | outcome_achieve <slug> | outcome_abandon <slug> --reason "<text>"
-#   checkpoint_open <slug> <reason> --session <id> --by <who>   (ask on stdin) -> checkpoint id
+#   checkpoint_open <slug> <reason> --session <id> --by <who> [--model <id>]   (ask on stdin) -> checkpoint id
 #     (warns on stderr if the ask does not follow the Checkpoint ask format; still posts it, exit 0)
 #   checkpoint_list <slug> | checkpoint_open_count <slug>
 #   checkpoint_answer <id> --by <who>             (answer on stdin)
-#   run_event <event> --spec <slug> --runner <id> [--detail "<text>"]
+#   run_event <event> --spec <slug> --runner <id> [--detail "<text>"] [--model <id>]
 #                                                  -> ISO8601 stamp (the run's last_event_at, unwrapped)
 #   run_list [--spec <slug>] [--status active|closed]
 #   run_close --spec <slug> --runner <id> [--detail "<text>"]
 #   brief_sync --dir <dir>                        writes <dir>/brief.md from the store; prints the path
 #   whoami | doctor
+#
+# --model (else AGENTILE_MODEL; omitted when both are blank) is sent as `model`
+# when claim or ensure_run opens a run; never sent for an existing run; sent
+# verbatim, no alias normalisation.
 #
 # The app's create/event endpoints return the full resource (spec/outcome/run)
 # object, not the bare string the CLI prints; ag-store unwraps `slug` (create
@@ -70,7 +74,8 @@
 # run themselves: the active run for <spec> whose runner_id is the identity
 # (--runner, else AGENTILE_RUNNER_ID, else CLAUDE_SESSION_ID), else the newest
 # active run; run_event creates one when none exists. `claim` opens the run
-# server-side, so no skill ever handles a run id.
+# server-side, so no skill ever handles a run id. The model (--model, else
+# AGENTILE_MODEL) is sent only when a run is opened, never for an existing run.
 
 require "json"
 require "yaml"
@@ -301,14 +306,21 @@ module AgStore
       ENV["CLAUDE_SESSION_ID"].to_s
     end
 
+    def model(flag = nil)
+      [flag, ENV["AGENTILE_MODEL"]].each do |v|
+        return v if v.is_a?(String) && !v.strip.empty?
+      end
+      nil
+    end
+
     def active_run_for(slug, runner)
       runs = Array(@api.get(@api.project_path("/runs"), spec: slug, status: "active"))
       runs.find { |r| r["runner_id"] == runner } || runs.max_by { |r| r["started_at"].to_s }
     end
 
-    def ensure_run(slug, runner, session)
+    def ensure_run(slug, runner, session, model = nil)
       active_run_for(slug, runner) ||
-        @api.post(@api.project_path("/runs"), { spec: slug, runner_id: runner, session_id: session })
+        @api.post(@api.project_path("/runs"), { spec: slug, runner_id: runner, session_id: session, model: model }.compact)
     end
 
     def require_spec!(flags, op)
@@ -348,6 +360,8 @@ module AgStore
           end
         end
         body[:slug] = flags["spec"] if flags["spec"]
+        m = model(flags["model"])
+        body[:model] = m if m
         res = @api.post(p["/specs/claim"], body)
         res.is_a?(Hash) ? res["result"] : res
       when "release" then @api.post(p["/specs/#{AgStore.enc(positional[0])}/release"])
@@ -380,7 +394,7 @@ module AgStore
         session = flags["session"].to_s.empty? ? ENV["CLAUDE_SESSION_ID"].to_s : flags["session"].to_s
         ask = $stdin.read.to_s.strip
         AgStore.ask_warnings(reason, ask).each { |m| warn "ag-store: warning: #{m}" }
-        run = ensure_run(slug, identity, session)
+        run = ensure_run(slug, identity, session, model(flags["model"]))
         res = @api.post(p["/runs/#{AgStore.enc(run['id'])}/checkpoints"],
                         { reason: reason, asked_by: flags["by"].to_s, session_id: session, ask: ask })
         res.is_a?(Hash) ? res["id"] : res
@@ -394,7 +408,7 @@ module AgStore
         raise Error, "unknown run event #{event.inspect} (#{RUN_EVENTS.join('|')})" unless RUN_EVENTS.include?(event)
 
         slug = require_spec!(flags, "run_event")
-        run = ensure_run(slug, identity(flags["runner"]), ENV["CLAUDE_SESSION_ID"].to_s)
+        run = ensure_run(slug, identity(flags["runner"]), ENV["CLAUDE_SESSION_ID"].to_s, model(flags["model"]))
         res = @api.post(p["/runs/#{AgStore.enc(run['id'])}/events"], { event: event, detail: flags["detail"].to_s })
         res.is_a?(Hash) ? res["last_event_at"] : res
       when "run_list" then @api.get(p["/runs"], spec: flags["spec"], status: flags["status"])

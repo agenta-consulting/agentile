@@ -141,14 +141,16 @@ Run `ag-store spec_list --status in_progress`. If no entry's `claimed_by` equals
 Read `wip_limit` from `.agentile/prioritise.md`. If it sets a limit, pass it as the third positional to `claim`:
 
 ```
-ag-store claim "<identity>" "" "<wip_limit>" [--spec "<slug from $ARGUMENTS>"]
+ag-store claim "<identity>" "" "<wip_limit>" --model "<your model id>" [--spec "<slug from $ARGUMENTS>"]
 ```
 
 Otherwise, omit the positional entirely — the app applies the project's own `wip_limit` — and run:
 
 ```
-ag-store claim "<identity>" "" [--spec "<slug from $ARGUMENTS>"]
+ag-store claim "<identity>" "" --model "<your model id>" [--spec "<slug from $ARGUMENTS>"]
 ```
+
+Use your own exact model id from your system context for `<your model id>` (e.g. `claude-opus-5-5`); if `AGENTILE_MODEL` is set in the environment, omit `--model` and leave it to the env var; if you do not know your model id, omit `--model` — never let it block the claim.
 
 (Passing `0` explicitly means unlimited; only use the first form with `0` if `.agentile/prioritise.md` says unlimited outright — never pass `0` as a default.)
 
