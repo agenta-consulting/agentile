@@ -1,7 +1,7 @@
 ---
 number: 0002
 title: The store is a written protocol with two transports, a reference local store and a conformance suite
-status: proposed
+status: accepted
 date: 2026-10-12
 ---
 
@@ -9,7 +9,7 @@ date: 2026-10-12
 
 ## Status
 
-proposed
+accepted
 
 ## Context
 
