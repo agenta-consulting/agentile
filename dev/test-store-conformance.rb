@@ -177,6 +177,13 @@ check("shaping a stub twice is refused", gap: "G12") do
   expect_status(ag("inbox_shape", stub, stdin: spec_md("conf-z-#{X}", "Z")), 409, "second shape")
 end
 
+check("a stub can name a ready spec as its likely duplicate", gap: "G15") do
+  dup = ag("inbox_add", "Conformance dup of #{a} #{X}", "--duplicate-of", a, "--duplicate-of-type", "spec")
+  expect(dup.ok? && !dup.err.include?("without it"), "stub with a spec duplicate: #{dup.code} #{dup.err.strip}")
+  item = ag!("inbox_list").find { |i| i["id"] == dup.json }
+  expect(item && item["duplicate_of"] == a, "duplicate_of should be the slug: #{item.inspect}")
+end
+
 check("drop is idempotent for a dropped stub") do
   s2 = ag!("inbox_add", "Conformance drop #{X}")
   expect(ag!("inbox_drop", s2) == true, "drop should print true")
@@ -231,6 +238,11 @@ check("spec_write updates fields and refuses status and rank") do
   expect(r["tags"].sort == [ "x-#{X}", "y-#{X}" ] && r["route"] == "spike", "patched: #{r.inspect}")
   expect_status(ag("spec_write", b, "--set", "status=shipped"), 422, "status via PATCH")
   expect_status(ag("spec_write", b, "--set", "rank=1"), 422, "rank via PATCH")
+end
+
+check("spec_write refuses a blank title") do
+  expect_status(ag("spec_write", b, "--set", "title="), 422, "blank title via PATCH")
+  expect(ag!("spec_read", b).include?("title: Conformance B"), "title must survive")
 end
 
 check("spec_write keeps shaping context", gap: "G11") do
@@ -342,6 +354,23 @@ check("abandon cascades the same reason, without recursion") do
   gone = ag!("spec_list", "--pool", "abandoned").select { |x| [ b, c ].include?(x["slug"]) }
   expect(gone.size == 2, "both abandoned: #{gone.map { |x| x['slug'] }}")
   expect(ag!("spec_read", c).include?("abandoned_reason: conformance #{X}"), "c carries the same reason")
+end
+
+check("a multi-line reason cannot break the frontmatter", gap: "G16") do
+  md = ag!("spec_read", c)
+  fm = md[/\A---\n(.*?)\n---\n/m, 1].to_s
+  expect(fm.include?("slug: #{c}") && fm.include?("status: abandoned"), "frontmatter intact: #{md[0, 300]}")
+  e = "conf-e-#{X}"
+  ag!("spec_create", stdin: spec_md(e, "Conformance E"))
+  ag!("abandon", e, "--reason", "line one\nline two: forged\n---\ntitle: hacked")
+  md = ag!("spec_read", e)
+  fm = md[/\A---\n(.*?)\n---\n/m, 1].to_s
+  lines = fm.lines.map(&:chomp)
+  # abandoned_at is written after abandoned_reason, so it is only inside the block
+  # if the reason did not end the block early.
+  expect(lines.include?("title: Conformance E") && !lines.include?("title: hacked") &&
+         lines.any? { |l| l.start_with?("abandoned_at: ") } && lines.any? { |l| l.start_with?("abandoned_reason: line one") },
+         "the reason must stay on one frontmatter line: #{md[0, 400]}")
 end
 
 check("an abandoned spec cannot be abandoned again", gap: "G1") do

@@ -108,12 +108,17 @@ module AgStoreLocal
 
     def scalar(v) = v.is_a?(Array) ? "[#{v.join(', ')}]" : v.to_s
 
+    # A frontmatter value is one line (§7.1): any whitespace run holding a line
+    # break is written as one space, so free text such as an abandon reason can
+    # never end the block early or forge keys.
+    def one_line(v) = v.to_s.gsub(/\s*[\r\n]+\s*/, " ")
+
     def frontmatter(record, keys)
       lines = keys.filter_map do |k|
         v = record[k]
         next if v.nil? || v == "" || v == []
 
-        "#{k}: #{v.is_a?(Array) ? "[#{v.join(', ')}]" : v}"
+        "#{k}: #{v.is_a?(Array) ? "[#{v.join(', ')}]" : one_line(v)}"
       end
       "---\n#{lines.join("\n")}\n---\n"
     end
@@ -233,7 +238,7 @@ module AgStoreLocal
       AgStoreLocal.invalid("Slug has already been taken") if specs.key?(slug)
       status = fm["status"].to_s
       AgStoreLocal.invalid("a new spec must be ready, not #{status}") unless status.empty? || status == "ready"
-      title = fm["title"].to_s.empty? ? Markdown.first_heading(body).to_s : fm["title"].to_s
+      title = fm["title"].to_s.empty? ? Markdown.first_heading(body).to_s : Markdown.scalar(fm["title"])
       AgStoreLocal.invalid("Title can't be blank") if title.empty?
 
       secs = Markdown.sections(body)
@@ -257,20 +262,19 @@ module AgStoreLocal
     end
 
     def validate_spec!(s)
+      AgStoreLocal.invalid("Title can't be blank") if s["title"].to_s.strip.empty?
+      %w[title model outcome label shaped_against shaped_at].each do |k|
+        AgStoreLocal.invalid("#{k} must be one line") if s[k].to_s.match?(/[\r\n]/)
+      end
       AgStoreLocal.invalid("Type is not included in the list") unless KINDS.include?(s["type"])
       AgStoreLocal.invalid("Route is not included in the list") unless s["route"].nil? || ROUTES.include?(s["route"])
       %w[business_value technical_certainty].each do |k|
         AgStoreLocal.invalid("#{k} is not included in the list") unless s[k].nil? || LEVELS.include?(s[k])
       end
       AgStoreLocal.invalid("shaped_against is not a commit sha") unless s["shaped_against"].nil? || s["shaped_against"].match?(SHA_RE)
-      unless s["shaped_at"].nil?
-        begin
-          Time.iso8601(s["shaped_at"])
-        rescue ArgumentError
-          AgStoreLocal.invalid("shaped_at is not an ISO 8601 time")
-        end
+      unless s["shaped_at"].nil? || s["shaped_at"].match?(/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z/)
+        AgStoreLocal.invalid("shaped_at must be a UTC time written YYYY-MM-DDTHH:MM:SSZ")
       end
-      AgStoreLocal.invalid("outcome must be one line") if s["outcome"].to_s.include?("\n")
       outcome!(s["serves"]) if s["serves"]
       s["depends_on"].each { |d| spec!(d) unless d == s["slug"] }
       AgStoreLocal.invalid("a spec cannot depend on itself") if s["depends_on"].include?(s["slug"])
@@ -330,7 +334,7 @@ module AgStoreLocal
     def claim(body)
       identity = body["identity"].to_s
       AgStoreLocal.invalid("identity is required") if identity.strip.empty?
-      label = body["label"].to_s.empty? ? nil : body["label"].to_s
+      label = body["label"].to_s.empty? ? nil : Markdown.one_line(body["label"])
       target = body["slug"].to_s.empty? ? nil : body["slug"].to_s
 
       if target && (s = specs[target]) && s["status"] == "in_progress" && s["claimed_by"] == identity
@@ -411,6 +415,7 @@ module AgStoreLocal
 
       s.merge!("status" => "shipped", "shipped_at" => AgStoreLocal.now)
       run = body["run_id"] ? run!(body["run_id"]) : live_run(s["slug"])
+      AgStoreLocal.invalid("run #{run['id']} belongs to #{run['spec']}, not #{s['slug']}") if run && run["spec"] != s["slug"]
       run_event(run, "shipped") if run && LIVE.include?(run["status"])
       spec_summary(s)
     end
@@ -488,7 +493,7 @@ module AgStoreLocal
       AgStoreLocal.invalid("Slug has already been taken") if outcomes.key?(slug)
       status = fm["status"].to_s
       AgStoreLocal.invalid("a new outcome must be open, not #{status}") unless status.empty? || status == "open"
-      title = fm["title"].to_s.empty? ? Markdown.first_heading(body).to_s : fm["title"].to_s
+      title = fm["title"].to_s.empty? ? Markdown.first_heading(body).to_s : Markdown.scalar(fm["title"])
       AgStoreLocal.invalid("Title can't be blank") if title.empty?
 
       secs = Markdown.sections(body)
@@ -515,15 +520,27 @@ module AgStoreLocal
       AgStoreLocal.invalid("Type is not included in the list") unless KINDS.include?(kind)
       serves = body["serves"].to_s.empty? ? nil : body["serves"].to_s
       outcome!(serves) if serves
-      dup = body["duplicate_of"].to_s.empty? ? nil : body["duplicate_of"].to_i
-      stub!(dup) if dup
+      dup, dup_type = duplicate_ref(body["duplicate_of"], body["duplicate_of_type"])
       item = { "id" => next_id("inbox"), "title" => title, "text" => text, "type" => kind, "status" => "open",
                "serves" => serves, "captured_at" => AgStoreLocal.now, "captured_by" => user_name,
                "captured_by_email" => user_email, "suggested_kind" => body["suggested_kind"],
-               "suggested_outcome" => nil, "duplicate_of" => dup,
+               "suggested_outcome" => nil, "duplicate_of" => dup, "duplicate_of_type" => dup_type,
                "duplicate_probability" => body["duplicate_probability"]&.to_f }
       inbox << item
       { "ok" => true, "id" => item["id"] }
+    end
+
+    # A stub may point at a likely duplicate: an inbox id, or a ready spec's slug
+    # (§4.2). Without a type, an all-digit value is an inbox id.
+    def duplicate_ref(value, type)
+      return [ nil, nil ] if value.nil? || value.to_s.strip.empty?
+
+      type = type.to_s.empty? ? (value.to_s.match?(/\A\d+\z/) ? "inbox" : "spec") : type.to_s
+      case type
+      when "inbox" then [ stub!(value).fetch("id"), "inbox" ]
+      when "spec" then [ spec!(value.to_s).fetch("slug"), "spec" ]
+      else AgStoreLocal.invalid("duplicate_of_type must be inbox or spec")
+      end
     end
 
     # Capture assist without a model (§8.4.1): a plain tidy, a keyword guess at
@@ -661,7 +678,7 @@ module AgStoreLocal
              end
       section = "## Prioritised outcomes\n\n#{list}\n"
       re = /^## Prioritised outcomes[ \t]*\r?\n.*?(?=^## |\z)/m
-      base.match?(re) ? base.sub(re, section) : "#{base.rstrip}\n\n#{section}"
+      base.match?(re) ? base.sub(re) { section } : "#{base.rstrip}\n\n#{section}"
     end
 
     # ---------------------------------------------------------- router --
@@ -717,7 +734,8 @@ module AgStoreLocal
         o = outcome!(slug)
         AgStoreLocal.invalid("status and rank are set via their endpoints") if body.key?("status") || body.key?("rank")
         %w[title claim measure stop_rule notes abandoned_reason].each { |k| o[k] = body[k].to_s if body.key?(k) }
-        AgStoreLocal.invalid("Title can't be blank") if o["title"].to_s.empty?
+        AgStoreLocal.invalid("Title can't be blank") if o["title"].to_s.strip.empty?
+        AgStoreLocal.invalid("title must be one line") if o["title"].match?(/[\r\n]/)
         outcome_json(o)
       in [ "POST", "outcomes", slug, "achieve" ]
         o = outcome!(slug)
@@ -781,8 +799,12 @@ module AgStoreLocal
     user = req["user"].is_a?(Hash) ? req["user"] : {}
     config = req["config"].is_a?(Hash) ? req["config"] : {}
     query = req["query"].is_a?(Hash) ? req["query"] : {}
+    markdown = req["content_type"].to_s.include?("markdown")
     body = req["body"]
-    body = {} if body.nil? && req["content_type"].to_s.include?("json")
+    body = markdown ? "" : {} if body.nil?
+    unless markdown || body.is_a?(Hash)
+      return respond(422, { "error" => "invalid", "detail" => "the request body must be a JSON object" })
+    end
 
     if path == "/me"
       projects = Dir.glob(File.join(root, "*.json")).map { |f| File.basename(f, ".json") }.sort
@@ -804,7 +826,7 @@ module AgStoreLocal
       data = File.exist?(file) ? JSON.parse(File.read(file)) : Store.blank(project)
       before = JSON.generate(data)
       store = Store.new(data, project, user, config)
-      result = store.call(method, m[2].to_s, query, body.is_a?(Hash) ? body : (body || ""))
+      result = store.call(method, m[2].to_s, query, body)
       status = 200
       status, result = result if result.is_a?(Array) && result.first.is_a?(Integer)
       if result.is_a?(Array) && result.first == :markdown
@@ -822,6 +844,9 @@ module AgStoreLocal
     end
   rescue HttpError => e
     respond(e.status, { "error" => e.code, "detail" => e.message })
+  rescue StandardError => e
+    # Nothing was written: the data file is only replaced after the request succeeds.
+    respond(500, { "error" => "internal", "detail" => "#{e.class}: #{e.message}" })
   end
 end
 

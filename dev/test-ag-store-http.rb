@@ -149,7 +149,21 @@ with_project(api.url) do |root|
   raise "inbox_add with assist flags should print the id: #{out.inspect}" unless out == 42
   body = JSON.parse(api.requests.last[:body])
   raise "inbox_add assist-flag body: #{body.inspect}" \
-    unless body == { "text" => "Maybe a dup", "suggested_kind" => "bug", "duplicate_of" => "7", "duplicate_probability" => "0.8" }
+    unless body == { "text" => "Maybe a dup", "suggested_kind" => "bug", "duplicate_of" => "7", "duplicate_of_type" => "inbox", "duplicate_probability" => "0.8" }
+end
+
+# 6b. a duplicate that is a spec slug (Store Protocol §12 G15): a store that 404s on
+#     it still gets the stub, saved without the advisory duplicate note
+api.route("POST", "#{P}/inbox") do |r|
+  b = JSON.parse(r[:body])
+  b["duplicate_of"] == "alpha" ? [404, { "error" => "not_found", "detail" => "Couldn't find InboxItem" }] : [201, { "ok" => true, "id" => 43 }]
+end
+with_project(api.url) do |root|
+  out, err, st = run_store("inbox_add", "Same as alpha", "--duplicate-of", "alpha", "--duplicate-probability", "0.9", env: ENV_OK, chdir: root)
+  raise "spec duplicate should still save: #{st.exitstatus} #{err}" unless st.success? && JSON.parse(out) == 43 && err.include?("without it")
+  first, second = api.requests.last(2).map { |q| JSON.parse(q[:body]) }
+  raise "first try should carry the spec duplicate: #{first.inspect}" unless first["duplicate_of_type"] == "spec"
+  raise "retry should drop it: #{second.inspect}" if second.key?("duplicate_of") || second.key?("duplicate_of_type")
 end
 
 # 7. inbox_assist passes the text; inbox_shape posts markdown from stdin with text/markdown

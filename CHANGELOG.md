@@ -13,7 +13,7 @@ here. See the Versioning section in [README.md](./README.md) for why.
   claim/rank/dependency/cascade/map/flow/brief algorithms, canonical markdown,
   errors and capabilities, an HTTP binding (the Agentile Projects API v1) and a
   new process binding (JSON over a child's stdin/stdout). §12 lists where
-  Agentile Projects differs today (G1 to G14). See ADR-0002.
+  Agentile Projects differs today (G1 to G16). See ADR-0002.
 - **Local store.** `url: local` (or `local:<dir>`) in `.agentile/store.md`
   uses the bundled `bin/ag-store-local`: one JSON file per project in
   `~/.local/share/agentile/stores/`, an exclusive lock per request, no account,
@@ -31,7 +31,7 @@ here. See the Versioning section in [README.md](./README.md) for why.
   shaping** section into `plan.md`; `/ag-build` pauses for plan review when it
   says `Re-shape recommended`. Agentile Projects drops these fields until its
   gap G11 is fixed.
-- **Conformance suite** `dev/test-store-conformance.rb` (40 checks; runs against
+- **Conformance suite** `dev/test-store-conformance.rb` (44 checks; runs against
   the local store by default, or `--url`/`--project` for any store, with
   `--allow-gaps` for the known Agentile Projects gaps) and
   `dev/test-ag-store-local.rb`, both in the `test` gate.

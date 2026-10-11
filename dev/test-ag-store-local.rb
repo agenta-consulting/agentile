@@ -93,7 +93,7 @@ with_repo(->(d) { "local:#{d}" }) do |root, data|
   end
 end
 
-with_repo(->(_d) { "exec:#{LOCAL} --root /dev/null/nowhere" }) do |root, _data|
+with_repo(->(_d) { "exec:/bin/false" }) do |root, _data|
   test.call("a process store that crashes is a configuration error (exit 2)") do
     _out, err, code = ag(root, "spec_list")
     raise "expected exit 2 naming the command: #{code} #{err}" unless code == 2 && err.include?("store command")
@@ -111,6 +111,59 @@ with_repo(->(_d) { "exec:/no/such/store-binary" }) do |root, _data|
   test.call("a missing process store command is a configuration error (exit 2)") do
     _out, err, code = ag(root, "doctor")
     raise "expected exit 2: #{code} #{err}" unless code == 2 && err.include?("cannot start")
+  end
+end
+
+Dir.mktmpdir("ag-exec") do |bin|
+  spy = File.join(bin, "spy-store")
+  File.write(spy, "#!/bin/sh\ncat >/dev/null\nprintf '{\"status\":200,\"content_type\":\"application/json\",\"body\":{\"tok\":\"%s%s\"}}' \"$AGENTILE_PROJECTS_TOKEN\" \"$AGENTILE_STORE_TOKEN\"\n")
+  File.chmod(0o755, spy)
+  with_repo(->(_d) { "exec:#{spy}" }) do |root, _data|
+    test.call("a process store never sees the HTTP token") do
+      out, err, st = Open3.capture3(CLEAN.merge("AGENTILE_PROJECTS_TOKEN" => "secret-1", "AGENTILE_STORE_TOKEN" => "secret-2"),
+                                    "ruby", AG_STORE, "whoami", chdir: root)
+      raise "spy: #{st.exitstatus} #{err}" unless st.success?
+      raise "token leaked to the store command: #{out}" unless JSON.parse(out)["tok"] == ""
+    end
+  end
+
+  slow = File.join(bin, "slow-store")
+  File.write(slow, "#!/bin/sh\nsleep 30\n")
+  File.chmod(0o755, slow)
+  with_repo(->(_d) { "exec:#{slow}" }) do |root, _data|
+    test.call("a process store that hangs is killed at the deadline (exit 2)") do
+      t0 = Time.now
+      _out, err, st = Open3.capture3(CLEAN.merge("AGENTILE_STORE_TIMEOUT" => "2"), "ruby", AG_STORE, "doctor", chdir: root)
+      raise "expected exit 2 within a few seconds: #{st.exitstatus} after #{(Time.now - t0).round(1)}s #{err}" \
+        unless st.exitstatus == 2 && err.include?("did not answer") && Time.now - t0 < 10
+    end
+  end
+end
+
+Dir.mktmpdir("ag-rel") do |root|
+  system("git", "init", "-q", root, exception: true)
+  FileUtils.mkdir_p(File.join(root, ".agentile"))
+  File.write(File.join(root, ".agentile/store.md"), "---\nurl: local:.store-data\nproject: rel\n---\n")
+  system("git", "-C", root, "add", ".agentile", exception: true)
+  system("git", "-C", root, "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "init", exception: true)
+  wt = File.join(root, ".claude/worktrees/w1")
+  system("git", "-C", root, "worktree", "add", "-q", wt, exception: true)
+  test.call("a relative local:<dir> is the same store from every worktree") do
+    ag!(root, "spec_create", stdin: SPEC)
+    seen = ag!(wt, "spec_list").map { |x| x["slug"] }
+    raise "the worktree should see the main checkout's backlog: #{seen.inspect}" unless seen == [ "one" ]
+    raise "data should live under the main checkout" unless File.exist?(File.join(root, ".store-data/rel.json"))
+  end
+end
+
+test.call("an internal error is a 500 and leaves the data untouched") do
+  Dir.mktmpdir do |d|
+    File.write(File.join(d, "broken.json"), "{ not json")
+    req = { "protocol" => 1, "method" => "GET", "path" => "/projects/broken/specs", "query" => {}, "body" => nil }
+    out, _err, st = Open3.capture3("ruby", LOCAL, "--root", d, stdin_data: JSON.generate(req))
+    res = JSON.parse(out)
+    raise "expected a 500 response: #{out}" unless st.success? && res["status"] == 500 && res["body"]["error"] == "internal"
+    raise "the data file must be untouched" unless File.read(File.join(d, "broken.json")) == "{ not json"
   end
 end
 

@@ -82,15 +82,26 @@ The environment variable `AGENTILE_STORE_URL` overrides `url`.
 to anything but a loopback host unless `AGENTILE_STORE_ALLOW_HTTP=1` (or the
 older `AGENTILE_PROJECTS_ALLOW_HTTP=1`) is set.
 
-**Process stores** need no token. The client starts the command for each
-operation and talks to it over stdin and stdout (section 9). A process store
-holds its own credentials, for example in its own environment variables.
+**Process stores** need no token, and never get one: the client removes
+`AGENTILE_STORE_TOKEN` and `AGENTILE_PROJECTS_TOKEN` from the command's
+environment, so a change to the tracked `url` cannot hand the token to a
+command. The client starts the command for each operation and talks to it over
+stdin and stdout (section 9). A process store holds its own credentials, for
+example in its own environment variables. An `exec:` url runs a command named in
+a tracked file, the same trust a repo already gives the commands in
+`.agentile/gates.json`: review a change to it the way you would review a change
+to a gate.
 
 **The local store** keeps one JSON file per project. `local:<path>` names the
-directory; plain `local` means `${XDG_DATA_HOME:-~/.local/share}/agentile/stores`.
+directory, resolved against the main checkout (not the current directory, so
+every worktree reaches the same files); plain `local` means
+`${XDG_DATA_HOME:-~/.local/share}/agentile/stores`.
 It sits outside the repo on purpose: every worktree of a checkout sees the same
 backlog, and the backlog never turns up in a diff. It is for one person on one
-machine. A team that shares a backlog across machines needs an HTTP store.
+machine. A team that shares a backlog across machines needs an HTTP store. It
+has no registry of projects: a project exists once anything has been written to
+it, so it answers a mistyped project slug with an empty backlog instead of
+`404`. `/ag-init` confirms the slug for that reason.
 
 ## 3. Principles
 
@@ -109,7 +120,9 @@ These decisions shape everything below.
    allowed only where section 5 marks it idempotent.
 4. **Derived views are computed, never stored.** Map, flow, blocked and
    dependents are calculated on every request so they cannot go stale.
-5. **Times are UTC, second precision**, written `YYYY-MM-DDTHH:MM:SSZ`.
+5. **Times are UTC, second precision**, written `YYYY-MM-DDTHH:MM:SSZ`. A store
+   refuses (`422`) a client-supplied time in any other form, such as `shaped_at`
+   with an offset.
 6. **Slugs are the identity of specs and outcomes**, unique within a project and
    matching `^[a-z0-9]+(-[a-z0-9]+)*$`. Inbox items, runs and checkpoints have
    integer ids, unique within the store.
@@ -155,7 +168,8 @@ store) treats the single local user as `owner` of every project it holds.
 | `captured_at` | time | |
 | `captured_by` | string | display name of who captured it |
 | `suggested_kind` | string? | the assist's guess at `type`, kept for the record |
-| `duplicate_of` | int? | an inbox id the capturer was warned about |
+| `duplicate_of` | int or slug? | what the capturer was warned it duplicates: an inbox id, or a ready spec's slug |
+| `duplicate_of_type` | enum? | `inbox` or `spec`, saying which |
 | `duplicate_probability` | float? | |
 | `attachments` | [Attachment] | *optional*; `[]` when the store has no attachments |
 
@@ -615,7 +629,14 @@ this order, leaving out any that is `null`, `""` or `[]`: `title`, `slug`,
 blank line, `# <title>`, and all seven sections in the order above, each present
 even when empty, separated by blank lines, ending with a newline.
 
-`outcome` lives in the frontmatter, so it MUST be one line.
+**One line per value.** A frontmatter value never holds a line break. A store
+MUST refuse (`422`) a line break in a value the client chose for the
+frontmatter: `title`, `model`, `outcome`, `label`, `shaped_against`, `shaped_at`
+on a spec, `title` on an outcome. Free text that reaches the frontmatter from a
+transition (`abandoned_reason`, and a claim's `label`) MAY hold line breaks in
+the store and in JSON, but is written to the markdown with every whitespace run
+that contains a line break replaced by one space. Without that rule a reason
+containing `---` would end the block and forge keys.
 
 ### 7.2 Outcome
 
@@ -667,7 +688,7 @@ answer `404`, never `403`, so a store does not reveal which projects exist.
 | W | `PUT /projects/:p/specs/rank` | `{slugs}` | `{ranked}` (6.2) |
 | W | `POST /projects/:p/specs/claim` | `{identity, label?, wip?, slug?, model?}` | `200`, `{result, run_id}` (6.1). Blank identity: `422`. |
 | W | `POST /projects/:p/specs/:slug/release` | | SpecSummary (5.1) |
-| W | `POST /projects/:p/specs/:slug/ship` | `{run_id?}` | SpecSummary (5.1) |
+| W | `POST /projects/:p/specs/:slug/ship` | `{run_id?}` | SpecSummary (5.1); a `run_id` of another spec's run is `422` |
 | W | `POST /projects/:p/specs/:slug/abandon` | `{reason, cascade?}` | SpecSummary of the target (6.4) |
 | R | `GET /projects/:p/specs/:slug/deps` | | [slug] (6.3) |
 | R | `GET /projects/:p/specs/:slug/dependents` | | [slug] (6.3) |
@@ -678,8 +699,8 @@ answer `404`, never `403`, so a store does not reveal which projects exist.
 `shaped_against`, `shaped_at`, `needs_review`, `abandoned_reason`, the eight
 body fields, and the lists `tags`, `depends_on` and `shaped_by`. A list may be
 sent as a JSON array or as the string `"[a, b]"` and replaces the old list.
-`serves: ""` clears it. `status` or `rank` in the body is `422` (they change
-only through their transitions). Unknown keys are ignored. The whole patch is
+`serves: ""` clears it. A blank `title` is `422`. `status` or `rank` in the body
+is `422` (they change only through their transitions). Unknown keys are ignored. The whole patch is
 one transaction.
 
 ### 8.3 Outcomes
@@ -700,7 +721,7 @@ one transaction.
 | | Method and path | Request | Response |
 |---|---|---|---|
 | R | `GET /projects/:p/inbox?status=` | `status` defaults to `open`; an unknown value returns `[]` | [InboxItem], newest first |
-| W | `POST /projects/:p/inbox` | `{text, title?, type?, serves?, suggested_kind?, duplicate_of?, duplicate_probability?}` (`kind` accepted for `type`) | `201`, `{ok: true, id}`. Without `title`, the first sentence of `text`'s first line, trailing `.!?` removed, cut to 80 characters. |
+| W | `POST /projects/:p/inbox` | `{text, title?, type?, serves?, suggested_kind?, duplicate_of?, duplicate_of_type?, duplicate_probability?}` (`kind` accepted for `type`) | `201`, `{ok: true, id}`. Without `title`, the first sentence of `text`'s first line, trailing `.!?` removed, cut to 80 characters. Without `duplicate_of_type`, an all-digit `duplicate_of` is an inbox id and anything else a spec slug; either must exist (`404`). |
 | W | `POST /projects/:p/inbox/assist` | `{text}` | `{title, text, kind, serves_outcome_slug, duplicate_of, duplicate_of_type, duplicate_probability, judgment_id}`; saves nothing (8.4.1) |
 | W | `POST /projects/:p/inbox/:id/shape` | spec markdown | `201`, SpecSummary. Creates the spec as `POST /specs` would, with `source_inbox` and `captured_by` from the stub and the user added to `shaped_by`, and marks the stub `shaped`, all in one transaction. A stub that is not `open`: `409`. |
 | W | `POST /projects/:p/inbox/:id/drop` | | `{ok: true}` (5.2) |
@@ -729,7 +750,11 @@ even when no duplicate is reported.
 A process store is a program. For each operation the client starts it with the
 command line from `exec:<command line>` (split like a shell would, without
 running a shell), writes one JSON request to its stdin, closes stdin, and reads
-one JSON response from stdout. The program SHOULD finish within 60 seconds.
+one JSON response from stdout. The program MUST finish within 60 seconds; the
+client kills it (and its process group) after that and fails the operation
+with exit 2. `AGENTILE_STORE_TOKEN` and `AGENTILE_PROJECTS_TOKEN` are removed
+from its environment (section 2). `AGENTILE_STORE_TIMEOUT` sets a different
+deadline in seconds.
 
 Request:
 
@@ -786,7 +811,8 @@ Every error has a JSON body `{"error": "<code>", "detail": "<sentence>"}`.
 | 403 | `forbidden` | a viewer attempted a write |
 | 404 | `not_found` | unknown project (or one the user cannot see), spec, outcome, stub, run, checkpoint, or a referenced slug |
 | 409 | `conflict` | an edge the state machine does not have; a rank of a closed spec; a checkpoint on a run that is not live; a second answer |
-| 422 | `invalid` | a missing or malformed field, a bad enum, a duplicate slug, a cycle, `status` or `rank` in a `PATCH` |
+| 422 | `invalid` | a missing or malformed field, a bad enum, a duplicate slug, a cycle, a line break in a frontmatter value, `status` or `rank` in a `PATCH` |
+| 500 | `internal` | the store failed; it MUST NOT have changed anything |
 
 A store MAY use a more specific `error` string (`invalid_encoding`,
 `unprocessable`) as long as the status is right; clients branch on the status.
@@ -850,6 +876,8 @@ treat them as warnings.
 | G12 | shaping or dropping a stub that is not `open` is `409` (dropping a dropped one is idempotent) | re-shapes a shaped stub, and drops a shaped one |
 | G13 | `PUT /projects/:p/brief` replaces the brief | no such endpoint; the brief is edited in the web UI only |
 | G14 | outcome create accepts only `status: open` | takes `status` (and `rank`) from the frontmatter |
+| G15 | a stub's `duplicate_of` may be a spec slug, with `duplicate_of_type` | takes only an inbox id: a spec slug is `404`, so the client saves the stub without the duplicate note |
+| G16 | a line break in a frontmatter value is refused or flattened (7.1) | writes an abandon reason with line breaks into the frontmatter as is, so `spec_read` returns a broken block |
 
 G9 and G10 are smoothed over in the client, so skills see protocol 1 today. G11
 matters most: until it is fixed, a spec shaped into Agentile Projects loses its

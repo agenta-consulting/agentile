@@ -61,7 +61,7 @@ followed:
 
 - Agentile runs with no account: `/ag-init` offers the local store.
 - Anyone can write a store; the suite tells them when it is done.
-- Agentile Projects has fourteen gaps to close (protocol §12, G1 to G14). Until
+- Agentile Projects has sixteen gaps to close (protocol §12, G1 to G16). Until
   G11 is fixed, specs shaped into it lose `shaped_against`, so the drift check
   has nothing to compare for those specs.
 - The local store is for one person on one machine. It has no users, no
