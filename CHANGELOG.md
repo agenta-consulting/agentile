@@ -6,6 +6,37 @@ here. See the Versioning section in [README.md](./README.md) for why.
 
 ## Unreleased
 
+## 0.24.0 — 2026-10-12
+
+- **The Agentile Store Protocol, version 1** (`docs/store-protocol.md`). The
+  written contract every backlog store meets: data model, state machines,
+  claim/rank/dependency/cascade/map/flow/brief algorithms, canonical markdown,
+  errors and capabilities, an HTTP binding (the Agentile Projects API v1) and a
+  new process binding (JSON over a child's stdin/stdout). §12 lists where
+  Agentile Projects differs today (G1 to G14). See ADR-0002.
+- **Local store.** `url: local` (or `local:<dir>`) in `.agentile/store.md`
+  uses the bundled `bin/ag-store-local`: one JSON file per project in
+  `~/.local/share/agentile/stores/`, an exclusive lock per request, no account,
+  no gems. `url: exec:<command>` uses any program speaking the process binding.
+  `/ag-init` and `/ag-customise store` now offer a choice of store.
+- **`ag-store`** speaks both transports; reads `AGENTILE_STORE_URL`,
+  `AGENTILE_STORE_TOKEN` and `AGENTILE_STORE_ALLOW_HTTP` (the
+  `AGENTILE_PROJECTS_*` names still work); adds `rank`/`type` where a store
+  sends only `prefix`/`kind`; `doctor` reports `protocol`, `store` and
+  `capabilities` (defaulting them for Agentile Projects) and refuses a store on
+  a newer protocol; new op `brief_write` (`PUT /brief`).
+- **Shaping context.** Specs carry `shaped_against` (the trunk commit they were
+  shaped against) and `shaped_at`. `/ag-shape` and `/ag-spec` set them.
+  `/ag-plan` measures drift since that commit and writes a **Fit since
+  shaping** section into `plan.md`; `/ag-build` pauses for plan review when it
+  says `Re-shape recommended`. Agentile Projects drops these fields until its
+  gap G11 is fixed.
+- **Conformance suite** `dev/test-store-conformance.rb` (40 checks; runs against
+  the local store by default, or `--url`/`--project` for any store, with
+  `--allow-gaps` for the known Agentile Projects gaps) and
+  `dev/test-ag-store-local.rb`, both in the `test` gate.
+- `/ag-prioritise` reads `rank` (the field `prefix` still works).
+
 ## 0.23.0 — 2026-10-03
 
 - **`/ag-build` creates the build worktree before planning.** Each spec gets

@@ -69,7 +69,7 @@ end
 # online suite with AGENTILE_PROJECTS_URL/TOKEN exported doesn't leak them into
 # the offline section's calls against the fake API — each call's own `env:`
 # hash still layers on top and can re-set any of these deliberately.
-ISOLATE = { "AGENTILE_PROJECTS_URL" => nil, "AGENTILE_PROJECTS_TOKEN" => nil,
+ISOLATE = { "AGENTILE_PROJECTS_URL" => nil, "AGENTILE_PROJECTS_TOKEN" => nil, "AGENTILE_STORE_URL" => nil, "AGENTILE_STORE_TOKEN" => nil, "AGENTILE_STORE_ALLOW_HTTP" => nil,
             "AGENTILE_RUNNER_ID" => nil, "CLAUDE_SESSION_ID" => nil, "AGENTILE_MODEL" => nil }.freeze
 
 def run_store(*args, env: {}, stdin: nil, chdir: Dir.pwd)
@@ -179,11 +179,13 @@ with_project(api.url) do |root|
 end
 
 # 9. spec_list forwards status/pool; spec_write turns bracketed lists into arrays
-api.route("GET", "#{P}/specs") { |r| [200, [{ "slug" => "a", "prefix" => 1, "status" => "ready", "q" => r[:query] }]] }
+api.route("GET", "#{P}/specs") { |r| [200, [{ "slug" => "a", "prefix" => 1, "kind" => "bug", "status" => "ready", "path" => "docs/agentile/specs/a", "q" => r[:query] }]] }
 api.route("PATCH", "#{P}/specs/a") { |r| [200, JSON.parse(r[:body])] }
 with_project(api.url) do |root|
   out = store!("spec_list", "--status", "ready", "--pool", "active", env: ENV_OK, chdir: root)
   raise "spec_list query: #{out.inspect}" unless out[0]["q"].include?("status=ready") && out[0]["q"].include?("pool=active")
+  # Store Protocol §12 G9: Agentile Projects' older names reach skills in protocol-1 shape too
+  raise "prefix should also be rank, kind also type: #{out[0].inspect}" unless out[0]["rank"] == 1 && out[0]["prefix"] == 1 && out[0]["type"] == "bug"
   out = store!("spec_write", "a", "--set", "depends_on=[b, c]", "--set", "route=spike", "--set", "tags=[]", env: ENV_OK, chdir: root)
   raise "spec_write lists: #{out.inspect}" unless out == { "depends_on" => %w[b c], "route" => "spike", "tags" => [] }
 end
@@ -419,6 +421,8 @@ with_project(api.url) do |root|
   doc = store!("doctor", env: ENV_OK, chdir: root)
   raise "doctor" unless doc["reachable"] == true
   raise "doctor should print the resolved host client-side: #{doc.inspect}" unless doc["host"] == "127.0.0.1"
+  # Store Protocol §12 G10: a doctor without protocol fields is Agentile Projects at protocol 1
+  raise "doctor should default protocol/store: #{doc.inspect}" unless doc["protocol"] == 1 && doc["store"] == "agentile-projects" && doc["capabilities"] == []
 end
 
 # 20. --store is obsolete: warns on stderr, still works; unknown op exits 1

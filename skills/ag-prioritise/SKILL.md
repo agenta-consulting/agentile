@@ -40,15 +40,15 @@ Outcome rank is **authored**; spec rank below is **derived** from it and materia
 Resolve the **Agentile directory** from `.agentile/config.md` (default `docs/agentile/`) and run `ag-store brief_sync --dir "<dir>"` (bare command; fallback `"${CLAUDE_PLUGIN_ROOT}/bin/ag-store"`) — it refreshes `<dir>/brief.md` from the store; exit 2 means the project is not linked: tell the user to run `/ag-init` and stop. Every `ag-store` call below is the bare command with the same fallback; none takes `--store`. Read `<dir>/brief.md` — rank Business Value against its prioritised outcomes rather than gut feel.
 
 Run `ag-store spec_list` and parse the JSON array. Each entry already
-carries `slug`, `prefix` (null if unprioritised), `status`, `business_value`,
+carries `slug`, `rank` (null if unprioritised; older stores call it `prefix`, and `ag-store` sends both), `status`, `business_value`,
 `technical_certainty`, `depends_on`, `serves` (the Outcome slug, or null), and claim fields — classify into three groups from
 that, no file reading required:
 
-- **Prioritised** — `prefix` is not null. Sort ascending by `prefix` to produce the
+- **Prioritised** — `rank` is not null. Sort ascending by `rank` to produce the
   current queue order.
-- **Unprioritised ready** — `prefix` is null and `status` is `ready`. Shaped and
+- **Unprioritised ready** — `rank` is null and `status` is `ready`. Shaped and
   buildable but not yet placed in the queue.
-- **In-progress** — `status` is `in_progress`, regardless of `prefix`. Actively being
+- **In-progress** — `status` is `in_progress`, regardless of `rank`. Actively being
   worked and must never be reordered.
 
 Treat missing `business_value`/`technical_certainty` as `0`.

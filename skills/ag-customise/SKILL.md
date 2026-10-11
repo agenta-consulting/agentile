@@ -13,11 +13,11 @@ Customisation is how a project makes Agentile its own. Interview the user about 
 Read `$ARGUMENTS` for the stage name. Valid stages are:
 
 - `build`, `verify`, `prioritise`, `shape`, `plan`, `next`, `ship`, `learn`, `capture`, `spec`
-- `store` — not a loop stage; it re-links this repo to a project in Agentile Projects (see below).
+- `store` — not a loop stage; it re-links this repo to its backlog store: Agentile Projects, the local store, or another store speaking the Agentile Store Protocol (see below).
 
 If no stage was provided, ask the user which stage to customise and offer that list. Accept the answer before continuing.
 
-**If the stage is `store`**, skip Steps 2–4 below entirely. Instead run `skills/ag-init/SKILL.md`'s Step 2 (link the project: token check, `whoami`, choose the project, write `.agentile/store.md`, `doctor`) and its brief pull from Step 3 exactly as written there, then go straight to this skill's Step 5 to report.
+**If the stage is `store`**, skip Steps 2–4 below entirely. Instead run `skills/ag-init/SKILL.md`'s Step 2 (link the project: choose the store, token check for an https store, choose the project, write `.agentile/store.md`, `doctor`) and its brief pull from Step 3 exactly as written there, then go straight to this skill's Step 5 to report.
 
 ## Step 2 — Load existing context
 

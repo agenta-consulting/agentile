@@ -53,4 +53,4 @@ Display all specs currently in flight — their owner, label, age, and how to re
 
    > Likely stale — **release the claim** (`ag-store release <slug>`) to put it back in the queue, or resume it with the command above. Releasing a claim is not abandoning: the spec stays live.
 
-6. Make no changes to any file. The same view, live, is the project dashboard in Agentile Projects.
+6. Make no changes to any file. With Agentile Projects, the same view, live, is the project dashboard.
