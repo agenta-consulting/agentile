@@ -1,0 +1,868 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# ag-store-local — the bundled local store, and the reference implementation of
+# the process binding of the Agentile Store Protocol (docs/store-protocol.md §9).
+#
+# bin/ag-store runs this once per operation when .agentile/store.md says
+# `url: local` (or `local:<dir>`): one JSON request on stdin, one JSON response
+# on stdout. Each project is one JSON file, <dir>/<project>.json, and every
+# request holds an exclusive lock on <dir>/<project>.lock from its first read to
+# its last write, so concurrent sessions on one machine get the same
+# transactional claim the hosted store gives across machines.
+#
+# Usage (normally only ag-store calls it):
+#   ag-store-local [--root <dir>]  < request.json  > response.json
+# <dir> defaults to $AGENTILE_LOCAL_STORE_DIR, else
+# ${XDG_DATA_HOME:-~/.local/share}/agentile/stores.
+#
+# No gems: json, fileutils, uri and time from the standard library only.
+
+require "json"
+require "fileutils"
+require "uri"
+require "time"
+
+module AgStoreLocal
+  PROTOCOL = 1
+  SLUG_RE = /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/
+  SHA_RE = /\A[0-9a-f]{7,40}\z/
+  KINDS = %w[feature bug chore spike].freeze
+  ROUTES = %w[foreground background spike].freeze
+  LEVELS = %w[high medium low].freeze
+  REASONS = %w[plan_review build_blocked build_checkpoint gate_failure verify_checkpoint ship_approval question].freeze
+  ASKERS = %w[plan build builder reviewer verify ship].freeze
+  EVENTS = %w[started claimed paused idle shipped failed deployed closed].freeze
+  LIVE = %w[active paused].freeze
+  SECTIONS = [
+    [ "Problem / why now", "problem_why_now" ],
+    [ "Acceptance criteria", "acceptance_criteria" ],
+    [ "Scope boundary", nil ],
+    [ "Edge cases and failure paths", "edge_cases" ],
+    [ "Affected areas", "affected_areas" ],
+    [ "Open questions", "open_questions" ],
+    [ "Verification", "verification" ]
+  ].freeze
+  BODY_FIELDS = %w[problem_why_now acceptance_criteria scope_in scope_out edge_cases affected_areas open_questions verification].freeze
+  OUTCOME_SECTIONS = [ [ "Claim", "claim" ], [ "Measure", "measure" ], [ "Stop rule", "stop_rule" ], [ "Notes", "notes" ] ].freeze
+  SPEC_MD_KEYS = %w[title slug status depends_on type route model business_value technical_certainty rank created_at
+                    serves tags outcome shaped_against shaped_at claimed_by label claimed_at claimed_by_member
+                    abandoned_reason abandoned_at shipped_at captured_by shaped_by source_inbox].freeze
+  OUTCOME_MD_KEYS = %w[title slug status rank created achieved_at abandoned_at abandoned_reason created_by].freeze
+  PATCH_SCALARS = %w[title type route model business_value technical_certainty label outcome serves shaped_against
+                     shaped_at needs_review abandoned_reason].freeze + BODY_FIELDS
+  PATCH_LISTS = %w[tags depends_on shaped_by].freeze
+
+  class HttpError < StandardError
+    attr_reader :status, :code
+
+    def initialize(status, code, detail)
+      super(detail)
+      @status = status
+      @code = code
+    end
+  end
+
+  def self.now = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+  def self.not_found(what) = raise(HttpError.new(404, "not_found", "no such #{what}"))
+  def self.conflict(detail) = raise(HttpError.new(409, "conflict", detail))
+  def self.invalid(detail) = raise(HttpError.new(422, "invalid", detail))
+
+  # ------------------------------------------------------------ markdown --
+  module Markdown
+    module_function
+
+    # The protocol's frontmatter subset (§7.1): `key: value` lines, `[a, b]` lists.
+    def split(text)
+      text = text.to_s.dup.force_encoding("UTF-8")
+      AgStoreLocal.invalid("request body is not valid UTF-8") unless text.valid_encoding?
+      text = text.delete_prefix("﻿")
+      m = text.match(/\A---\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\z)/m)
+      return [ {}, text ] unless m
+
+      fm = {}
+      m[1].each_line do |line|
+        lm = line.chomp.match(/\A([A-Za-z_]+):\s*(.*)\z/) or next
+        fm[lm[1]] = list_or_scalar(lm[2].strip)
+      end
+      [ fm, m.post_match ]
+    end
+
+    def list_or_scalar(v)
+      return v unless v.start_with?("[") && v.end_with?("]")
+
+      v[1..-2].split(",").map(&:strip).reject(&:empty?)
+    end
+
+    def sections(body)
+      out = {}
+      body.split(/^## /).drop(1).each do |chunk|
+        head, rest = chunk.split("\n", 2)
+        out[head.to_s.strip] = rest.to_s.strip
+      end
+      out
+    end
+
+    def first_heading(body)
+      body[/^# (.+)$/, 1]&.strip
+    end
+
+    def scalar(v) = v.is_a?(Array) ? "[#{v.join(', ')}]" : v.to_s
+
+    # A frontmatter value is one line (§7.1): any whitespace run holding a line
+    # break is written as one space, so free text such as an abandon reason can
+    # never end the block early or forge keys.
+    def one_line(v) = v.to_s.gsub(/\s*[\r\n]+\s*/, " ")
+
+    def frontmatter(record, keys)
+      lines = keys.filter_map do |k|
+        v = record[k]
+        next if v.nil? || v == "" || v == []
+
+        "#{k}: #{v.is_a?(Array) ? "[#{v.join(', ')}]" : one_line(v)}"
+      end
+      "---\n#{lines.join("\n")}\n---\n"
+    end
+  end
+
+  # ---------------------------------------------------------------- store --
+  class Store
+    attr_reader :data
+
+    def initialize(data, project, user, config)
+      @data = data
+      @project = project
+      @user = user
+      @config = config
+    end
+
+    def self.blank(project)
+      { "protocol" => PROTOCOL,
+        "project" => { "slug" => project, "name" => project, "wip_limit" => 1, "brief" => "" },
+        "seq" => { "inbox" => 0, "run" => 0, "checkpoint" => 0 },
+        "inbox" => [], "specs" => {}, "outcomes" => {}, "runs" => [], "checkpoints" => [] }
+    end
+
+    def specs = @data["specs"]
+    def outcomes = @data["outcomes"]
+    def runs = @data["runs"]
+    def checkpoints = @data["checkpoints"]
+    def inbox = @data["inbox"]
+    def user_email = @user["email"].to_s
+    def user_name = (@user["name"].to_s.empty? ? (user_email.empty? ? "local" : user_email) : @user["name"].to_s)
+
+    def next_id(kind)
+      @data["seq"][kind] += 1
+    end
+
+    def wip_limit
+      v = @config["wip_limit"]
+      return Integer(v.to_s, exception: false) || @data["project"]["wip_limit"] unless v.nil? || v.to_s.empty?
+
+      @data["project"]["wip_limit"]
+    end
+
+    # ---------------------------------------------------------- lookups --
+    def spec!(slug) = specs[slug] || AgStoreLocal.not_found("spec #{slug}")
+    def outcome!(slug) = outcomes[slug] || AgStoreLocal.not_found("outcome #{slug}")
+    def stub!(id) = inbox.find { |i| i["id"] == id.to_i } || AgStoreLocal.not_found("inbox item #{id}")
+    def run!(id) = runs.find { |r| r["id"] == id.to_i } || AgStoreLocal.not_found("run #{id}")
+    def checkpoint!(id) = checkpoints.find { |c| c["id"] == id.to_i } || AgStoreLocal.not_found("checkpoint #{id}")
+
+    def active?(s) = %w[ready in_progress].include?(s["status"])
+    def live_run(slug) = runs.find { |r| r["spec"] == slug && LIVE.include?(r["status"]) }
+    def deps_shipped?(s) = s["depends_on"].all? { |d| specs[d] && specs[d]["status"] == "shipped" }
+    def blocked?(s) = s["status"] == "ready" && !deps_shipped?(s)
+
+    def queue_order(list, rank_key = "rank")
+      list.sort_by { |x| [ x[rank_key].nil? ? 1 : 0, x[rank_key] || 0, x["slug"] ] }
+    end
+
+    # -------------------------------------------------------------- JSON --
+    def spec_summary(s)
+      { "slug" => s["slug"], "prefix" => s["rank"], "rank" => s["rank"], "path" => "docs/agentile/specs/#{s['slug']}",
+        "status" => s["status"], "title" => s["title"], "created_at" => s["created_at"],
+        "business_value" => s["business_value"], "technical_certainty" => s["technical_certainty"],
+        "route" => s["route"], "model" => s["model"], "depends_on" => s["depends_on"].sort,
+        "claimed_by" => s["claimed_by"], "claimed_by_member" => s["claimed_by_member"], "claimed_at" => s["claimed_at"],
+        "label" => s["label"], "shipped_at" => s["shipped_at"], "abandoned_at" => s["abandoned_at"],
+        "serves" => s["serves"], "tags" => s["tags"], "outcome" => s["outcome"],
+        "shaped_against" => s["shaped_against"], "shaped_at" => s["shaped_at"], "source_inbox" => s["source_inbox"],
+        "needs_review" => false, "type" => s["type"], "kind" => s["type"], "attachments" => [] }
+    end
+
+    def spec_detail(s)
+      spec_summary(s).merge(BODY_FIELDS.to_h { |f| [ f, s[f].to_s ] }).merge(
+        "abandoned_reason" => s["abandoned_reason"], "needs_review_reason" => nil,
+        "captured_by" => s["captured_by"], "shaped_by" => s["shaped_by"]
+      )
+    end
+
+    def outcome_json(o)
+      o.slice("slug", "title", "status", "rank", "created", "achieved_at", "abandoned_at")
+    end
+
+    def outcome_detail(o)
+      outcome_json(o).merge(o.slice("claim", "measure", "stop_rule", "notes", "abandoned_reason", "created_by"))
+    end
+
+    def stub_json(i)
+      i.merge("captured_by" => i["captured_by"], "attachments" => [])
+    end
+
+    def checkpoint_json(c)
+      c.merge("ref" => format("%s #%03d %s", c["spec"], c["seq"], c["reason"]), "priority" => nil, "layout" => nil)
+    end
+
+    # --------------------------------------------------------- markdown --
+    def spec_markdown(s)
+      md = +Markdown.frontmatter(s, SPEC_MD_KEYS)
+      md << "\n# #{s['title']}\n"
+      SECTIONS.each do |heading, field|
+        body = field ? s[field].to_s : "**In scope:** #{s['scope_in']}\n\n**Out of scope:** #{s['scope_out']}"
+        md << "\n## #{heading}\n\n#{body}\n"
+      end
+      md
+    end
+
+    def outcome_markdown(o)
+      md = +Markdown.frontmatter(o, OUTCOME_MD_KEYS)
+      md << "\n# #{o['title']}\n"
+      OUTCOME_SECTIONS.each { |heading, field| md << "\n## #{heading}\n\n#{o[field]}\n" }
+      md.gsub(/[ \t]+$/, "")
+    end
+
+    def parse_spec(text, extra = {})
+      fm, body = Markdown.split(text)
+      slug = fm["slug"].to_s
+      AgStoreLocal.invalid("Slug is invalid (#{slug.inspect})") unless slug.match?(SLUG_RE)
+      AgStoreLocal.invalid("Slug has already been taken") if specs.key?(slug)
+      status = fm["status"].to_s
+      AgStoreLocal.invalid("a new spec must be ready, not #{status}") unless status.empty? || status == "ready"
+      title = fm["title"].to_s.empty? ? Markdown.first_heading(body).to_s : Markdown.scalar(fm["title"])
+      AgStoreLocal.invalid("Title can't be blank") if title.empty?
+
+      secs = Markdown.sections(body)
+      scope = secs["Scope boundary"].to_s
+      s = { "slug" => slug, "title" => title, "status" => "ready", "type" => "feature", "rank" => nil,
+            "created_at" => AgStoreLocal.now, "depends_on" => [], "tags" => [], "serves" => nil,
+            "captured_by" => user_email.empty? ? nil : user_email, "shaped_by" => [], "source_inbox" => nil,
+            "scope_in" => scope[/\*\*In scope:\*\*\s*(.*?)(?=\*\*Out of scope:\*\*|\z)/m, 1].to_s.strip,
+            "scope_out" => scope[/\*\*Out of scope:\*\*\s*(.*)\z/m, 1].to_s.strip }
+      SECTIONS.each { |heading, field| s[field] = secs[heading].to_s if field }
+      %w[route model business_value technical_certainty outcome label shaped_against shaped_at].each do |k|
+        s[k] = fm.key?(k) && fm[k] != "" ? Markdown.scalar(fm[k]) : nil
+      end
+      s["type"] = Markdown.scalar(fm["type"]) if fm.key?("type") && fm["type"] != ""
+      s["tags"] = Array(fm["tags"]).map(&:to_s) if fm.key?("tags")
+      s["serves"] = fm["serves"].to_s.empty? ? nil : fm["serves"].to_s
+      s["depends_on"] = Array(fm["depends_on"]).map(&:to_s).uniq if fm.key?("depends_on")
+      s.merge!(extra)
+      validate_spec!(s)
+      s
+    end
+
+    def validate_spec!(s)
+      AgStoreLocal.invalid("Title can't be blank") if s["title"].to_s.strip.empty?
+      %w[title model outcome label shaped_against shaped_at].each do |k|
+        AgStoreLocal.invalid("#{k} must be one line") if s[k].to_s.match?(/[\r\n]/)
+      end
+      AgStoreLocal.invalid("Type is not included in the list") unless KINDS.include?(s["type"])
+      AgStoreLocal.invalid("Route is not included in the list") unless s["route"].nil? || ROUTES.include?(s["route"])
+      %w[business_value technical_certainty].each do |k|
+        AgStoreLocal.invalid("#{k} is not included in the list") unless s[k].nil? || LEVELS.include?(s[k])
+      end
+      AgStoreLocal.invalid("shaped_against is not a commit sha") unless s["shaped_against"].nil? || s["shaped_against"].match?(SHA_RE)
+      unless s["shaped_at"].nil? || s["shaped_at"].match?(/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z/)
+        AgStoreLocal.invalid("shaped_at must be a UTC time written YYYY-MM-DDTHH:MM:SSZ")
+      end
+      outcome!(s["serves"]) if s["serves"]
+      s["depends_on"].each { |d| spec!(d) unless d == s["slug"] }
+      AgStoreLocal.invalid("a spec cannot depend on itself") if s["depends_on"].include?(s["slug"])
+      AgStoreLocal.invalid("depends_on would create a cycle") if cycle_from?(s["slug"], s["depends_on"])
+    end
+
+    # Would giving `slug` these dependencies make it reachable from itself?
+    def cycle_from?(slug, deps)
+      seen = {}
+      stack = deps.dup
+      until stack.empty?
+        d = stack.pop
+        return true if d == slug
+        next if seen[d]
+
+        seen[d] = true
+        stack.concat(specs[d] ? specs[d]["depends_on"] : [])
+      end
+      false
+    end
+
+    # ------------------------------------------------------------ runs --
+    def open_run(slug, runner, session, model, events = %w[started])
+      t = AgStoreLocal.now
+      run = { "id" => next_id("run"), "spec" => slug, "runner_id" => runner, "session_id" => session,
+              "model" => model.to_s.strip.empty? ? nil : model.to_s, "status" => "active", "started_at" => t,
+              "ended_at" => nil, "last_event_at" => t, "detail" => "",
+              "events" => events.map { |e| { "event" => e, "at" => t, "detail" => "" } } }
+      runs << run
+      run
+    end
+
+    def run_event(run, event, detail = "")
+      AgStoreLocal.invalid("unknown event #{event.inspect}") unless EVENTS.include?(event)
+      AgStoreLocal.conflict("run #{run['id']} is #{run['status']}, not live") unless LIVE.include?(run["status"])
+      t = AgStoreLocal.now
+      run["events"] << { "event" => event, "at" => t, "detail" => detail.to_s }
+      run["last_event_at"] = t
+      run["detail"] = detail.to_s unless detail.to_s.empty?
+      case event
+      when "paused" then run["status"] = "paused"
+      when "shipped" then run["status"] = "shipped"
+      when "failed" then run["status"] = "failed"
+      when "deployed", "closed" then run["status"] = "closed"
+      else run["status"] = "active"
+      end
+      run["ended_at"] = t unless LIVE.include?(run["status"])
+      run
+    end
+
+    def close_live_run(slug, event, detail)
+      run = live_run(slug)
+      run_event(run, event, detail) if run
+    end
+
+    # ------------------------------------------------------- operations --
+    def claim(body)
+      identity = body["identity"].to_s
+      AgStoreLocal.invalid("identity is required") if identity.strip.empty?
+      label = body["label"].to_s.empty? ? nil : Markdown.one_line(body["label"])
+      target = body["slug"].to_s.empty? ? nil : body["slug"].to_s
+
+      if target && (s = specs[target]) && s["status"] == "in_progress" && s["claimed_by"] == identity
+        run = live_run(target) || open_run(target, identity, identity, body["model"], %w[started claimed])
+        return { "result" => target, "run_id" => run["id"] }
+      end
+
+      limit = body.key?("wip") && !body["wip"].nil? ? body["wip"].to_i : wip_limit
+      in_progress = specs.values.count { |x| x["status"] == "in_progress" }
+      return { "result" => "WIP_FULL", "run_id" => nil } if limit.positive? && in_progress >= limit
+
+      chosen = target ? choose_named(target) : choose_from_queue
+      return { "result" => chosen, "run_id" => nil } if chosen.is_a?(String)
+
+      chosen.merge!("status" => "in_progress", "claimed_by" => identity, "claimed_at" => AgStoreLocal.now,
+                    "claimed_by_member" => user_email.empty? ? nil : user_email, "label" => label)
+      if chosen["rank"].nil?
+        top = specs.values.select { |x| active?(x) }.filter_map { |x| x["rank"] }.max
+        chosen["rank"] = (top || 0) + 1
+      end
+      run = open_run(chosen["slug"], identity, identity, body["model"], %w[started claimed])
+      { "result" => chosen["slug"], "run_id" => run["id"] }
+    end
+
+    def choose_named(slug)
+      s = specs[slug]
+      return "NOT_FOUND" if s.nil? || !active?(s)
+      return "TAKEN" unless s["status"] == "ready" && s["claimed_by"].to_s.empty?
+      return "BLOCKED" unless deps_shipped?(s)
+
+      s
+    end
+
+    def choose_from_queue
+      ready = specs.values.select { |s| s["status"] == "ready" && s["claimed_by"].to_s.empty? }
+      return "NONE" if ready.empty?
+
+      ranked = ready.reject { |s| s["rank"].nil? }
+      return "UNPRIORITISED" if ranked.empty?
+
+      eligible = ranked.select { |s| deps_shipped?(s) }
+      return "BLOCKED" if eligible.empty?
+
+      eligible.min_by { |s| [ s["rank"], s["slug"] ] }
+    end
+
+    def rank_specs(slugs)
+      slugs = Array(slugs).map(&:to_s).uniq
+      AgStoreLocal.invalid("slugs is required") if slugs.empty?
+      list = slugs.map { |sl| spec!(sl) }
+      closed = list.reject { |s| active?(s) }
+      AgStoreLocal.conflict("cannot rank closed specs: #{closed.map { |s| "#{s['slug']} (#{s['status']})" }.join(', ')}") unless closed.empty?
+      rest = queue_order(specs.values.select { |s| active?(s) && !s["rank"].nil? && !slugs.include?(s["slug"]) })
+      (list + rest).each_with_index { |s, i| s["rank"] = i + 1 }
+      { "ranked" => queue_order(specs.values.select { |s| active?(s) && !s["rank"].nil? }).map { |s| s["slug"] } }
+    end
+
+    def rank_outcomes(slugs)
+      slugs = Array(slugs).map(&:to_s).uniq
+      AgStoreLocal.invalid("slugs is required") if slugs.empty?
+      list = slugs.map { |sl| outcome!(sl) }
+      rest = queue_order(outcomes.values.select { |o| o["status"] == "open" && !o["rank"].nil? && !slugs.include?(o["slug"]) })
+      (list + rest).each_with_index { |o, i| o["rank"] = i + 1 }
+      { "ranked" => queue_order(outcomes.values.reject { |o| o["rank"].nil? }).map { |o| o["slug"] } }
+    end
+
+    def release(s)
+      return spec_summary(s) if s["status"] == "ready"
+      AgStoreLocal.conflict("cannot release a #{s['status']} spec") unless s["status"] == "in_progress"
+
+      s.merge!("status" => "ready", "claimed_by" => nil, "claimed_by_member" => nil, "claimed_at" => nil, "label" => nil)
+      close_live_run(s["slug"], "closed", "released")
+      spec_summary(s)
+    end
+
+    def ship(s, body)
+      AgStoreLocal.conflict("cannot ship a #{s['status']} spec; claim it first") unless s["status"] == "in_progress"
+
+      s.merge!("status" => "shipped", "shipped_at" => AgStoreLocal.now)
+      run = body["run_id"] ? run!(body["run_id"]) : live_run(s["slug"])
+      AgStoreLocal.invalid("run #{run['id']} belongs to #{run['spec']}, not #{s['slug']}") if run && run["spec"] != s["slug"]
+      run_event(run, "shipped") if run && LIVE.include?(run["status"])
+      spec_summary(s)
+    end
+
+    def abandon(s, body)
+      reason = body["reason"].to_s
+      AgStoreLocal.invalid("reason is required") if reason.strip.empty?
+      AgStoreLocal.conflict("cannot abandon a #{s['status']} spec") unless active?(s)
+
+      abandon_one(s, reason)
+      cascade = body["cascade"]
+      cascade = Markdown.list_or_scalar(cascade) if cascade.is_a?(String)
+      Array(cascade).each do |slug|
+        d = specs[slug.to_s]
+        abandon_one(d, reason) if d && active?(d)
+      end
+      spec_summary(s)
+    end
+
+    def abandon_one(s, reason)
+      s.merge!("status" => "abandoned", "abandoned_reason" => reason, "abandoned_at" => AgStoreLocal.now,
+               "claimed_by" => nil, "claimed_by_member" => nil, "claimed_at" => nil, "label" => nil)
+      close_live_run(s["slug"], "closed", "abandoned")
+    end
+
+    def dependents(slug)
+      spec!(slug)
+      found = []
+      frontier = [ slug ]
+      until frontier.empty?
+        cur = frontier.shift
+        specs.values.each do |s|
+          next unless active?(s) && s["depends_on"].include?(cur)
+          next if found.include?(s["slug"]) || s["slug"] == slug
+
+          found << s["slug"]
+          frontier << s["slug"]
+        end
+      end
+      found.sort
+    end
+
+    def patch_spec(s, body)
+      AgStoreLocal.invalid("status and rank are set via their endpoints") if body.key?("status") || body.key?("rank")
+
+      updated = s.dup
+      body = body.merge("type" => body["kind"]) if body.key?("kind") && !body.key?("type")
+      PATCH_SCALARS.each do |k|
+        next unless body.key?(k)
+
+        v = body[k]
+        updated[k] = if k == "needs_review" then nil
+                     elsif v.nil? || v.to_s.empty? then (BODY_FIELDS.include?(k) ? "" : nil)
+                     else v.to_s
+                     end
+      end
+      updated["type"] ||= "feature"
+      PATCH_LISTS.each do |k|
+        next unless body.key?(k)
+
+        v = body[k]
+        v = Markdown.list_or_scalar(v.to_s) if v.is_a?(String)
+        updated[k] = Array(v).map(&:to_s).uniq
+      end
+      updated.delete("needs_review")
+      validate_spec!(updated)
+      s.replace(updated)
+      spec_summary(s)
+    end
+
+    def create_outcome(text)
+      fm, body = Markdown.split(text)
+      slug = fm["slug"].to_s
+      AgStoreLocal.invalid("Slug is invalid (#{slug.inspect})") unless slug.match?(SLUG_RE)
+      AgStoreLocal.invalid("Slug has already been taken") if outcomes.key?(slug)
+      status = fm["status"].to_s
+      AgStoreLocal.invalid("a new outcome must be open, not #{status}") unless status.empty? || status == "open"
+      title = fm["title"].to_s.empty? ? Markdown.first_heading(body).to_s : Markdown.scalar(fm["title"])
+      AgStoreLocal.invalid("Title can't be blank") if title.empty?
+
+      secs = Markdown.sections(body)
+      o = { "slug" => slug, "title" => title, "status" => "open", "rank" => nil, "created" => AgStoreLocal.now,
+            "achieved_at" => nil, "abandoned_at" => nil, "abandoned_reason" => nil,
+            "created_by" => user_email.empty? ? nil : user_email }
+      OUTCOME_SECTIONS.each { |heading, field| o[field] = secs[heading].to_s }
+      outcomes[slug] = o
+      outcome_json(o)
+    end
+
+    def default_title(text)
+      line = text.to_s.lines.first.to_s.strip
+      first = line[/\A.*?[.!?](?=\s|\z)/] || line
+      first.sub(/[.!?]+\z/, "")[0, 80].to_s.strip
+    end
+
+    def add_stub(body)
+      text = body["text"].to_s
+      title = body["title"].to_s.strip.empty? ? default_title(text) : body["title"].to_s.strip[0, 80]
+      AgStoreLocal.invalid("Title can't be blank") if title.empty?
+      kind = (body["type"] || body["kind"]).to_s
+      kind = "feature" if kind.empty?
+      AgStoreLocal.invalid("Type is not included in the list") unless KINDS.include?(kind)
+      serves = body["serves"].to_s.empty? ? nil : body["serves"].to_s
+      outcome!(serves) if serves
+      dup, dup_type = duplicate_ref(body["duplicate_of"], body["duplicate_of_type"])
+      item = { "id" => next_id("inbox"), "title" => title, "text" => text, "type" => kind, "status" => "open",
+               "serves" => serves, "captured_at" => AgStoreLocal.now, "captured_by" => user_name,
+               "captured_by_email" => user_email, "suggested_kind" => body["suggested_kind"],
+               "suggested_outcome" => nil, "duplicate_of" => dup, "duplicate_of_type" => dup_type,
+               "duplicate_probability" => body["duplicate_probability"]&.to_f }
+      inbox << item
+      { "ok" => true, "id" => item["id"] }
+    end
+
+    # A stub may point at a likely duplicate: an inbox id, or a ready spec's slug
+    # (§4.2). Without a type, an all-digit value is an inbox id.
+    def duplicate_ref(value, type)
+      return [ nil, nil ] if value.nil? || value.to_s.strip.empty?
+
+      type = type.to_s.empty? ? (value.to_s.match?(/\A\d+\z/) ? "inbox" : "spec") : type.to_s
+      case type
+      when "inbox" then [ stub!(value).fetch("id"), "inbox" ]
+      when "spec" then [ spec!(value.to_s).fetch("slug"), "spec" ]
+      else AgStoreLocal.invalid("duplicate_of_type must be inbox or spec")
+      end
+    end
+
+    # Capture assist without a model (§8.4.1): a plain tidy, a keyword guess at
+    # the kind, and a word-overlap duplicate check against open stubs and ready specs.
+    def assist(text)
+      AgStoreLocal.invalid("text is required") if text.to_s.strip.empty?
+      lines = text.to_s.strip.lines.map(&:strip)
+      title = default_title(lines.first)
+      title = title[0].upcase + title[1..] unless title.empty?
+      rest = text.to_s.strip.sub(/\A.*?[.!?](?=\s|\z)/m, "").strip
+      rest = lines.drop(1).join(" ").strip if rest == text.to_s.strip
+      kind = case text.downcase
+             when /\b(bug|broken|crash|error|fails?|wrong|regression|fix)\b/ then "bug"
+             when /\b(spike|investigate|explore|research|should we|is it worth|find out)\b/ then "spike"
+             when /\b(refactor|upgrade|bump|rename|clean ?up|chore|tidy|migrate)\b/ then "chore"
+             end
+      words = ->(s) { s.to_s.downcase.scan(/[a-z0-9]+/).reject { |w| w.length < 3 }.uniq }
+      mine = words.call(text)
+      candidates = inbox.select { |i| i["status"] == "open" }.map { |i| [ "inbox", i["id"], i["title"] + " " + i["text"].to_s ] } +
+                   specs.values.select { |s| s["status"] == "ready" }.map { |s| [ "spec", s["slug"], s["title"] ] }
+      best = candidates.map do |type, id, t|
+        theirs = words.call(t)
+        score = mine.empty? || theirs.empty? ? 0.0 : (mine & theirs).size.to_f / (mine | theirs).size
+        [ score, type, id ]
+      end.max_by(&:first)
+      prob = best ? best[0].round(3) : nil
+      dup = best && best[0] >= 0.5
+      { "title" => title, "text" => rest, "kind" => kind, "serves_outcome_slug" => nil,
+        "duplicate_of" => dup ? best[2] : nil, "duplicate_of_type" => dup ? best[1] : nil,
+        "duplicate_probability" => prob, "judgment_id" => nil }
+    end
+
+    def shape(id, text)
+      item = stub!(id)
+      AgStoreLocal.conflict("inbox item #{id} is #{item['status']}, not open") unless item["status"] == "open"
+
+      s = parse_spec(text, "source_inbox" => item["id"],
+                           "captured_by" => item["captured_by_email"].to_s.empty? ? nil : item["captured_by_email"],
+                           "shaped_by" => user_email.empty? ? [] : [ user_email ])
+      specs[s["slug"]] = s
+      item["status"] = "shaped"
+      spec_summary(s)
+    end
+
+    def drop(id)
+      item = stub!(id)
+      AgStoreLocal.conflict("inbox item #{id} is shaped") if item["status"] == "shaped"
+
+      item["status"] = "dropped"
+      { "ok" => true }
+    end
+
+    def open_checkpoint(run, body)
+      reason = body["reason"].to_s
+      asked_by = body["asked_by"].to_s
+      AgStoreLocal.invalid("reason is not included in the list") unless REASONS.include?(reason)
+      AgStoreLocal.invalid("asked_by is not included in the list") unless ASKERS.include?(asked_by)
+      AgStoreLocal.conflict("run #{run['id']} is not active or paused") unless LIVE.include?(run["status"])
+
+      seq = checkpoints.select { |c| c["spec"] == run["spec"] }.map { |c| c["seq"] }.max.to_i + 1
+      c = { "id" => next_id("checkpoint"), "seq" => seq, "spec" => run["spec"], "run_id" => run["id"],
+            "reason" => reason, "asked_by" => asked_by, "ask" => body["ask"].to_s, "asked_at" => AgStoreLocal.now,
+            "session_id" => body["session_id"].nil? ? run["session_id"].to_s : body["session_id"].to_s,
+            "status" => "open", "answer" => "", "answered_by" => "", "answered_at" => nil }
+      checkpoints << c
+      run_event(run, "paused", reason)
+      checkpoint_json(c)
+    end
+
+    def answer(c, body)
+      answer = body["answer"].to_s
+      AgStoreLocal.invalid("answer is required") if answer.strip.empty?
+      AgStoreLocal.conflict("checkpoint #{checkpoint_json(c)['ref']} is already answered") if c["status"] == "answered"
+
+      c.merge!("status" => "answered", "answer" => answer, "answered_at" => AgStoreLocal.now, "answered_by" => user_name)
+      run = run!(c["run_id"])
+      others = checkpoints.any? { |o| o["run_id"] == run["id"] && o["status"] == "open" }
+      run_event(run, "idle", "checkpoint answered") if run["status"] == "paused" && !others
+      checkpoint_json(c)
+    end
+
+    # ----------------------------------------------------------- views --
+    def map
+      buckets = -> { { "ready" => [], "in_progress" => [], "shipped" => [], "abandoned" => [] } }
+      by_outcome = Hash.new { |h, k| h[k] = buckets.call.merge("blocked" => []) }
+      tags = Hash.new { |h, k| h[k] = [] }
+      specs.values.sort_by { |s| s["slug"] }.each do |s|
+        key = s["serves"] || :unlinked
+        by_outcome[key][s["status"]] << s["slug"]
+        by_outcome[key]["blocked"] << s["slug"] if blocked?(s)
+        s["tags"].each { |t| tags[t] << s["slug"] }
+      end
+      list = queue_order(outcomes.values).map do |o|
+        b = by_outcome[o["slug"]]
+        outcome_json(o).merge("specs" => b.except("blocked"), "blocked" => b["blocked"])
+      end
+      orphaned = by_outcome.keys.reject { |k| k == :unlinked || outcomes.key?(k) }.sort
+                           .to_h { |k| [ k, by_outcome[k].values_at("ready", "in_progress", "shipped", "abandoned").flatten.sort ] }
+      { "outcomes" => list, "unlinked" => by_outcome[:unlinked], "orphaned" => orphaned,
+        "tags" => tags.keys.sort.to_h { |k| [ k, tags[k].sort ] } }
+    end
+
+    def flow_for(s)
+      t = ->(v) { v && Time.iso8601(v) }
+      created = t.call(s["created_at"])
+      claimed = t.call(s["claimed_at"])
+      shipped = t.call(s["shipped_at"])
+      in_prog = !claimed.nil? && shipped.nil?
+      cycle_end = shipped || (in_prog ? Time.now.utc : nil)
+      secs = ->(a, b) { a && b ? (b - a).to_i : nil }
+      cps = checkpoints.select { |c| c["spec"] == s["slug"] }.sort_by { |c| c["seq"] }.map do |c|
+        asked = t.call(c["asked_at"])
+        stop = t.call(c["answered_at"]) || cycle_end || Time.now.utc
+        { "reason" => c["reason"], "asked_by" => c["asked_by"], "status" => c["status"], "asked_at" => c["asked_at"],
+          "answered_at" => c["answered_at"], "wait_seconds" => [ (stop - asked).to_i, 0 ].max }
+      end
+      cycle = secs.call(claimed, cycle_end)
+      human = cycle.nil? ? nil : cps.sum { |c| c["wait_seconds"] }
+      { "slug" => s["slug"], "status" => s["status"], "in_progress" => in_prog,
+        "created_at" => s["created_at"], "claimed_at" => s["claimed_at"], "shipped_at" => s["shipped_at"],
+        "queue_wait_seconds" => secs.call(created, claimed), "cycle_seconds" => cycle, "human_wait_seconds" => human,
+        "agent_seconds" => cycle.nil? ? nil : [ cycle - human, 0 ].max, "lead_seconds" => secs.call(created, shipped),
+        "checkpoint_count" => cps.size, "open_checkpoint_count" => cps.count { |c| c["status"] == "open" },
+        "checkpoints" => cps }
+    end
+
+    def brief
+      base = @data["project"]["brief"].to_s
+      base = "# #{@data['project']['name']}\n" if base.strip.empty?
+      open = queue_order(outcomes.values.select { |o| o["status"] == "open" })
+      list = if open.empty?
+               "_No open outcomes yet._"
+             else
+               open.each_with_index.map { |o, i| "#{i + 1}. **#{o['title']}** — #{o['claim'].to_s.strip.gsub(/\s+/, ' ')}" }.join("\n")
+             end
+      section = "## Prioritised outcomes\n\n#{list}\n"
+      re = /^## Prioritised outcomes[ \t]*\r?\n.*?(?=^## |\z)/m
+      base.match?(re) ? base.sub(re) { section } : "#{base.rstrip}\n\n#{section}"
+    end
+
+    # ---------------------------------------------------------- router --
+    def call(method, rest, query, body)
+      seg = rest.split("/").reject(&:empty?).map { |x| URI.decode_www_form_component(x.gsub("+", "%2B")) }
+      case [ method, *seg ]
+      in [ "GET", "doctor" ]
+        { "project" => @project, "role" => "owner", "reachable" => true, "protocol" => PROTOCOL, "store" => "local",
+          "capabilities" => [], "wip_limit" => wip_limit }
+      in [ "GET", "brief" ] then [ :markdown, brief ]
+      in [ "PUT", "brief" ]
+        @data["project"]["brief"] = body.to_s
+        { "ok" => true }
+      in [ "GET", "map" ] then map
+      in [ "GET", "flow" ] then specs.values.sort_by { |s| s["slug"] }.map { |s| flow_for(s) }
+      in [ "GET", "flow", slug ] then flow_for(spec!(slug))
+
+      in [ "GET", "specs" ]
+        pool = (query["pool"] || "active").to_s
+        statuses = { "active" => %w[ready in_progress], "done" => %w[shipped], "abandoned" => %w[abandoned] }[pool]
+        raise HttpError.new(422, "unprocessable", "unknown pool") unless statuses
+
+        list = specs.values.select { |s| statuses.include?(s["status"]) }
+        list = list.select { |s| s["status"] == query["status"] } if query["status"]
+        queue_order(list).map { |s| spec_summary(s) }
+      in [ "PUT", "specs", "rank" ] then rank_specs(body["slugs"])
+      in [ "POST", "specs", "claim" ] then claim(body)
+      in [ "POST", "specs" ]
+        s = parse_spec(body)
+        specs[s["slug"]] = s
+        [ 201, spec_summary(s) ]
+      in [ "GET", "specs", slug ] if slug.end_with?(".md") then [ :markdown, spec_markdown(spec!(slug.delete_suffix(".md"))) ]
+      in [ "GET", "specs", slug ] then spec_detail(spec!(slug))
+      in [ "PATCH", "specs", slug ] then patch_spec(spec!(slug), body)
+      in [ "POST", "specs", slug, "release" ] then release(spec!(slug))
+      in [ "POST", "specs", slug, "ship" ] then ship(spec!(slug), body)
+      in [ "POST", "specs", slug, "abandon" ] then abandon(spec!(slug), body)
+      in [ "GET", "specs", slug, "deps" ] then spec!(slug)["depends_on"].sort
+      in [ "GET", "specs", slug, "dependents" ] then dependents(slug)
+      in [ "GET", "specs", slug, "checkpoints" ]
+        spec!(slug)
+        checkpoints.select { |c| c["spec"] == slug }.sort_by { |c| c["seq"] }.map { |c| checkpoint_json(c) }
+
+      in [ "GET", "outcomes" ]
+        list = outcomes.values
+        list = list.select { |o| o["status"] == query["status"] } if query["status"]
+        queue_order(list).map { |o| outcome_json(o) }
+      in [ "PUT", "outcomes", "rank" ] then rank_outcomes(body["slugs"])
+      in [ "POST", "outcomes" ] then [ 201, create_outcome(body) ]
+      in [ "GET", "outcomes", slug ] if slug.end_with?(".md") then [ :markdown, outcome_markdown(outcome!(slug.delete_suffix(".md"))) ]
+      in [ "GET", "outcomes", slug ] then outcome_detail(outcome!(slug))
+      in [ "PATCH", "outcomes", slug ]
+        o = outcome!(slug)
+        AgStoreLocal.invalid("status and rank are set via their endpoints") if body.key?("status") || body.key?("rank")
+        %w[title claim measure stop_rule notes abandoned_reason].each { |k| o[k] = body[k].to_s if body.key?(k) }
+        AgStoreLocal.invalid("Title can't be blank") if o["title"].to_s.strip.empty?
+        AgStoreLocal.invalid("title must be one line") if o["title"].match?(/[\r\n]/)
+        outcome_json(o)
+      in [ "POST", "outcomes", slug, "achieve" ]
+        o = outcome!(slug)
+        AgStoreLocal.conflict("outcome #{slug} is #{o['status']}") unless o["status"] == "open"
+        o.merge!("status" => "achieved", "achieved_at" => AgStoreLocal.now)
+        outcome_json(o)
+      in [ "POST", "outcomes", slug, "abandon" ]
+        o = outcome!(slug)
+        AgStoreLocal.invalid("reason is required") if body["reason"].to_s.strip.empty?
+        AgStoreLocal.conflict("outcome #{slug} is #{o['status']}") unless o["status"] == "open"
+        o.merge!("status" => "abandoned", "abandoned_at" => AgStoreLocal.now, "abandoned_reason" => body["reason"].to_s)
+        outcome_json(o)
+
+      in [ "GET", "inbox" ]
+        status = (query["status"] || "open").to_s
+        inbox.select { |i| i["status"] == status }.sort_by { |i| [ i["captured_at"], i["id"] ] }.reverse.map { |i| stub_json(i).except("captured_by_email") }
+      in [ "POST", "inbox", "assist" ] then assist(body["text"])
+      in [ "POST", "inbox" ] then [ 201, add_stub(body) ]
+      in [ "POST", "inbox", id, "shape" ] then [ 201, shape(id, body) ]
+      in [ "POST", "inbox", id, "drop" ] then drop(id)
+
+      in [ "GET", "runs" ]
+        list = runs
+        list = list.select { |r| r["spec"] == query["spec"] } if query["spec"]
+        list = case query["status"]
+               when nil then list
+               when "active" then list.select { |r| LIVE.include?(r["status"]) }
+               when "closed" then list.reject { |r| LIVE.include?(r["status"]) }
+               else list.select { |r| r["status"] == query["status"] }
+               end
+        list.sort_by { |r| [ r["started_at"], r["id"] ] }.reverse
+      in [ "POST", "runs" ]
+        slug = body["spec"].to_s
+        AgStoreLocal.invalid("spec and runner_id are required") if slug.empty? || body["runner_id"].to_s.empty?
+        s = spec!(slug)
+        AgStoreLocal.conflict("spec #{slug} is #{s['status']}, not in_progress") unless s["status"] == "in_progress"
+        AgStoreLocal.conflict("spec #{slug} already has a live run") if live_run(slug)
+        run = open_run(slug, body["runner_id"].to_s, body["session_id"], body["model"])
+        run["events"].first["detail"] = body["detail"].to_s
+        [ 201, run ]
+      in [ "POST", "runs", id, "events" ]
+        AgStoreLocal.invalid("event is required") if body["event"].to_s.empty?
+        run_event(run!(id), body["event"].to_s, body["detail"])
+      in [ "POST", "runs", id, "close" ] then run_event(run!(id), "closed", body["detail"])
+      in [ "POST", "runs", id, "checkpoints" ] then [ 201, open_checkpoint(run!(id), body) ]
+      in [ "POST", "checkpoints", id, "answer" ] then answer(checkpoint!(id), body)
+      else
+        raise HttpError.new(404, "not_found", "no route #{method} #{rest}")
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------- main --
+  def self.respond(status, body, content_type = "application/json")
+    { "status" => status, "content_type" => content_type, "body" => body }
+  end
+
+  def self.handle(req, root)
+    method = req["method"].to_s.upcase
+    path = req["path"].to_s
+    user = req["user"].is_a?(Hash) ? req["user"] : {}
+    config = req["config"].is_a?(Hash) ? req["config"] : {}
+    query = req["query"].is_a?(Hash) ? req["query"] : {}
+    markdown = req["content_type"].to_s.include?("markdown")
+    body = req["body"]
+    body = markdown ? "" : {} if body.nil?
+    unless markdown || body.is_a?(Hash)
+      return respond(422, { "error" => "invalid", "detail" => "the request body must be a JSON object" })
+    end
+
+    if path == "/me"
+      projects = Dir.glob(File.join(root, "*.json")).map { |f| File.basename(f, ".json") }.sort
+      current = config["project"].to_s
+      projects |= [ current ] unless current.empty?
+      return respond(200, { "user_id" => 1, "name" => user["name"].to_s.empty? ? user["email"].to_s : user["name"],
+                            "email" => user["email"].to_s,
+                            "projects" => projects.sort.map { |p| { "slug" => p, "role" => "owner", "archived" => false } } })
+    end
+
+    m = path.match(%r{\A/projects/([^/]+)(/.*)?\z}) or return respond(404, { "error" => "not_found", "detail" => "no route #{path}" })
+    project = URI.decode_www_form_component(m[1])
+    return respond(404, { "error" => "not_found", "detail" => "no such project #{project}" }) unless project.match?(SLUG_RE)
+
+    FileUtils.mkdir_p(root)
+    file = File.join(root, "#{project}.json")
+    File.open(File.join(root, "#{project}.lock"), File::RDWR | File::CREAT, 0o644) do |lock|
+      lock.flock(File::LOCK_EX)
+      data = File.exist?(file) ? JSON.parse(File.read(file)) : Store.blank(project)
+      before = JSON.generate(data)
+      store = Store.new(data, project, user, config)
+      result = store.call(method, m[2].to_s, query, body)
+      status = 200
+      status, result = result if result.is_a?(Array) && result.first.is_a?(Integer)
+      if result.is_a?(Array) && result.first == :markdown
+        out = respond(status, result[1], "text/markdown")
+      else
+        out = respond(status, result)
+      end
+      after = JSON.generate(store.data)
+      if after != before
+        tmp = "#{file}.tmp-#{Process.pid}"
+        File.write(tmp, JSON.pretty_generate(store.data))
+        File.rename(tmp, file)
+      end
+      out
+    end
+  rescue HttpError => e
+    respond(e.status, { "error" => e.code, "detail" => e.message })
+  rescue StandardError => e
+    # Nothing was written: the data file is only replaced after the request succeeds.
+    respond(500, { "error" => "internal", "detail" => "#{e.class}: #{e.message}" })
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  root = nil
+  args = ARGV.dup
+  while (a = args.shift)
+    root = args.shift if a == "--root"
+  end
+  root ||= ENV["AGENTILE_LOCAL_STORE_DIR"].to_s
+  root = File.join(ENV["XDG_DATA_HOME"].to_s.empty? ? File.join(Dir.home, ".local/share") : ENV["XDG_DATA_HOME"], "agentile/stores") if root.empty?
+  begin
+    req = JSON.parse($stdin.read)
+  rescue JSON::ParserError => e
+    warn "ag-store-local: request is not JSON: #{e.message}"
+    exit 2
+  end
+  puts JSON.generate(AgStoreLocal.handle(req, File.expand_path(root)))
+end

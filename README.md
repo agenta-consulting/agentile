@@ -12,7 +12,7 @@
 capture → shape → spec → (prioritise → next) → plan → build → verify → ship → [deploy] → learn
 ```
 
-- **capture** — `/ag-capture <idea>` drops a one-line stub in the project's Inbox in Agentile Projects, tidied and classified by the store; one confirmation (or `--yes`). Mid-build safe.
+- **capture** — `/ag-capture <idea>` drops a one-line stub in the project's Inbox in the store, tidied and classified by it; one confirmation (or `--yes`). Mid-build safe.
 - **shape** — `/ag-shape` interviews a stub into a Ready spec, against your project's Definition of Ready.
 - **spec** — shaped specs are records in the store, ranked by a field. `/ag-spec` writes one directly for trivial work.
 - **plan** — `/ag-plan` creates the spec's directory in the repo and writes `plan.md` beside a read-only `SPEC.md` snapshot, committed on the spec's build branch `build/<slug>`: files to touch, approach, test strategy, risks. The plan is a file you review and amend, not a chat message.
@@ -24,7 +24,7 @@ capture → shape → spec → (prioritise → next) → plan → build → veri
 
 `prioritise` and `next` are the queue segment between a Ready spec and the work starting — ordering is editorial and human, pulling is transactional and atomic. They are stages like any other (each has a playbook), shown in brackets because they manage the queue rather than transform the work.
 
-The backlog lives in **Agentile Projects** (`.agentile/store.md` links a repo to its project; see "Stores" below). What stays in the repo, under one configurable **Agentile directory** (`docs/agentile/` by default, set in `.agentile/config.md`), is the code-adjacent material:
+The backlog lives in a **store**: Agentile Projects, the bundled local store, or anything else implementing the Agentile Store Protocol (`.agentile/store.md` links a repo to its project; see "Stores" below). What stays in the repo, under one configurable **Agentile directory** (`docs/agentile/` by default, set in `.agentile/config.md`), is the code-adjacent material:
 
 ```
 docs/agentile/
@@ -46,7 +46,7 @@ The plugin ships the **fixed implementation** — the skills, the agents, the ho
 | `.agentile/shape.md` | **What "Ready" means** — the questions a stub must answer before it's a spec. The prime tailoring surface. |
 | `.agentile/config.md` | The **Agentile directory** (where the backlog lives, default `docs/agentile/`) and the Business Value × Technical Certainty triage routes. |
 | `.agentile/gates.json` | The deterministic commands — format, lint, test, build, deploy — and protected branches. |
-| `.agentile/store.md` | The link to this repo's project in Agentile Projects (`url` + `project`). See "Stores" below. |
+| `.agentile/store.md` | The link to this repo's project in its store (`url` + `project`). See "Stores" below. |
 | `.agentile/spec-template.md` | The shape of a Ready spec. |
 | `.agentile/plan-template.md` | The shape of a plan (`plan.md` in the spec's directory). |
 | `.agentile/adr-template.md` | The shape of an ADR. |
@@ -78,16 +78,27 @@ The claim is race-safe by construction — one transaction in Agentile Projects,
 
 ### Stores
 
-Since 0.20.0 there is one store: **Agentile Projects**, a web app (multi-user, multi-project, with dashboards, Pundit roles, and the loop's business logic — transactional claim, rank, dependency walks, flow metrics, capture assist — server-side). Every skill that touches the backlog calls `bin/ag-store <op>`, a thin HTTP client over the app's JSON API, so the skills name one command and one output shape.
+The backlog lives in a **store**, and what a store must do is written down: the **Agentile Store Protocol** ([`docs/store-protocol.md`](./docs/store-protocol.md)). Every skill that touches the backlog calls `bin/ag-store <op>`, one client that speaks the protocol's two transports, so the skills name one command and one output shape whichever store answers.
 
-- `.agentile/store.md` holds `url` (the app; `AGENTILE_PROJECTS_URL` overrides it) and `project` (this repo's project slug). `/ag-init` writes it after asking which of your projects this repo is.
-- `AGENTILE_PROJECTS_TOKEN` (an API token from the app's Settings) is an environment variable only, never a tracked file. It identifies you: captures, shapes, claims and answers are attributed from it, and your project role (owner / member / viewer) is what the API authorises against.
-- Claim and rank are atomic — one transaction in the app — so two sessions can never take the same spec, and there is no file lock, `.pull.lock` or "pull before you touch the queue".
-- `plan.md`, the `SPEC.md` snapshot, findings and ADRs stay in the repo; the brief is edited in the app and mirrored to `docs/agentile/brief.md` read-only.
-- The API returns full resource objects (a spec, an Outcome, a run, …); `ag-store` unwraps each one down to the slug, id or ISO8601 stamp the skills actually need (documented per-op at the top of `bin/ag-store`), so a skill's "`-> slug`" or "`-> ISO8601`" contract holds regardless of how much detail the app's JSON response carries.
-- Because `.agentile/store.md`'s `url` is a tracked file, `ag-store` refuses to send the bearer token to it unless it is https, or a loopback host (`localhost`, `127.0.0.1`, `::1`, `*.localhost`), or `AGENTILE_PROJECTS_ALLOW_HTTP=1` is set; `doctor` prints the resolved host so a redirected url is visible.
+| `.agentile/store.md` `url:` | Store |
+|---|---|
+| `https://agentile-projects.agentaconsulting.com` | **Agentile Projects**, the hosted web app: multi-user, multi-project, dashboards, roles, checkpoints answerable from a phone, the factory's push channel. |
+| `local` (or `local:<dir>`) | **The local store** (`bin/ag-store-local`): one JSON file per project in `~/.local/share/agentile/stores/`, no account, no network. For one person on one machine. |
+| `exec:<command line>` | **Your own store**: any program that reads a protocol request on stdin and writes the response on stdout. |
+| any other `https://…` | **Your own HTTP store**: any server implementing the protocol's HTTP binding. |
 
-The `local` (files + git) and `airtable` stores were removed in 0.20.0; `/ag-version` flags a pre-0.20 `store.md`, and `/ag-init` re-links the project. Existing Airtable bases are imported by the app's `agentile:import` task.
+- `/ag-init` (or `/ag-customise store`) asks which store and writes `url` and `project`. `AGENTILE_STORE_URL` (or `AGENTILE_PROJECTS_URL`) overrides `url`. Any other key in `store.md` is passed to a process store as configuration, e.g. `wip_limit: 2` for the local store.
+- An HTTP store's token is `AGENTILE_STORE_TOKEN` or `AGENTILE_PROJECTS_TOKEN`, an environment variable only, never a tracked file. It identifies you: captures, shapes, claims and answers are attributed from it, and your project role (owner / member / viewer) is what the store authorises against. Because `store.md`'s `url` is tracked, `ag-store` refuses to send the token to it unless it is https, or a loopback host (`localhost`, `127.0.0.1`, `::1`, `*.localhost`), or `AGENTILE_STORE_ALLOW_HTTP=1` is set; `doctor` prints the resolved host so a redirected url is visible. A process store needs no token; it is told the git user.
+- Claim and rank are atomic in every store: one transaction in Agentile Projects, one exclusive file lock per request in the local store. Two sessions can never take the same spec.
+- `plan.md`, the `SPEC.md` snapshot, findings and ADRs stay in the repo; the brief is edited in the store and mirrored to `docs/agentile/brief.md` read-only.
+- Stores return full resource objects (a spec, an Outcome, a run, …); `ag-store` unwraps each one down to the slug, id or ISO8601 stamp the skills need (documented per-op at the top of `bin/ag-store`), and adds the protocol's field names (`rank`, `type`) where an older store sends only `prefix` or `kind`.
+- **Writing a store.** Implement the protocol, then run `ruby dev/test-store-conformance.rb --url <your url> --project <scratch project>` until it says `CONFORMS`. The local store is the reference implementation of the process binding. Agentile Projects passes with `--allow-gaps`; protocol §12 lists its known gaps.
+
+The file-based `local` and `airtable` stores of 0.19 were removed in 0.20.0; `/ag-version` flags a pre-0.20 `store.md` (a `store:` key), and `/ag-init` re-links the project.
+
+### Shaping context and drift
+
+A spec records `shaped_against`, the trunk commit it was shaped against, and `shaped_at`. When the spec comes up for building, `/ag-plan` counts the commits since and the files they changed, and writes a **Fit since shaping** section into `plan.md`: does the spec still fit the code as it is now? If its assumptions no longer hold, the section starts `Re-shape recommended`, and `/ag-build` pauses for plan review whatever the route, so a person decides between building the adjusted plan and sending the spec back to `/ag-shape`.
 
 ### Spec dependencies
 

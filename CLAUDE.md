@@ -4,7 +4,7 @@ This project runs the **Agentile loop** (via Agentile for Claude): capture → s
 
 ### Where things live
 
-The backlog lives in **Agentile Projects**, the web app this repo is linked to by `.agentile/store.md` (`url` + `project`; the token is `AGENTILE_PROJECTS_TOKEN` in the environment). Every skill reads and writes it through `ag-store`; nothing in the loop reads backlog files.
+The backlog lives in a **store** this repo is linked to by `.agentile/store.md` (`url` + `project`): Agentile Projects, the web app (an https `url`; the token is `AGENTILE_PROJECTS_TOKEN` in the environment), the bundled local store (`url: local`), or anything else that implements the Agentile Store Protocol (`docs/store-protocol.md` in the plugin). Every skill reads and writes it through `ag-store`; nothing in the loop reads backlog files.
 
 - **Brief** — the living project context: who it's for, the prioritised outcomes, constraints, non-goals. Edited in the app; `docs/agentile/brief.md` is a read-only copy every `/ag-*` skill refreshes, imported below so it loads every session. Business Value in triage is scored against it.
 - **Outcomes** — the falsifiable bets above specs: a claim, a measure, a stop rule, ranked. A spec may `serve` one; none is required. Create with `/ag-outcome`, propose the work for one with `/ag-decompose <slug>`, see the whole picture with `/ag-map`.

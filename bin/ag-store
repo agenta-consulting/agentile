@@ -1,32 +1,42 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
-# ag-store — the backlog store CLI. Since 0.20.0 the only store is Agentile
-# Projects (the web app); this file is a thin HTTP client over its JSON API.
-# Every skill that touches the Inbox, a spec, an Outcome, a checkpoint or a
-# run goes through here instead of talking to the API itself, so a skill's
-# instructions name one command and one output shape.
+# ag-store — the backlog store client. Every skill that touches the Inbox, a spec,
+# an Outcome, a checkpoint or a run goes through here instead of talking to a
+# store itself, so a skill's instructions name one command and one output shape.
+# The contract every store meets is docs/store-protocol.md (the Agentile Store
+# Protocol, version 1); this client speaks both of its transports.
 #
 # Usage: ag-store <op> [args...] [--dir <agentile-dir>]
 #
 # Config — .agentile/store.md frontmatter, written by /ag-init:
-#   url:     https://agentile-projects.agentaconsulting.com   (AGENTILE_PROJECTS_URL overrides)
+#   url:     where the store is (AGENTILE_STORE_URL, else AGENTILE_PROJECTS_URL, overrides):
+#              https://host                 HTTP binding, e.g. Agentile Projects
+#              http://localhost:3300, http://*.localhost
+#                                           HTTP binding, a store on this machine
+#              local | local:<dir>          the bundled local store (bin/ag-store-local)
+#              exec:<command line>          any program speaking the process binding
 #   project: <slug>
-# Auth — AGENTILE_PROJECTS_TOKEN in the environment only, never a tracked file.
-# The url in .agentile/store.md is a tracked file, so the client refuses to send the
-# token to it unless it is https, or a loopback host (localhost, 127.0.0.1, ::1,
-# *.localhost), or AGENTILE_PROJECTS_ALLOW_HTTP=1 is set (exit 2, names the offending
-# host, never the token). `doctor` prints the resolved host itself so a redirected url
-# is visible.
+#   (any other key is passed to a process store as config, e.g. wip_limit)
+# Auth (HTTP only) — AGENTILE_STORE_TOKEN, else AGENTILE_PROJECTS_TOKEN, in the
+# environment only, never a tracked file. The url in .agentile/store.md is a tracked
+# file, so the client refuses to send the token to it unless it is https, or a loopback
+# host (localhost, 127.0.0.1, ::1, *.localhost), or AGENTILE_STORE_ALLOW_HTTP=1 (or
+# AGENTILE_PROJECTS_ALLOW_HTTP=1) is set (exit 2, names the offending host, never the
+# token). `doctor` prints the resolved host (or the store command) so a redirected url
+# is visible. A process store needs no token: it is told the git user, and holds any
+# credentials of its own.
 # --dir (default docs/agentile) is used by promote and brief_sync, which touch
-# the repo; every other op ignores it. `promote` makes no HTTP call, so unlike every
+# the repo; every other op ignores it. `promote` never reaches the store, so unlike every
 # other op it needs neither a url nor a token.
 #
 # Ops (all output one JSON value on stdout; errors to stderr, exit 1 for an API
 # or usage error, exit 2 for a configuration/connectivity error):
 #   inbox_list [--status open|shaped|dropped]
 #   inbox_add <text> [--title "<label>"] [--type feature|bug|chore|spike] [--serves <outcome-slug>]
-#     [--suggested-kind k] [--duplicate-of id] [--duplicate-probability p]   (sent as
-#     suggested_kind/duplicate_of/duplicate_probability, omitted when absent)
+#     [--suggested-kind k] [--duplicate-of id-or-slug] [--duplicate-of-type inbox|spec]
+#     [--duplicate-probability p]   (sent as suggested_kind/duplicate_of/duplicate_of_type/
+#     duplicate_probability, omitted when absent; the type defaults to inbox for an
+#     all-digit value, else spec)
 #                                                  -> the new item's id (integer, unwrapped from {ok, id})
 #   inbox_drop <id>
 #   inbox_assist <text>                          tidy + classify; returns
@@ -58,6 +68,7 @@
 #   run_list [--spec <slug>] [--status active|closed]
 #   run_close --spec <slug> --runner <id> [--detail "<text>"]
 #   brief_sync --dir <dir>                        writes <dir>/brief.md from the store; prints the path
+#   brief_write                 (markdown on stdin)  replaces the project's brief in the store
 #   whoami | doctor
 #
 # --model (else AGENTILE_MODEL; omitted when both are blank) is sent as `model`
@@ -83,6 +94,9 @@ require "net/http"
 require "uri"
 require "erb"
 require "fileutils"
+require "open3"
+require "shellwords"
+require "rbconfig"
 
 module AgStore
   class Error < StandardError; end        # exit 1
@@ -159,6 +173,46 @@ module AgStore
 
   def self.enc(segment) = ERB::Util.url_encode(segment.to_s)
 
+  PROTOCOL = 1
+  PROCESS_TIMEOUT = 60
+
+  # The first non-blank of several environment variables: the protocol's name, then
+  # the older Agentile Projects one.
+  def self.env(*names)
+    names.each do |n|
+      v = ENV[n].to_s
+      return v unless v.empty?
+    end
+    ""
+  end
+
+  # Who is at the keyboard, for a process store's attribution (§9). Not authentication.
+  def self.git_user
+    %w[email name].to_h do |k|
+      out, _e, st = Open3.capture3("git", "config", "user.#{k}")
+      [ k, st.success? ? out.strip : "" ]
+    end
+  rescue StandardError
+    { "email" => "", "name" => "" }
+  end
+
+  # Smooth over the older field names an Agentile Projects response may carry, so
+  # skills see protocol-1 shapes whichever store answered (§12, G9): a spec's
+  # `prefix` is also `rank`, and its `kind` is also `type`.
+  def self.normalise(value)
+    case value
+    when Array then value.map { |v| normalise(v) }
+    when Hash
+      if value.key?("slug") && value.key?("status")
+        value = value.merge("rank" => value["prefix"]) if value.key?("prefix") && !value.key?("rank")
+        value = value.merge("prefix" => value["rank"]) if value.key?("rank") && !value.key?("prefix") && value.key?("path")
+        value = value.merge("type" => value["kind"]) if value.key?("kind") && !value.key?("type")
+      end
+      value
+    else value
+    end
+  end
+
   # "[a, b]" -> ["a", "b"]; "[]" -> []; anything else unchanged.
   def self.coerce_list(key, val)
     return val unless LIST_FIELDS.include?(key) && val.is_a?(String)
@@ -172,15 +226,24 @@ module AgStore
   class Config
     LOCAL_HOSTS = %w[localhost 127.0.0.1 ::1 [::1]].freeze
 
-    attr_reader :url, :project, :token, :dir
+    attr_reader :url, :project, :token, :dir, :store_md
 
     def initialize(flags)
-      fm = self.class.read_store_md
-      env_url = ENV["AGENTILE_PROJECTS_URL"].to_s
-      @url = (env_url.empty? ? fm["url"] : env_url).to_s.sub(%r{/+\z}, "")
-      @project = (flags["project"] || fm["project"]).to_s
-      @token = ENV["AGENTILE_PROJECTS_TOKEN"].to_s
+      @store_md = self.class.read_store_md
+      env_url = AgStore.env("AGENTILE_STORE_URL", "AGENTILE_PROJECTS_URL")
+      @url = (env_url.empty? ? @store_md["url"] : env_url).to_s.sub(%r{/+\z}, "")
+      @project = (flags["project"] || @store_md["project"]).to_s
+      @token = AgStore.env("AGENTILE_STORE_TOKEN", "AGENTILE_PROJECTS_TOKEN")
       @dir = (flags["dir"] || "docs/agentile").to_s.sub(%r{/+\z}, "")
+    end
+
+    # A relative `local:<dir>` is relative to the main checkout, never the cwd, so
+    # every worktree of the repo reaches the same backlog (§2).
+    def self.main_checkout
+      out, _e, st = Open3.capture3("git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+      st.success? ? File.dirname(out.strip) : Dir.pwd
+    rescue StandardError
+      Dir.pwd
     end
 
     def self.read_store_md
@@ -192,6 +255,23 @@ module AgStore
       {}
     end
 
+    # :http for http(s) urls; :process for `local`, `local:<dir>` and `exec:<command>`
+    # (docs/store-protocol.md §2).
+    def transport
+      url == "local" || url.start_with?("local:", "exec:") ? :process : :http
+    end
+
+    # The argv a process store is started with.
+    def command
+      if url.start_with?("exec:")
+        Shellwords.split(url.delete_prefix("exec:"))
+      else
+        dir = url.delete_prefix("local").delete_prefix(":")
+        cmd = [ RbConfig.ruby, File.expand_path("ag-store-local", __dir__) ]
+        dir.empty? ? cmd : cmd + [ "--root", File.expand_path(dir, self.class.main_checkout) ]
+      end
+    end
+
     # The host the url resolves to, for doctor/logging — never the token.
     def host
       URI.parse(url).host.to_s
@@ -199,15 +279,19 @@ module AgStore
       ""
     end
 
-    # needs_network: false is for ops that never make an HTTP call (promote) — they need
+    # needs_network: false is for ops that never reach the store (promote) — they need
     # neither a url, a token, nor the https/loopback check below.
     def validate!(needs_project: true, needs_network: true)
       if needs_network
         if url.empty?
-          raise ConfigError, "no store url — #{STORE_MD} has no `url:` (run /ag-init to link this project) and AGENTILE_PROJECTS_URL is unset"
+          raise ConfigError, "no store url — #{STORE_MD} has no `url:` (run /ag-init to link this project) and AGENTILE_STORE_URL is unset"
         end
-        validate_scheme!
-        raise ConfigError, "AGENTILE_PROJECTS_TOKEN is not set — create a token in Agentile Projects (Settings → API tokens) and export it" if token.empty?
+        if transport == :http
+          validate_scheme!
+          raise ConfigError, "AGENTILE_STORE_TOKEN (or AGENTILE_PROJECTS_TOKEN) is not set — create a token in your store (Agentile Projects: Settings → API tokens) and export it" if token.empty?
+        elsif command.empty?
+          raise ConfigError, "store url #{url.inspect} names no command"
+        end
       end
       raise ConfigError, "no project — #{STORE_MD} has no `project:` (run /ag-init to link this project)" if needs_project && project.empty?
     end
@@ -224,10 +308,10 @@ module AgStore
       uri = URI.parse(url)
       return if uri.scheme == "https"
       return if loopback_host?(uri.host)
-      return if ENV["AGENTILE_PROJECTS_ALLOW_HTTP"] == "1"
+      return if AgStore.env("AGENTILE_STORE_ALLOW_HTTP", "AGENTILE_PROJECTS_ALLOW_HTTP") == "1"
 
-      raise ConfigError, "refusing to send AGENTILE_PROJECTS_TOKEN to '#{uri.host}' over #{uri.scheme || 'a non-https scheme'} — " \
-                          "the store url must be https, or a loopback host (localhost, 127.0.0.1, ::1, *.localhost), or set AGENTILE_PROJECTS_ALLOW_HTTP=1 to override"
+      raise ConfigError, "refusing to send AGENTILE_STORE_TOKEN/AGENTILE_PROJECTS_TOKEN to '#{uri.host}' over #{uri.scheme || 'a non-https scheme'} — " \
+                          "the store url must be https, or a loopback host (localhost, 127.0.0.1, ::1, *.localhost), or set AGENTILE_STORE_ALLOW_HTTP=1 to override"
     rescue URI::InvalidURIError
       raise ConfigError, "no store url — #{url.inspect} is not a valid url"
     end
@@ -240,6 +324,9 @@ module AgStore
     end
   end
 
+  # One response, whichever transport carried it.
+  Response = Struct.new(:status, :content_type, :body)
+
   class Client
     def initialize(config)
       @config = config
@@ -250,15 +337,25 @@ module AgStore
     def patch(path, body)        = request(:patch, path, body: body)
     def put(path, body)          = request(:put, path, body: body)
     def post_markdown(path, md)  = request(:post, path, body: md, content_type: "text/markdown")
+    def put_markdown(path, md)   = request(:put, path, body: md, content_type: "text/markdown")
 
     def project_path(rest) = "/projects/#{AgStore.enc(@config.project)}#{rest}"
 
     private
 
     def request(method, path, body: nil, params: {}, content_type: "application/json")
+      clean = params.reject { |_, v| v.nil? || v.to_s.empty? }.transform_keys(&:to_s).transform_values(&:to_s)
+      res = if @config.transport == :process
+              process_request(method, path, body, clean, content_type)
+            else
+              http_request(method, path, body, clean, content_type)
+            end
+      AgStore.normalise(parse(res))
+    end
+
+    def http_request(method, path, body, params, content_type)
       uri = URI.parse("#{@config.url}/api/v1#{path}")
-      clean = params.reject { |_, v| v.nil? || v.to_s.empty? }
-      uri.query = URI.encode_www_form(clean) unless clean.empty?
+      uri.query = URI.encode_www_form(params) unless params.empty?
       req = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch, put: Net::HTTP::Put }.fetch(method).new(uri)
       req["Authorization"] = "Bearer #{@config.token}"
       req["Accept"] = "application/json, text/markdown"
@@ -269,20 +366,77 @@ module AgStore
       res = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 60) do |http|
         http.request(req)
       end
-      parse(res)
+      Response.new(res.code.to_i, res["content-type"].to_s, res.body.to_s)
     rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError, Net::OpenTimeout => e
-      raise ConfigError, "cannot reach #{@config.url} (#{e.class}) — is Agentile Projects running, and is the url in #{STORE_MD} (or AGENTILE_PROJECTS_URL) right?"
+      raise ConfigError, "cannot reach #{@config.url} (#{e.class}) — is the store running, and is the url in #{STORE_MD} (or AGENTILE_STORE_URL) right?"
+    end
+
+    # The process binding (docs/store-protocol.md §9): one JSON request on stdin,
+    # one JSON response on stdout.
+    # A process store never sees the HTTP token: its command comes from a tracked
+    # file, and that file must not be able to redirect the token (§9).
+    SCRUBBED_ENV = { "AGENTILE_STORE_TOKEN" => nil, "AGENTILE_PROJECTS_TOKEN" => nil }.freeze
+
+    def process_request(method, path, body, params, content_type)
+      request = { "protocol" => PROTOCOL, "method" => method.to_s.upcase, "path" => path, "query" => params,
+                  "content_type" => body.nil? ? nil : content_type, "body" => body,
+                  "user" => AgStore.git_user, "config" => @config.store_md.except("url").merge("project" => @config.project) }
+      out, err, status = run_with_deadline(JSON.generate(request))
+      unless status&.success?
+        raise ConfigError, "store command #{@config.command.first(2).join(' ')} failed (exit #{status&.exitstatus}): #{err.lines.first(3).join.strip}"
+      end
+
+      res = begin
+        JSON.parse(out)
+      rescue JSON::ParserError
+        nil
+      end
+      unless res.is_a?(Hash) && res["status"].is_a?(Integer)
+        raise ConfigError, "store command printed something that is not a protocol response: #{out.to_s[0, 160].inspect}" \
+                           "#{err.strip.empty? ? '' : " — stderr: #{err.lines.first(3).join.strip}"}"
+      end
+
+      text = res["body"].is_a?(String) ? res["body"] : JSON.generate(res["body"])
+      Response.new(res["status"], res["content_type"].to_s, text)
+    rescue Errno::ENOENT, Errno::EACCES => e
+      raise ConfigError, "cannot start store command #{@config.command.first.inspect} (#{e.class})"
+    end
+
+    # §9: a process store has PROCESS_TIMEOUT seconds (AGENTILE_STORE_TIMEOUT
+    # overrides); past that it is killed and the operation fails with exit 2.
+    def run_with_deadline(input)
+      limit = Float(ENV.fetch("AGENTILE_STORE_TIMEOUT", PROCESS_TIMEOUT.to_s), exception: false) || PROCESS_TIMEOUT
+      Open3.popen3(SCRUBBED_ENV, *@config.command, pgroup: true) do |stdin, stdout, stderr, wait|
+        out_reader = Thread.new { stdout.read }
+        err_reader = Thread.new { stderr.read }
+        begin
+          stdin.write(input)
+        rescue Errno::EPIPE
+          nil
+        end
+        stdin.close
+        unless wait.join(limit)
+          begin
+            Process.kill("KILL", -wait.pid)
+          rescue Errno::ESRCH
+            nil
+          end
+          wait.join
+          raise ConfigError, "store command #{@config.command.first(2).join(' ')} did not answer within #{limit.to_i}s"
+        end
+        [ out_reader.value.to_s, err_reader.value.to_s, wait.value ]
+      end
     end
 
     def parse(res)
       text = res.body.to_s
-      json = res["content-type"].to_s.include?("json") || text.start_with?("{", "[", "\"") ? (JSON.parse(text) rescue text) : text
-      json = json.strip if json.is_a?(String) && !res["content-type"].to_s.include?("markdown")
-      return json if res.is_a?(Net::HTTPSuccess)
+      json = res.content_type.include?("json") || text.start_with?("{", "[", "\"") ? (JSON.parse(text) rescue text) : text
+      json = json.strip if json.is_a?(String) && !res.content_type.include?("markdown")
+      return json if (200..299).cover?(res.status)
 
       detail = truncate(json.is_a?(Hash) ? (json["detail"] || json["error"] || text) : text)
-      raise ConfigError, "#{res.code} #{detail} — check AGENTILE_PROJECTS_TOKEN" if res.code == "401"
-      raise Error, "#{res.code} #{detail}"
+      raise ConfigError, "#{res.status} #{detail} — check AGENTILE_STORE_TOKEN/AGENTILE_PROJECTS_TOKEN" if res.status == 401
+      raise Error, "#{res.status} #{detail}"
     end
 
     # A non-JSON error body (an HTML 500 page, a proxy's plaintext error, …)
@@ -334,9 +488,22 @@ module AgStore
       case op
       when "inbox_list" then @api.get(p["/inbox"], status: flags["status"])
       when "inbox_add"
-        res = @api.post(p["/inbox"], { text: positional[0].to_s, title: flags["title"], kind: flags["type"], serves: flags["serves"],
-                                        suggested_kind: flags["suggested-kind"], duplicate_of: flags["duplicate-of"],
-                                        duplicate_probability: flags["duplicate-probability"] }.compact)
+        dup = flags["duplicate-of"]
+        dup_type = flags["duplicate-of-type"] || (dup.nil? ? nil : (dup.to_s.match?(/\A\d+\z/) ? "inbox" : "spec"))
+        body = { text: positional[0].to_s, title: flags["title"], kind: flags["type"], serves: flags["serves"],
+                 suggested_kind: flags["suggested-kind"], duplicate_of: dup, duplicate_of_type: dup_type,
+                 duplicate_probability: flags["duplicate-probability"] }.compact
+        res = begin
+          @api.post(p["/inbox"], body)
+        rescue Error => e
+          # Store Protocol §12 G15: Agentile Projects takes only an inbox id as
+          # duplicate_of, so a spec slug 404s. The duplicate note is advisory; the
+          # stub is not — save it without the note rather than lose it.
+          raise unless dup_type == "spec" && e.message.start_with?("404")
+
+          warn "ag-store: the store would not record duplicate_of #{dup} (a spec); saved the stub without it"
+          @api.post(p["/inbox"], body.except(:duplicate_of, :duplicate_of_type))
+        end
         res.is_a?(Hash) ? res["id"] : res
       when "inbox_drop" then @api.post(p["/inbox/#{AgStore.enc(positional[0])}/drop"]); true
       when "inbox_assist" then @api.post(p["/inbox/assist"], { text: positional[0].to_s })
@@ -424,10 +591,21 @@ module AgStore
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, md.to_s)
         path
+      when "brief_write"
+        @api.put_markdown(p["/brief"], $stdin.read)
       when "whoami" then @api.get("/me")
       when "doctor"
         res = @api.get(p["/doctor"])
-        res.is_a?(Hash) ? res.merge("host" => @c.host) : res
+        if res.is_a?(Hash)
+          # A store that predates the protocol's doctor fields is Agentile Projects at protocol 1 (§12, G10).
+          res = { "protocol" => PROTOCOL, "store" => "agentile-projects", "capabilities" => [] }.merge(res)
+          if res["protocol"].to_i > PROTOCOL
+            raise ConfigError, "the store speaks Store Protocol #{res['protocol']}; this ag-store speaks #{PROTOCOL} — update the Agentile plugin"
+          end
+
+          res = res.merge(@c.transport == :http ? { "host" => @c.host } : { "command" => @c.command.join(" ") })
+        end
+        res
       else raise Error, "unknown op '#{op}'"
       end
     end
@@ -439,7 +617,7 @@ abort "usage: ag-store <op> [args...] [--dir <agentile-dir>]" if op.nil?
 
 rest, sets = AgStore.extract_sets(ARGV[1..])
 positional, flags = AgStore.parse_flags(rest)
-warn "ag-store: --store is obsolete since 0.20.0 (Agentile Projects is the only store) — ignoring it" if flags.key?("store")
+warn "ag-store: --store is obsolete since 0.20.0 (the store is chosen by `url` in .agentile/store.md) — ignoring it" if flags.key?("store")
 warn "ag-store: --airtable-base is obsolete since 0.20.0 — ignoring it" if flags.key?("airtable-base")
 
 begin

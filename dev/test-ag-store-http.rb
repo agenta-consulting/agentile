@@ -69,7 +69,7 @@ end
 # online suite with AGENTILE_PROJECTS_URL/TOKEN exported doesn't leak them into
 # the offline section's calls against the fake API — each call's own `env:`
 # hash still layers on top and can re-set any of these deliberately.
-ISOLATE = { "AGENTILE_PROJECTS_URL" => nil, "AGENTILE_PROJECTS_TOKEN" => nil,
+ISOLATE = { "AGENTILE_PROJECTS_URL" => nil, "AGENTILE_PROJECTS_TOKEN" => nil, "AGENTILE_STORE_URL" => nil, "AGENTILE_STORE_TOKEN" => nil, "AGENTILE_STORE_ALLOW_HTTP" => nil,
             "AGENTILE_RUNNER_ID" => nil, "CLAUDE_SESSION_ID" => nil, "AGENTILE_MODEL" => nil }.freeze
 
 def run_store(*args, env: {}, stdin: nil, chdir: Dir.pwd)
@@ -149,7 +149,21 @@ with_project(api.url) do |root|
   raise "inbox_add with assist flags should print the id: #{out.inspect}" unless out == 42
   body = JSON.parse(api.requests.last[:body])
   raise "inbox_add assist-flag body: #{body.inspect}" \
-    unless body == { "text" => "Maybe a dup", "suggested_kind" => "bug", "duplicate_of" => "7", "duplicate_probability" => "0.8" }
+    unless body == { "text" => "Maybe a dup", "suggested_kind" => "bug", "duplicate_of" => "7", "duplicate_of_type" => "inbox", "duplicate_probability" => "0.8" }
+end
+
+# 6b. a duplicate that is a spec slug (Store Protocol §12 G15): a store that 404s on
+#     it still gets the stub, saved without the advisory duplicate note
+api.route("POST", "#{P}/inbox") do |r|
+  b = JSON.parse(r[:body])
+  b["duplicate_of"] == "alpha" ? [404, { "error" => "not_found", "detail" => "Couldn't find InboxItem" }] : [201, { "ok" => true, "id" => 43 }]
+end
+with_project(api.url) do |root|
+  out, err, st = run_store("inbox_add", "Same as alpha", "--duplicate-of", "alpha", "--duplicate-probability", "0.9", env: ENV_OK, chdir: root)
+  raise "spec duplicate should still save: #{st.exitstatus} #{err}" unless st.success? && JSON.parse(out) == 43 && err.include?("without it")
+  first, second = api.requests.last(2).map { |q| JSON.parse(q[:body]) }
+  raise "first try should carry the spec duplicate: #{first.inspect}" unless first["duplicate_of_type"] == "spec"
+  raise "retry should drop it: #{second.inspect}" if second.key?("duplicate_of") || second.key?("duplicate_of_type")
 end
 
 # 7. inbox_assist passes the text; inbox_shape posts markdown from stdin with text/markdown
@@ -179,11 +193,13 @@ with_project(api.url) do |root|
 end
 
 # 9. spec_list forwards status/pool; spec_write turns bracketed lists into arrays
-api.route("GET", "#{P}/specs") { |r| [200, [{ "slug" => "a", "prefix" => 1, "status" => "ready", "q" => r[:query] }]] }
+api.route("GET", "#{P}/specs") { |r| [200, [{ "slug" => "a", "prefix" => 1, "kind" => "bug", "status" => "ready", "path" => "docs/agentile/specs/a", "q" => r[:query] }]] }
 api.route("PATCH", "#{P}/specs/a") { |r| [200, JSON.parse(r[:body])] }
 with_project(api.url) do |root|
   out = store!("spec_list", "--status", "ready", "--pool", "active", env: ENV_OK, chdir: root)
   raise "spec_list query: #{out.inspect}" unless out[0]["q"].include?("status=ready") && out[0]["q"].include?("pool=active")
+  # Store Protocol §12 G9: Agentile Projects' older names reach skills in protocol-1 shape too
+  raise "prefix should also be rank, kind also type: #{out[0].inspect}" unless out[0]["rank"] == 1 && out[0]["prefix"] == 1 && out[0]["type"] == "bug"
   out = store!("spec_write", "a", "--set", "depends_on=[b, c]", "--set", "route=spike", "--set", "tags=[]", env: ENV_OK, chdir: root)
   raise "spec_write lists: #{out.inspect}" unless out == { "depends_on" => %w[b c], "route" => "spike", "tags" => [] }
 end
@@ -419,6 +435,8 @@ with_project(api.url) do |root|
   doc = store!("doctor", env: ENV_OK, chdir: root)
   raise "doctor" unless doc["reachable"] == true
   raise "doctor should print the resolved host client-side: #{doc.inspect}" unless doc["host"] == "127.0.0.1"
+  # Store Protocol §12 G10: a doctor without protocol fields is Agentile Projects at protocol 1
+  raise "doctor should default protocol/store: #{doc.inspect}" unless doc["protocol"] == 1 && doc["store"] == "agentile-projects" && doc["capabilities"] == []
 end
 
 # 20. --store is obsolete: warns on stderr, still works; unknown op exits 1
